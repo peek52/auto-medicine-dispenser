@@ -1,0 +1,1171 @@
+﻿<!DOCTYPE html>
+<html lang="th">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root{
+      --bgA:#f6fbff;
+      --bgB:#eaf3ff;
+
+      --text:#0b1220;
+      --muted:#5b6b82;
+
+      --pri:#1d4ed8;
+      --pri2:#38bdf8;
+
+      --ok:#10b981;
+      --bad:#ef4444;
+
+      --line:rgba(11,18,32,.10);
+      --line2:rgba(11,18,32,.06);
+
+      --shadow:0 22px 60px rgba(15,23,42,.14);
+      --shadow2:0 12px 28px rgba(15,23,42,.10);
+      --shadow3:0 10px 22px rgba(29,78,216,.22);
+
+      --r16:16px;
+      --r20:20px;
+      --r24:24px;
+
+      --max:720px;
+    }
+
+    *{margin:0;padding:0;box-sizing:border-box;}
+    html, body{height:100%;}
+
+    body{
+      font-family:"Segoe UI",Tahoma,sans-serif;
+      color:var(--text);
+      padding:16px;
+      padding-bottom:128px;
+      min-height:100vh;
+
+      -webkit-text-size-adjust:100%;
+      text-size-adjust:100%;
+
+      background:
+        radial-gradient(900px 520px at 10% -10%, rgba(56,189,248,.22), transparent 60%),
+        radial-gradient(820px 500px at 100% 10%, rgba(29,78,216,.18), transparent 55%),
+        linear-gradient(135deg,var(--bgA) 0%,var(--bgB) 100%);
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+      overscroll-behavior:contain;
+    }
+
+    .wrap{max-width:var(--max);margin:0 auto;width:100%;}
+
+    ::-webkit-scrollbar{width:9px;}
+    ::-webkit-scrollbar-track{background:rgba(11,18,32,.06);border-radius:999px;}
+    ::-webkit-scrollbar-thumb{background:rgba(11,18,32,.22);border-radius:999px;}
+
+    .card{
+      background:rgba(255,255,255,.90);
+      border-radius:var(--r24);
+      border:1px solid rgba(255,255,255,.65);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+      backdrop-filter:blur(16px);
+      margin-bottom:14px;
+    }
+
+    .card-head{
+      padding:16px 16px 12px 16px;
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      border-bottom:1px solid rgba(11,18,32,.06);
+      background:
+        radial-gradient(700px 160px at 15% 35%, rgba(56,189,248,.28), transparent 60%),
+        radial-gradient(600px 140px at 90% 20%, rgba(29,78,216,.20), transparent 58%),
+        rgba(255,255,255,.62);
+      position:relative;
+    }
+
+    .card-head:before{
+      content:"";
+      position:absolute;left:0;top:0;bottom:0;width:5px;
+      background:linear-gradient(180deg,var(--pri) 0%,var(--pri2) 100%);
+      opacity:.95;
+    }
+
+    .head-left{display:flex;align-items:center;gap:12px;min-width:0;flex:1;}
+    .head-ico{
+      width:44px;height:44px;border-radius:18px;
+      display:grid;place-items:center;
+      background:rgba(255,255,255,.82);
+      border:1px solid rgba(11,18,32,.06);
+      box-shadow:0 12px 22px rgba(15,23,42,.08);
+      font-size:20px;
+      flex-shrink:0;
+    }
+    .head-title{display:flex;flex-direction:column;min-width:0;}
+    .head-title b{font-size:15px;font-weight:1000;letter-spacing:.2px;line-height:1.3;}
+    .head-title span{font-size:12px;color:var(--muted);font-weight:800;margin-top:2px;line-height:1.4;}
+
+    .head-right{display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;}
+
+    /* Status badge */
+    .status{
+      padding:8px 10px;
+      border-radius:999px;
+      border:1px solid var(--line2);
+      background:rgba(255,255,255,.9);
+      font-size:12px;
+      font-weight:1000;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      color:var(--muted);
+      white-space:nowrap;
+    }
+    .status .dot{
+      width:8px;height:8px;border-radius:999px;
+      background:rgba(11,18,32,.25);
+      box-shadow:0 0 0 5px rgba(11,18,32,.08);
+    }
+    .status.online{color:#0f5132;}
+    .status.online .dot{background:var(--ok); box-shadow:0 0 0 5px rgba(16,185,129,.16);}
+    .status.offline{color:#7f1d1d;}
+    .status.offline .dot{background:var(--bad); box-shadow:0 0 0 5px rgba(239,68,68,.14);}
+
+    .content{padding:14px 16px 16px 16px;}
+
+    /* Toggle */
+    .toggle{position:relative;width:60px;height:32px;flex-shrink:0;}
+    .toggle input{opacity:0;width:0;height:0;}
+    .slider{
+      position:absolute;inset:0;cursor:pointer;border-radius:999px;
+      background:rgba(11,18,32,.14);
+      border:1px solid rgba(11,18,32,.10);
+      transition:.2s;
+    }
+    .slider:before{
+      content:"";position:absolute;width:26px;height:26px;left:3px;top:2px;border-radius:999px;
+      background:#fff;box-shadow:0 12px 20px rgba(15,23,42,.20);transition:.2s;
+    }
+    input:checked+.slider{
+      background:rgba(29,78,216,.22);
+      border-color:rgba(29,78,216,.32);
+    }
+    input:checked+.slider:before{
+      transform:translateX(28px);
+      background:linear-gradient(135deg,var(--pri) 0%,var(--pri2) 100%);
+    }
+
+    /* Schedule */
+    .master-stack{display:flex;align-items:center;gap:12px;flex-shrink:0;}
+    .master-copy{display:flex;flex-direction:column;align-items:flex-end;gap:2px;}
+    .master-copy b{font-size:12px;font-weight:1100;color:var(--text);white-space:nowrap;}
+    .master-copy span{font-size:11px;color:var(--muted);font-weight:900;white-space:nowrap;}
+
+    .control-shell{display:grid;gap:14px;}
+    .schedule-summary{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      padding:12px;
+      border-radius:18px;
+      background:
+        linear-gradient(135deg, rgba(29,78,216,.08) 0%, rgba(56,189,248,.10) 100%);
+      border:1px solid rgba(29,78,216,.10);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.55);
+    }
+    .summary-chip{
+      min-width:112px;
+      padding:10px 12px;
+      border-radius:16px;
+      background:rgba(255,255,255,.82);
+      border:1px solid rgba(11,18,32,.06);
+      box-shadow:0 10px 20px rgba(15,23,42,.06);
+    }
+    .summary-chip b{
+      display:block;
+      font-size:11px;
+      font-weight:1000;
+      color:var(--muted);
+      margin-bottom:4px;
+      letter-spacing:.18px;
+    }
+    .summary-chip span{
+      display:block;
+      font-size:13px;
+      font-weight:1100;
+      color:var(--text);
+      line-height:1.35;
+    }
+
+    .dose-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(360px,1fr));
+      gap:14px;
+    }
+    .dose-card{
+      position:relative;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.96) 0%, rgba(250,252,255,.88) 100%);
+      border:1px solid rgba(11,18,32,.08);
+      border-radius:22px;
+      box-shadow:var(--shadow2);
+      padding:16px;
+      transition:.15s;
+      overflow:hidden;
+    }
+    .dose-card:before{
+      content:"";
+      position:absolute;
+      left:0;
+      top:0;
+      bottom:0;
+      width:5px;
+      border-radius:999px;
+      background:var(--accent-strip, linear-gradient(180deg,var(--pri) 0%,var(--pri2) 100%));
+      opacity:.96;
+    }
+    .dose-card:hover{
+      transform:translateY(-1px);
+      border-color:rgba(29,78,216,.22);
+      box-shadow:0 22px 36px rgba(15,23,42,.12);
+    }
+    .dose-card.morning{--accent-strip:linear-gradient(180deg,#f59e0b 0%,#f97316 100%);}
+    .dose-card.noon{--accent-strip:linear-gradient(180deg,#0ea5e9 0%,#2563eb 100%);}
+    .dose-card.evening{--accent-strip:linear-gradient(180deg,#8b5cf6 0%,#6366f1 100%);}
+    .dose-card.bed{--accent-strip:linear-gradient(180deg,#0f766e 0%,#14b8a6 100%);}
+
+    .dose-header{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+      padding-bottom:12px;
+      margin-bottom:12px;
+      border-bottom:1px solid rgba(11,18,32,.06);
+    }
+    .dose-head-main{display:flex;align-items:center;gap:10px;min-width:0;}
+    .dose-icon{
+      width:40px;height:40px;border-radius:14px;
+      display:grid;place-items:center;
+      font-size:18px;
+      background:rgba(29,78,216,.08);
+      border:1px solid rgba(29,78,216,.10);
+      box-shadow:0 10px 18px rgba(15,23,42,.06);
+      flex-shrink:0;
+    }
+    .dose-copy{display:flex;flex-direction:column;min-width:0;}
+    .dose-label{font-size:13px;font-weight:1000;color:var(--text);line-height:1.3;}
+    .dose-help{font-size:11px;font-weight:900;color:var(--muted);margin-top:3px;line-height:1.35;}
+    .dose-badge{
+      padding:7px 10px;
+      border-radius:999px;
+      background:rgba(29,78,216,.08);
+      color:#0b4aa8;
+      font-size:11px;
+      font-weight:1100;
+      white-space:nowrap;
+      border:1px solid rgba(29,78,216,.12);
+      box-shadow:0 8px 16px rgba(15,23,42,.05);
+    }
+
+    .dose-field{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) minmax(0,148px);
+      align-items:center;
+      gap:12px;
+      margin-bottom:10px;
+      padding:10px 12px;
+      border-radius:16px;
+      background:rgba(255,255,255,.72);
+      border:1px solid rgba(11,18,32,.06);
+    }
+    .dose-field:last-child{margin-bottom:0;}
+    .field-copy{display:flex;flex-direction:column;gap:3px;}
+    .field-label{font-size:12px;font-weight:1000;color:var(--text);}
+    .field-sub{font-size:11px;font-weight:900;color:var(--muted);}
+
+    /* Prevent iOS zoom: input >= 16px */
+    input[type="time"], input[type="text"], input[type="number"]{font-size:16px;}
+
+    input[type="time"]{
+      width:100%;max-width:148px;min-width:0;height:46px;padding:0 12px;border-radius:14px;
+      border:1px solid rgba(11,18,32,.12);
+      background:rgba(255,255,255,.92);
+      color:var(--text);font-weight:1000;text-align:center;
+      outline:none;transition:.15s;
+    }
+    input[type="time"]:focus{
+      border-color:rgba(29,78,216,.40);
+      box-shadow:0 0 0 6px rgba(29,78,216,.14);
+      background:#fff;
+    }
+
+    /* Modules */
+    .module-shell{display:grid;gap:14px;}
+    .module-summary{
+      display:flex;flex-wrap:wrap;gap:10px;
+      padding:12px;border-radius:18px;
+      background:linear-gradient(135deg, rgba(29,78,216,.07) 0%, rgba(56,189,248,.09) 100%);
+      border:1px solid rgba(29,78,216,.10);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.55);
+      margin-bottom:14px;
+    }
+    .module-chip{
+      min-width:120px;
+      padding:10px 12px;
+      border-radius:16px;
+      background:rgba(255,255,255,.84);
+      border:1px solid rgba(11,18,32,.06);
+      box-shadow:0 10px 20px rgba(15,23,42,.06);
+    }
+    .module-chip b{
+      display:block;
+      font-size:11px;
+      font-weight:1000;
+      color:var(--muted);
+      margin-bottom:4px;
+      letter-spacing:.18px;
+    }
+    .module-chip span{
+      display:block;
+      font-size:13px;
+      font-weight:1100;
+      color:var(--text);
+      line-height:1.35;
+    }
+    .module-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+      gap:14px;
+    }
+    .mod-item{
+      position:relative;
+      background:linear-gradient(180deg, rgba(255,255,255,.96) 0%, rgba(250,252,255,.90) 100%);
+      border:1px solid rgba(11,18,32,.08);
+      border-radius:22px;
+      padding:16px 16px 16px 18px;
+      box-shadow:var(--shadow2);
+      overflow:hidden;
+      margin-bottom:0;
+    }
+    .mod-item:before{
+      content:"";
+      position:absolute;left:0;top:0;bottom:0;width:5px;border-radius:999px;
+      background:linear-gradient(180deg,var(--pri) 0%,var(--pri2) 100%);
+      opacity:.96;
+    }
+    .mod-header-row{
+      display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+      margin-bottom:12px;
+      padding-bottom:12px;
+      border-bottom:1px solid rgba(11,18,32,.06);
+    }
+    .mod-title-wrap{
+      display:flex;flex-direction:column;gap:4px;min-width:0;
+      padding-left:2px;
+    }
+    .mod-title{
+      font-size:13px;font-weight:1100;color:#0b4aa8;letter-spacing:.2px;
+    }
+    .mod-sub{
+      font-size:11px;
+      font-weight:900;
+      color:var(--muted);
+      line-height:1.35;
+    }
+    .mod-badge{
+      padding:7px 10px;
+      border-radius:999px;
+      background:rgba(29,78,216,.08);
+      color:#0b4aa8;
+      font-size:11px;
+      font-weight:1100;
+      white-space:nowrap;
+      border:1px solid rgba(29,78,216,.12);
+      box-shadow:0 8px 16px rgba(15,23,42,.05);
+    }
+
+    .mod-name-wrap{
+      margin-bottom:10px;
+    }
+    .mod-field-label{
+      display:block;
+      font-size:11px;
+      font-weight:1000;
+      color:var(--muted);
+      margin-bottom:6px;
+      letter-spacing:.18px;
+    }
+    .mod-name-input{
+      width:100%;height:48px;padding:0 12px;border-radius:14px;
+      border:1px solid rgba(11,18,32,.12);
+      background:rgba(255,255,255,.95);
+      font-weight:900;outline:none;transition:.15s;
+      margin-bottom:0;
+    }
+    .mod-name-input:focus{
+      border-color:rgba(29,78,216,.40);
+      box-shadow:0 0 0 6px rgba(29,78,216,.14);
+      background:#fff;
+    }
+
+    /* Quantity input: editable + clamp 0-16 */
+    .mod-controls{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:12px;
+      align-items:end;
+      margin-bottom:12px;
+    }
+    .qty-wrap{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+    .qty-control{
+      display:flex;align-items:center;gap:8px;
+      padding:6px;
+      border-radius:18px;
+      border:1px solid rgba(11,18,32,.10);
+      background:rgba(255,255,255,.95);
+      box-shadow:0 10px 18px rgba(15,23,42,.06);
+    }
+    .qty-btn{
+      width:38px;height:38px;
+      border:1px solid rgba(29,78,216,.18);
+      background:rgba(29,78,216,.10);
+      border-radius:16px;
+      color:#0b4aa8;font-weight:1100;font-size:18px;
+      cursor:pointer;transition:.12s;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .qty-btn:hover{background:rgba(29,78,216,.16);}
+    .qty-btn:active{transform:scale(.97);}
+
+    .qty-input{
+      width:64px;
+      height:38px;
+      border-radius:14px;
+      border:1px solid rgba(11,18,32,.12);
+      background:rgba(255,255,255,.95);
+      font-weight:1100;
+      text-align:center;
+      outline:none;
+      transition:.15s;
+    }
+    .qty-input:focus{
+      border-color:rgba(29,78,216,.40);
+      box-shadow:0 0 0 6px rgba(29,78,216,.12);
+      background:#fff;
+    }
+    .qty-cap{
+      font-size:11px;
+      font-weight:1000;
+      color:var(--muted);
+      padding:0 4px;
+      white-space:nowrap;
+    }
+
+    /* slots */
+    .slots-wrap{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    .slots-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:0;}
+    .slot-pill{
+      padding:9px 12px;
+      border-radius:999px;
+      border:1px solid rgba(11,18,32,.12);
+      background:rgba(29,78,216,.06);
+      color:#1f3557;
+      font-size:12px;
+      font-weight:1000;
+      cursor:pointer;
+      user-select:none;
+      transition:.15s;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .slot-pill:hover{
+      transform:translateY(-1px);
+      border-color:rgba(29,78,216,.24);
+      box-shadow:0 12px 20px rgba(15,23,42,.08);
+    }
+    .slot-pill.active{
+      background:linear-gradient(135deg,var(--pri) 0%,var(--pri2) 100%);
+      color:#fff;
+      border-color:rgba(29,78,216,0);
+      box-shadow:0 18px 34px rgba(29,78,216,.26);
+    }
+
+    /* Save bar */
+    .savebar{
+      position:fixed;left:50%;bottom:14px;transform:translateX(-50%);
+      width:calc(100% - 28px);max-width:560px;
+      z-index:200;
+      border-radius:22px;
+      padding:10px;
+      border:1px solid rgba(255,255,255,.65);
+      background:rgba(255,255,255,.74);
+      backdrop-filter:blur(16px);
+      box-shadow:0 22px 60px rgba(15,23,42,.16);
+      display:flex;gap:10px;align-items:center;justify-content:space-between;
+    }
+    .savehint{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;}
+    .savehint b{font-size:13px;font-weight:1100;}
+    .savehint span{font-size:12px;color:var(--muted);font-weight:900;}
+    .btn-save{
+      height:50px;padding:0 18px;border-radius:18px;border:none;cursor:pointer;
+      color:#fff;font-size:14px;font-weight:1100;
+      background:linear-gradient(135deg,var(--pri) 0%,var(--pri2) 100%);
+      box-shadow:0 18px 34px rgba(29,78,216,.24);
+      display:flex;align-items:center;gap:10px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-save:active{transform:scale(.985);}
+
+    @media (max-width:1100px){
+      body{
+        padding:12px;
+        padding-bottom:124px;
+      }
+      .wrap{
+        max-width:none;
+      }
+      .card-head{
+        flex-direction:column;
+        align-items:stretch;
+      }
+      .head-left{
+        width:100%;
+      }
+      .head-right{
+        width:100%;
+        justify-content:space-between;
+        align-items:center;
+      }
+      .schedule-summary{
+        display:grid;
+        grid-template-columns:1fr;
+      }
+      .summary-chip{
+        min-width:0;
+      }
+      .dose-grid{
+        grid-template-columns:1fr;
+      }
+    }
+
+    @media (max-width:900px){
+      .dose-grid{
+        grid-template-columns:1fr;
+      }
+      .dose-field{
+        grid-template-columns:1fr;
+        justify-items:stretch;
+      }
+      input[type="time"]{
+        width:100%;
+      }
+    }
+
+    @media (max-width:560px){
+      body{
+        padding:10px;
+        padding-bottom:120px;
+      }
+      .card{
+        border-radius:20px;
+      }
+      .card-head{
+        padding:14px 14px 10px 14px;
+      }
+      .content{
+        padding:12px 14px 14px 14px;
+      }
+      .head-left{
+        align-items:flex-start;
+      }
+      .head-ico{
+        width:40px;
+        height:40px;
+        border-radius:14px;
+      }
+      .head-title b{
+        font-size:14px;
+      }
+      .head-title span{
+        font-size:11px;
+      }
+      .head-right{
+        gap:8px;
+      }
+      .status{
+        padding:7px 9px;
+        font-size:11px;
+      }
+      .master-stack{
+        margin-left:auto;
+      }
+      .schedule-summary{
+        gap:8px;
+        padding:10px;
+      }
+      .summary-chip{
+        padding:9px 10px;
+      }
+      .summary-chip span{
+        font-size:12px;
+      }
+      .dose-field{
+        grid-template-columns:1fr;
+        justify-items:stretch;
+      }
+      .mod-controls{
+        grid-template-columns:1fr;
+      }
+      .module-grid{
+        grid-template-columns:1fr;
+      }
+      input[type="time"]{width:100%;}
+      .master-stack{
+        align-items:flex-end;
+      }
+      .master-copy{
+        display:none;
+      }
+      .savebar{
+        width:calc(100% - 20px);
+        bottom:10px;
+        padding:8px;
+      }
+      .btn-save{
+        height:46px;
+        padding:0 14px;
+        font-size:13px;
+      }
+    }
+
+    @media (max-width:420px){
+      input[type="time"]{width:100%;}
+      .qty-input{width:58px;}
+      .qty-cap{display:none;}
+      .head-right{
+        align-items:flex-start;
+      }
+      .status{
+        max-width:48%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <!-- CARD 1: SCHEDULE CONTROL -->
+    <div class="card">
+      <div class="card-head">
+        <div class="head-left">
+          <div class="head-ico">🗓️</div>
+          <div class="head-title">
+            <b>ควบคุมตารางจ่ายยา</b>
+            <span>เปิดหรือปิดการทำงานของระบบ พร้อมดูภาพรวมการตั้งค่าทั้งวัน</span>
+          </div>
+        </div>
+
+        <div class="head-right">
+          <div class="status offline" id="net-status">
+            <span class="dot"></span>
+            <span id="net-status-txt">ออฟไลน์</span>
+          </div>
+
+          <div class="master-stack">
+            <div class="master-copy">
+              <b>เปิดใช้งานตาราง</b>
+              <span>เปิดหรือปิดทั้งระบบ</span>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="master" />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="control-shell">
+          <div class="schedule-summary">
+            <div class="summary-chip">
+              <b>ช่วงเวลา</b>
+              <span>7 รอบต่อวัน</span>
+            </div>
+            <div class="summary-chip">
+              <b>โหมดจ่ายยา</b>
+              <span>ก่อนอาหาร / หลังอาหาร / ก่อนนอน</span>
+            </div>
+            <div class="summary-chip">
+              <b>การบันทึก</b>
+              <span>เขียนค่าไปยัง NETPIE Shadow</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CARD 2: TIME SLOTS -->
+    <div class="card">
+      <div class="card-head">
+        <div class="head-left">
+          <div class="head-ico">⏰</div>
+          <div class="head-title">
+            <b>ตั้งเวลาแต่ละมื้อ</b>
+            <span>กำหนดเวลาแยกตามมื้อเช้า กลางวัน เย็น และก่อนนอน</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="dose-grid">
+          <div class="dose-card morning">
+            <div class="dose-header">
+              <div class="dose-head-main">
+                <span class="dose-icon">🌅</span>
+                <div class="dose-copy">
+                  <span class="dose-label">มื้อเช้า (Morning)</span>
+                  <span class="dose-help">ยาก่อนอาหารและหลังอาหารเช้า</span>
+                </div>
+              </div>
+              <span class="dose-badge">Breakfast</span>
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">ก่อนอาหาร</span>
+                <span class="field-sub">Pre-meal dose</span>
+              </div>
+              <input type="time" id="t_morn_pre" value="08:00" />
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">หลังอาหาร</span>
+                <span class="field-sub">Post-meal dose</span>
+              </div>
+              <input type="time" id="t_morn_post" value="08:30" />
+            </div>
+          </div>
+
+          <div class="dose-card noon">
+            <div class="dose-header">
+              <div class="dose-head-main">
+                <span class="dose-icon">☀️</span>
+                <div class="dose-copy">
+                  <span class="dose-label">มื้อกลางวัน (Noon)</span>
+                  <span class="dose-help">ใช้กับยารอบเที่ยงและหลังอาหารกลางวัน</span>
+                </div>
+              </div>
+              <span class="dose-badge">Lunch</span>
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">ก่อนอาหาร</span>
+                <span class="field-sub">Pre-meal dose</span>
+              </div>
+              <input type="time" id="t_noon_pre" value="12:00" />
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">หลังอาหาร</span>
+                <span class="field-sub">Post-meal dose</span>
+              </div>
+              <input type="time" id="t_noon_post" value="12:30" />
+            </div>
+          </div>
+
+          <div class="dose-card evening">
+            <div class="dose-header">
+              <div class="dose-head-main">
+                <span class="dose-icon">🌆</span>
+                <div class="dose-copy">
+                  <span class="dose-label">มื้อเย็น (Evening)</span>
+                  <span class="dose-help">กำหนดช่วงก่อนและหลังอาหารเย็น</span>
+                </div>
+              </div>
+              <span class="dose-badge">Dinner</span>
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">ก่อนอาหาร</span>
+                <span class="field-sub">Pre-meal dose</span>
+              </div>
+              <input type="time" id="t_eve_pre" value="17:00" />
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">หลังอาหาร</span>
+                <span class="field-sub">Post-meal dose</span>
+              </div>
+              <input type="time" id="t_eve_post" value="17:30" />
+            </div>
+          </div>
+
+          <div class="dose-card bed">
+            <div class="dose-header">
+              <div class="dose-head-main">
+                <span class="dose-icon">🌙</span>
+                <div class="dose-copy">
+                  <span class="dose-label">ก่อนนอน (Bedtime)</span>
+                  <span class="dose-help">เหมาะกับยารอบสุดท้ายก่อนเข้านอน</span>
+                </div>
+              </div>
+              <span class="dose-badge">Night</span>
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">เวลาจ่ายยา</span>
+                <span class="field-sub">Bedtime dose</span>
+              </div>
+              <input type="time" id="t_bed" value="21:00" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- CARD 3: MODULES -->
+    <div class="card" style="margin-bottom: 92px;">
+      <div class="card-head">
+        <div class="head-left">
+          <div class="head-ico">💊</div>
+          <div class="head-title">
+            <b>ตลับยา (Cartridges)</b>
+            <span>ตั้งชื่อยา ปรับจำนวนคงเหลือ และเลือกช่วงเวลาที่ต้องจ่ายให้แต่ละตลับ</span>
+          </div>
+        </div>
+      </div>
+      <div class="content">
+        <div class="module-shell">
+          <div class="module-summary">
+            <div class="module-chip">
+              <b>จำนวนตลับ</b>
+              <span>6 ช่องบรรจุยา</span>
+            </div>
+            <div class="module-chip">
+              <b>จำนวนสูงสุด</b>
+              <span>0-16 เม็ดต่อหนึ่งตลับ</span>
+            </div>
+            <div class="module-chip">
+              <b>การเลือกเวลา</b>
+              <span>แตะเลือกช่วงเวลาที่ต้องการจ่ายยา</span>
+            </div>
+          </div>
+          <div class="module-grid" id="module-container"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- SAVE FLOATING BAR -->
+  <div class="savebar">
+    <div class="savehint">
+      <b>บันทึกการตั้งค่า</b>
+      <span>ระบบจะเขียนค่าไปที่ NETPIE Shadow</span>
+    </div>
+    <button class="btn-save" onclick="saveData()">
+      <span>💾</span> <span id="save-txt">บันทึกข้อมูล</span>
+    </button>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- SCRIPT 1: Read Shadow -->
+  <!-- ============================================================ -->
+  <script>
+    window._sh = {};
+    window._sh.enabled = "${#["esp32cam_dispenser"]["shadow"]["scheduleEnabled"]}";
+    window._sh.t_morn_pre = "${#["esp32cam_dispenser"]["shadow"]["t_morn_pre"]}";
+    window._sh.t_morn_post = "${#["esp32cam_dispenser"]["shadow"]["t_morn_post"]}";
+    window._sh.t_noon_pre = "${#["esp32cam_dispenser"]["shadow"]["t_noon_pre"]}";
+    window._sh.t_noon_post = "${#["esp32cam_dispenser"]["shadow"]["t_noon_post"]}";
+    window._sh.t_eve_pre = "${#["esp32cam_dispenser"]["shadow"]["t_eve_pre"]}";
+    window._sh.t_eve_post = "${#["esp32cam_dispenser"]["shadow"]["t_eve_post"]}";
+    window._sh.t_bed = "${#["esp32cam_dispenser"]["shadow"]["t_bed"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med1_name = "${#["esp32cam_dispenser"]["shadow"]["med1_name"]}";
+    window._sh.med1_count = "${#["esp32cam_dispenser"]["shadow"]["med1_count"]}";
+    window._sh.med1_slots = "${#["esp32cam_dispenser"]["shadow"]["med1_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med2_name = "${#["esp32cam_dispenser"]["shadow"]["med2_name"]}";
+    window._sh.med2_count = "${#["esp32cam_dispenser"]["shadow"]["med2_count"]}";
+    window._sh.med2_slots = "${#["esp32cam_dispenser"]["shadow"]["med2_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med3_name = "${#["esp32cam_dispenser"]["shadow"]["med3_name"]}";
+    window._sh.med3_count = "${#["esp32cam_dispenser"]["shadow"]["med3_count"]}";
+    window._sh.med3_slots = "${#["esp32cam_dispenser"]["shadow"]["med3_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med4_name = "${#["esp32cam_dispenser"]["shadow"]["med4_name"]}";
+    window._sh.med4_count = "${#["esp32cam_dispenser"]["shadow"]["med4_count"]}";
+    window._sh.med4_slots = "${#["esp32cam_dispenser"]["shadow"]["med4_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med5_name = "${#["esp32cam_dispenser"]["shadow"]["med5_name"]}";
+    window._sh.med5_count = "${#["esp32cam_dispenser"]["shadow"]["med5_count"]}";
+    window._sh.med5_slots = "${#["esp32cam_dispenser"]["shadow"]["med5_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med6_name = "${#["esp32cam_dispenser"]["shadow"]["med6_name"]}";
+    window._sh.med6_count = "${#["esp32cam_dispenser"]["shadow"]["med6_count"]}";
+    window._sh.med6_slots = "${#["esp32cam_dispenser"]["shadow"]["med6_slots"]}";
+  </script>
+
+  <!-- ============================================================ -->
+  <!-- SCRIPT 2: Main logic -->
+  <!-- ============================================================ -->
+  <script>
+    var TIME_KEYS = ["t_morn_pre", "t_morn_post", "t_noon_pre", "t_noon_post", "t_eve_pre", "t_eve_post", "t_bed"];
+    var SLOT_LABELS = ["เช้า-ก่อน", "เช้า-หลัง", "เที่ยง-ก่อน", "เที่ยง-หลัง", "เย็น-ก่อน", "เย็น-หลัง", "ก่อนนอน"];
+    var MAX_PILLS = 16;
+
+    var modules = [];
+    for (var i = 0; i < 6; i++) {
+      modules.push({ id: i + 1, name: "", count: 0, slots: 0 });
+    }
+
+    function safeStr(val) {
+      if (val === undefined || val === null || val === "undefined" || val === "null" || val === "") return "";
+      return String(val);
+    }
+    function safeInt(val) {
+      var n = parseInt(val);
+      return isNaN(n) ? 0 : n;
+    }
+    function clamp(n, a, b) {
+      n = safeInt(n);
+      return Math.max(a, Math.min(b, n));
+    }
+    function escapeHtml(val) {
+      return safeStr(val)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+    function countBits(mask) {
+      mask = safeInt(mask);
+      var total = 0;
+      for (var i = 0; i < 7; i++) {
+        if (mask & (1 << i)) total++;
+      }
+      return total;
+    }
+    function setStatus(isOnline) {
+      var el = document.getElementById('net-status');
+      var txt = document.getElementById('net-status-txt');
+      if (!el || !txt) return;
+
+      if (isOnline) {
+        el.classList.remove('offline');
+        el.classList.add('online');
+        txt.innerText = "ออนไลน์";
+      } else {
+        el.classList.remove('online');
+        el.classList.add('offline');
+        txt.innerText = "ออฟไลน์";
+      }
+    }
+
+    function initFromShadow() {
+      var sh = window._sh || {};
+
+      document.getElementById('master').checked = (safeInt(sh.enabled) == 1);
+
+      var timeDefaults = {
+        t_morn_pre: "08:00", t_morn_post: "08:30",
+        t_noon_pre: "12:00", t_noon_post: "12:30",
+        t_eve_pre: "17:00", t_eve_post: "17:30",
+        t_bed: "21:00"
+      };
+      for (var t = 0; t < TIME_KEYS.length; t++) {
+        var k = TIME_KEYS[t];
+        var el = document.getElementById(k);
+        if (el) {
+          var v = safeStr(sh[k]);
+          el.value = (v && v.indexOf(":") !== -1) ? v : timeDefaults[k];
+        }
+      }
+
+      for (var i = 0; i < 6; i++) {
+        var idx = i + 1;
+        var n = safeStr(sh["med" + idx + "_name"]);
+        modules[i].name = n || "";
+        modules[i].count = clamp(sh["med" + idx + "_count"], 0, MAX_PILLS); // clamp 0-16
+        modules[i].slots = normalizeSlotsMask(sh["med" + idx + "_slots"]);
+      }
+    }
+
+    function renderModules() {
+      var html = "";
+      for (var i = 0; i < modules.length; i++) {
+        var m = modules[i];
+        var slotCount = countBits(m.slots);
+        var slotLabel = slotCount ? (slotCount + " ช่วงเวลา") : "ยังไม่เลือกเวลา";
+
+        html += '<div class="mod-item">';
+        html += '  <div class="mod-header-row">';
+        html += '    <div class="mod-title-wrap">';
+        html += '      <span class="mod-title">ตลับที่ ' + m.id + '</span>';
+        html += '      <span class="mod-sub">กำหนดชื่อยา จำนวนคงเหลือ และเวลาที่ต้องการจ่าย</span>';
+        html += '    </div>';
+        html += '    <span class="mod-badge">' + slotLabel + '</span>';
+        html += '  </div>';
+
+        html += '  <div class="mod-name-wrap">';
+        html += '    <label class="mod-field-label" for="n-' + m.id + '">ชื่อยา / Medicine Name</label>';
+        html += '    <input type="text" id="n-' + m.id + '" class="mod-name-input" placeholder="ระบุชื่อยา เช่น Vitamin C" value="' + escapeHtml(m.name) + '" onchange="upd(' + m.id + ')">';
+        html += '  </div>';
+
+        html += '  <div class="mod-controls">';
+        html += '    <div class="qty-wrap">';
+        html += '      <span class="mod-field-label">จำนวนคงเหลือในตลับ</span>';
+        html += '      <div class="qty-control">';
+        html += '        <button class="qty-btn" onclick="step(' + m.id + ',-1)">-</button>';
+        html += '        <input class="qty-input" type="number" inputmode="numeric" min="0" max="' + MAX_PILLS + '" id="q-' + m.id + '" value="' + m.count + '" oninput="setQty(' + m.id + ')">';
+        html += '        <button class="qty-btn" onclick="step(' + m.id + ',1)">+</button>';
+        html += '        <span class="qty-cap">สูงสุด ' + MAX_PILLS + ' เม็ด</span>';
+        html += '      </div>';
+        html += '    </div>';
+        html += '    <span class="mod-badge">Module ' + m.id + '</span>';
+        html += '  </div>';
+
+        html += '  <div class="slots-wrap">';
+        html += '    <span class="mod-field-label">ช่วงเวลาที่ต้องจ่ายยา</span>';
+        html += '    <div class="slots-row">';
+        for (var j = 0; j < 7; j++) {
+          var active = (m.slots & (1 << j)) ? " active" : "";
+          html += '      <div id="s-' + m.id + '-' + j + '" class="slot-pill' + active + '" onclick="tog(' + m.id + ',' + j + ')">' + SLOT_LABELS[j] + '</div>';
+        }
+        html += '    </div>';
+        html += '  </div>';
+        html += '</div>';
+      }
+      document.getElementById('module-container').innerHTML = html;
+    }
+
+    /* step() with 0..16 clamp */
+    function step(id, d) {
+      var m = modules[id - 1];
+      m.count = clamp(m.count + d, 0, MAX_PILLS);
+      var q = document.getElementById('q-' + id);
+      if (q) q.value = m.count;
+    }
+
+    /* Direct number input */
+    function setQty(id) {
+      var q = document.getElementById('q-' + id);
+      if (!q) return;
+      var v = clamp(q.value, 0, MAX_PILLS);
+      q.value = v;
+      modules[id - 1].count = v;
+    }
+
+    function normalizeSlotsMask(mask) {
+      mask = safeInt(mask) & 0x7F;
+      for (var base = 0; base <= 4; base += 2) {
+        var pairMask = (1 << base) | (1 << (base + 1));
+        if ((mask & pairMask) === pairMask) {
+          mask &= ~(1 << (base + 1));
+        }
+      }
+      return mask;
+    }
+
+    function tog(id, b) {
+      var m = modules[id - 1];
+      if (!m) return;
+
+      if (b === 6) {
+        m.slots ^= (1 << b);
+      } else {
+        var pairBase = Math.floor(b / 2) * 2;
+        var pairMask = (1 << pairBase) | (1 << (pairBase + 1));
+        var tappedMask = (1 << b);
+
+        if (m.slots & tappedMask) {
+          m.slots &= ~tappedMask;
+        } else {
+          m.slots &= ~pairMask;
+          m.slots |= tappedMask;
+        }
+      }
+
+      m.slots = normalizeSlotsMask(m.slots);
+
+      for (var j = 0; j < 7; j++) {
+        var el = document.getElementById('s-' + id + '-' + j);
+        if (!el) continue;
+        if (m.slots & (1 << j)) {
+          el.classList.add('active');
+        } else {
+          el.classList.remove('active');
+        }
+      }
+    }
+
+    function upd(id) {
+      modules[id - 1].name = document.getElementById('n-' + id).value;
+    }
+    function saveData() {
+      var btn = document.getElementById('save-txt');
+      var orig = btn.innerText;
+      btn.innerText = "กำลังส่ง...";
+
+      try {
+        var p = {};
+        p.scheduleEnabled = document.getElementById('master').checked ? 1 : 0;
+
+        for (var t = 0; t < TIME_KEYS.length; t++) {
+          var el = document.getElementById(TIME_KEYS[t]);
+          if (el && el.value) p[TIME_KEYS[t]] = el.value;
+        }
+
+        for (var i = 0; i < modules.length; i++) {
+          upd(modules[i].id);
+          setQty(modules[i].id);
+          p["med" + modules[i].id + "_name"] = modules[i].name;
+          p["med" + modules[i].id + "_count"] = clamp(modules[i].count, 0, MAX_PILLS);
+          p["med" + modules[i].id + "_slots"] = normalizeSlotsMask(modules[i].slots);
+        }
+
+        #["esp32cam_dispenser"].writeShadow(p);
+
+        btn.innerText = "✅ เรียบร้อย";
+        setTimeout(function () { btn.innerText = orig; }, 2000);
+      } catch (e) {
+        btn.innerText = "❌ ผิดพลาด";
+        console.error("Save error:", e);
+        setTimeout(function () { btn.innerText = orig; }, 3000);
+      }
+    }
+
+    // --- RUN ---
+    renderModules();
+
+    try {
+      initFromShadow();
+      renderModules();
+      setStatus(true);
+    } catch (e) {
+      console.warn("Shadow init:", e);
+      setStatus(false);
+    }
+  </script>
+</body>
+
+</html>
+

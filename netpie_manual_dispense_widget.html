@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <style>
+    :root{
+      --pri:#1d4ed8;
+      --pri2:#38bdf8;
+      --muted:#5b6b82;
+      --ok:#10b981;
+      --bad:#ef4444;
+      --line:rgba(11,18,32,.08);
+      --shadow:0 16px 36px rgba(15,23,42,.10);
+      --r18:18px;
+      --r22:22px;
+    }
+
+    *{margin:0;padding:0;box-sizing:border-box;}
+    html,body{height:100%;}
+
+    html{
+      -webkit-text-size-adjust:100%;
+      text-size-adjust:100%;
+    }
+
+    body{
+      font-family:"Segoe UI",Tahoma,sans-serif;
+      color:#0b1220;
+      padding:12px;
+      background:transparent;
+      -webkit-text-size-adjust:100%;
+      text-size-adjust:100%;
+      overflow-x:hidden;
+    }
+
+    .card{
+      width:100%;
+      max-width:720px;
+      margin:0 auto;
+      background:rgba(255,255,255,.92);
+      border-radius:24px;
+      border:1px solid rgba(255,255,255,.70);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+      backdrop-filter:blur(16px);
+    }
+
+    .card-head{
+      padding:16px;
+      display:flex;
+      align-items:center;
+      gap:12px;
+      border-bottom:1px solid rgba(11,18,32,.06);
+      background:
+        radial-gradient(700px 160px at 15% 35%, rgba(56,189,248,.28), transparent 60%),
+        radial-gradient(600px 140px at 90% 20%, rgba(29,78,216,.20), transparent 58%),
+        rgba(255,255,255,.62);
+      position:relative;
+    }
+
+    .card-head:before{
+      content:"";
+      position:absolute;
+      left:0;top:0;bottom:0;width:5px;
+      background:linear-gradient(180deg,var(--pri) 0%,var(--pri2) 100%);
+      opacity:.95;
+    }
+
+    .head-ico{
+      width:44px;
+      height:44px;
+      border-radius:18px;
+      display:grid;
+      place-items:center;
+      background:rgba(255,255,255,.84);
+      border:1px solid rgba(11,18,32,.06);
+      box-shadow:0 12px 22px rgba(15,23,42,.08);
+      font-size:20px;
+      flex-shrink:0;
+    }
+
+    .head-title{
+      min-width:0;
+    }
+
+    .head-title b{
+      display:block;
+      font-size:16px;
+      font-weight:1000;
+      line-height:1.25;
+    }
+
+    .head-title span{
+      display:block;
+      margin-top:3px;
+      font-size:12px;
+      color:var(--muted);
+      font-weight:800;
+      line-height:1.4;
+    }
+
+    .content{
+      padding:16px;
+    }
+
+    .input-grp{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) 112px;
+      gap:12px;
+      margin-bottom:14px;
+    }
+
+    .field{
+      min-width:0;
+    }
+
+    label{
+      display:block;
+      margin-bottom:6px;
+      font-size:12px;
+      font-weight:900;
+      color:var(--muted);
+    }
+
+    select,
+    input{
+      width:100%;
+      height:48px;
+      border-radius:14px;
+      border:1px solid #cbd5e1;
+      outline:none;
+      font-family:inherit;
+      font-weight:1000;
+      font-size:16px;
+      background:rgba(255,255,255,.96);
+      color:#0b1220;
+      transition:.15s;
+      -webkit-appearance:none;
+      appearance:none;
+    }
+
+    select{
+      padding:0 12px;
+      cursor:pointer;
+    }
+
+    input{
+      padding:0 12px;
+      text-align:center;
+      touch-action:manipulation;
+    }
+
+    select:focus,
+    input:focus{
+      border-color:rgba(29,78,216,.40);
+      box-shadow:0 0 0 6px rgba(29,78,216,.14);
+      background:#fff;
+    }
+
+    input.qty-input{
+      font-size:16px !important;
+      letter-spacing:.2px;
+    }
+
+    .btn-row{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) 148px;
+      gap:12px;
+    }
+
+    button{
+      height:50px;
+      border-radius:16px;
+      border:none;
+      font-family:inherit;
+      font-weight:1000;
+      font-size:16px;
+      cursor:pointer;
+      transition:.15s;
+      touch-action:manipulation;
+      -webkit-tap-highlight-color:transparent;
+    }
+
+    button:active{
+      transform:scale(.98);
+    }
+
+    .btn-dispense{
+      background:linear-gradient(135deg,var(--pri) 0%,var(--pri2) 100%);
+      color:#fff;
+      box-shadow:0 12px 24px rgba(29,78,216,.24);
+    }
+
+    .btn-all{
+      background:rgba(239,68,68,.10);
+      border:1px solid rgba(239,68,68,.28);
+      color:var(--bad);
+    }
+
+    #stat_msg{
+      margin-top:12px;
+      min-height:18px;
+      text-align:center;
+      font-size:13px;
+      font-weight:1000;
+      color:var(--ok);
+      line-height:1.4;
+    }
+
+    @media (max-width:560px){
+      body{
+        padding:10px;
+      }
+
+      .card{
+        border-radius:20px;
+      }
+
+      .card-head,
+      .content{
+        padding:14px;
+      }
+
+      .head-title b{
+        font-size:15px;
+      }
+
+      .input-grp,
+      .btn-row{
+        grid-template-columns:1fr;
+      }
+
+      .btn-all{
+        width:100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-head">
+      <div class="head-ico">🕹️</div>
+      <div class="head-title">
+        <b>สั่งคืนยา / Manual Dispense</b>
+        <span>สั่งจ่ายยาออกจากตลับทันทีผ่านระบบคลาวด์</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="input-grp">
+        <div class="field">
+          <label for="man_module">เลือกตลับยา</label>
+          <select id="man_module">
+            <option value="1">💊 ตลับที่ 1</option>
+            <option value="2">💊 ตลับที่ 2</option>
+            <option value="3">💊 ตลับที่ 3</option>
+            <option value="4">💊 ตลับที่ 4</option>
+            <option value="5">💊 ตลับที่ 5</option>
+            <option value="6">💊 ตลับที่ 6</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="man_qty">จำนวน</label>
+          <input class="qty-input" type="number" id="man_qty" value="1" min="1" max="16" inputmode="numeric">
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button id="btn_dispense" type="button" class="btn-dispense" onclick="sendDispense(false)">👇 จ่ายยาตามจำนวน</button>
+        <button id="btn_all" type="button" class="btn-all" onclick="sendDispense(true)">🛑 คืนยาทั้งหมด</button>
+      </div>
+
+      <div id="stat_msg"></div>
+    </div>
+  </div>
+
+  <script>
+    var statusTimer = null;
+    var isSending = false;
+    var DISPENSE_ALL_QTY = 100;
+    var DISPENSE_CLEAR_PAYLOAD = "0,0";
+    var DISPENSE_SEND_DELAY_MS = 180;
+
+    function setBusyState(disabled) {
+      document.getElementById("btn_dispense").disabled = disabled;
+      document.getElementById("btn_all").disabled = disabled;
+      document.getElementById("man_module").disabled = disabled;
+      document.getElementById("man_qty").disabled = disabled;
+    }
+
+    function setStatusMessage(colorVar, message, clearAfterMs) {
+      var btnStat = document.getElementById("stat_msg");
+
+      if (statusTimer) {
+        clearTimeout(statusTimer);
+        statusTimer = null;
+      }
+
+      btnStat.style.color = colorVar;
+      btnStat.innerText = message;
+
+      if (clearAfterMs > 0) {
+        statusTimer = setTimeout(function () {
+          btnStat.innerText = "";
+          statusTimer = null;
+        }, clearAfterMs);
+      }
+    }
+
+    function sendDispense(isAll) {
+      if (isSending) return;
+
+      var mod = document.getElementById("man_module").value;
+      var qtyInput = document.getElementById("man_qty");
+      var qty = isAll ? DISPENSE_ALL_QTY : qtyInput.value;
+
+      var rawQty = parseInt(qtyInput.value, 10);
+      if (isNaN(rawQty) || rawQty < 1) rawQty = 1;
+      if (rawQty > 16) rawQty = 16;
+      qtyInput.value = rawQty;
+      if (!isAll) qty = rawQty;
+
+      var payload = mod + "," + qty;
+      isSending = true;
+      setBusyState(true);
+      setStatusMessage("var(--muted)", "กำลังส่งคำสั่ง...", 0);
+
+      try {
+        // Clear the previous RPC value first so NETPIE always emits an update
+        // even when the operator repeats the same module/quantity.
+        #["esp32cam_dispenser"].writeShadow({ "disp_req": DISPENSE_CLEAR_PAYLOAD });
+
+        setTimeout(function () {
+          try {
+            #["esp32cam_dispenser"].writeShadow({ "disp_req": payload });
+            setStatusMessage("var(--ok)", "✅ ส่งคำสั่งขึ้นคลาวด์แล้ว รอหน้าตู้ทำงาน...", 3000);
+          } catch (innerError) {
+            console.error("Manual dispense widget send error:", innerError);
+            setStatusMessage(
+              "var(--bad)",
+              "❌ ส่งคำสั่งล้มเหลว" + (innerError && innerError.message ? ": " + innerError.message : ""),
+              5000
+            );
+          } finally {
+            isSending = false;
+            setBusyState(false);
+          }
+        }, DISPENSE_SEND_DELAY_MS);
+      } catch (e) {
+        console.error("Manual dispense widget error:", e);
+        setStatusMessage(
+          "var(--bad)",
+          "❌ ส่งคำสั่งล้มเหลว" + (e && e.message ? ": " + e.message : ""),
+          5000
+        );
+        isSending = false;
+        setBusyState(false);
+      }
+    }
+  </script>
+</body>
+</html>

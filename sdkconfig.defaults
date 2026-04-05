@@ -1,0 +1,52 @@
+# ESP32-P4 Unified Cam — sdkconfig defaults
+
+# Target
+CONFIG_IDF_TARGET="esp32p4"
+
+# PSRAM (for camera frame buffers)
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_SPIRAM_BOOT_INIT=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# Custom partition table (เพิ่ม app เป็น 1.6MB)
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+
+# Camera / CSI
+CONFIG_MIPI_CSI_ISR_IRAM_SAFE=n
+
+# Camera Sensor Feature
+CONFIG_CAMERA_OV5647=y
+CONFIG_CAMERA_OV5647_MIPI_RAW8_800X800_50FPS=y
+CONFIG_CAMERA_OV5647_CSI_LINESYNC_ENABLE=y
+CONFIG_CAMERA_OV5647_DEFAULT_IPA_JSON_CONFIGURATION_FILE=y
+
+# HTTP server
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+CONFIG_HTTPD_MAX_URI_LEN=512
+
+# LWIP sockets — increase to support 2 httpd instances with more open connections
+# Port-80 server: max_open_sockets=12 + 3 internal = 15
+# Port-81 server: max_open_sockets=4  + 3 internal =  7
+# Total needed: ~22; set 24 for headroom
+CONFIG_LWIP_MAX_SOCKETS=24
+
+# WiFi (via esp_hosted co-processor on P4)
+CONFIG_ESP_WIFI_REMOTE_ENABLED=y
+
+# NVS for WiFi credentials
+CONFIG_NVS_ENCRYPTION=n
+
+# Stack / heap
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=4096
+
+# Logging
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_COLORS=y
+
+# Task Watchdog — increase timeout for WiFi scan + SPI draw (sdio_write blocks IDLE0 ~5s)
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=n

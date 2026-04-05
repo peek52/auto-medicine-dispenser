@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root{
+      --bgA:#f4f8ff;
+      --bgB:#e7f0ff;
+      --panel:rgba(255,255,255,.92);
+      --panel-2:rgba(255,255,255,.82);
+      --text:#0b1220;
+      --muted:#5b6b82;
+      --pri:#1d4ed8;
+      --pri2:#38bdf8;
+      --ok:#10b981;
+      --warn:#f59e0b;
+      --bad:#ef4444;
+      --line:rgba(11,18,32,.08);
+      --shadow:0 24px 60px rgba(15,23,42,.14);
+      --shadow2:0 12px 28px rgba(15,23,42,.10);
+      --r20:20px;
+      --r24:24px;
+      --max:880px;
+    }
+
+    *{margin:0;padding:0;box-sizing:border-box;}
+    html,body{height:100%;}
+
+    body{
+      font-family:"Segoe UI",Tahoma,sans-serif;
+      color:var(--text);
+      padding:14px;
+      min-height:100vh;
+      -webkit-text-size-adjust:100%;
+      text-size-adjust:100%;
+      background:
+        radial-gradient(900px 520px at 10% -10%, rgba(56,189,248,.22), transparent 60%),
+        radial-gradient(820px 500px at 100% 10%, rgba(29,78,216,.18), transparent 55%),
+        linear-gradient(135deg,var(--bgA) 0%,var(--bgB) 100%);
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+    }
+
+    .wrap{max-width:var(--max);margin:0 auto;width:100%;}
+
+    .card{
+      background:var(--panel);
+      border:1px solid rgba(255,255,255,.72);
+      border-radius:var(--r24);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+      backdrop-filter:blur(16px);
+    }
+
+    .card-head{
+      padding:16px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:14px;
+      border-bottom:1px solid var(--line);
+      background:
+        radial-gradient(720px 180px at 15% 35%, rgba(56,189,248,.25), transparent 60%),
+        radial-gradient(620px 180px at 90% 15%, rgba(29,78,216,.18), transparent 58%),
+        rgba(255,255,255,.60);
+      position:relative;
+    }
+
+    .card-head:before{
+      content:"";
+      position:absolute;
+      left:0;top:0;bottom:0;width:5px;
+      background:linear-gradient(180deg,var(--pri) 0%,var(--pri2) 100%);
+    }
+
+    .head-left{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      min-width:0;
+      flex:1;
+    }
+
+    .head-ico{
+      width:48px;height:48px;
+      border-radius:18px;
+      display:grid;
+      place-items:center;
+      font-size:22px;
+      background:rgba(255,255,255,.92);
+      border:1px solid rgba(11,18,32,.06);
+      box-shadow:0 12px 22px rgba(15,23,42,.08);
+      flex-shrink:0;
+    }
+
+    .head-title{
+      display:flex;
+      flex-direction:column;
+      min-width:0;
+    }
+
+    .head-title b{
+      font-size:18px;
+      line-height:1.25;
+      font-weight:1000;
+      letter-spacing:.2px;
+    }
+
+    .head-title span{
+      margin-top:4px;
+      font-size:13px;
+      line-height:1.45;
+      color:var(--muted);
+      font-weight:800;
+    }
+
+    .status{
+      padding:9px 12px;
+      border-radius:999px;
+      border:1px solid rgba(11,18,32,.08);
+      background:rgba(255,255,255,.94);
+      font-size:12px;
+      font-weight:1000;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      white-space:nowrap;
+      color:var(--muted);
+      flex-shrink:0;
+    }
+
+    .status .dot{
+      width:8px;height:8px;border-radius:999px;
+      background:rgba(11,18,32,.28);
+      box-shadow:0 0 0 5px rgba(11,18,32,.08);
+    }
+
+    .status.online{color:#0f5132;}
+    .status.online .dot{background:var(--ok);box-shadow:0 0 0 5px rgba(16,185,129,.16);}
+    .status.offline{color:#7f1d1d;}
+    .status.offline .dot{background:var(--bad);box-shadow:0 0 0 5px rgba(239,68,68,.14);}
+
+    .content{padding:16px;}
+
+    .hero{
+      display:grid;
+      grid-template-columns:1.35fr .95fr;
+      gap:14px;
+      margin-bottom:14px;
+    }
+
+    .hero-panel{
+      background:var(--panel-2);
+      border:1px solid rgba(11,18,32,.06);
+      border-radius:22px;
+      box-shadow:var(--shadow2);
+      padding:16px;
+    }
+
+    .hero-panel h3{
+      font-size:13px;
+      color:var(--muted);
+      font-weight:1000;
+      letter-spacing:.25px;
+      margin-bottom:8px;
+    }
+
+    .big-total{
+      display:flex;
+      align-items:flex-end;
+      gap:10px;
+      margin-bottom:10px;
+    }
+
+    .big-total .num{
+      font-size:60px;
+      line-height:.9;
+      font-weight:1000;
+      letter-spacing:-2px;
+      color:var(--pri);
+    }
+
+    .big-total .unit{
+      font-size:15px;
+      font-weight:1000;
+      color:var(--muted);
+      margin-bottom:8px;
+    }
+
+    .hero-copy{
+      font-size:13px;
+      line-height:1.55;
+      color:var(--muted);
+      font-weight:800;
+    }
+
+    .stats-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+    }
+
+    .stat-box{
+      background:rgba(255,255,255,.96);
+      border:1px solid rgba(11,18,32,.06);
+      border-radius:18px;
+      padding:14px 12px;
+      box-shadow:var(--shadow2);
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      justify-content:center;
+      min-height:104px;
+    }
+
+    .stat-box .label{
+      font-size:11px;
+      font-weight:1000;
+      color:var(--muted);
+      letter-spacing:.2px;
+    }
+
+    .stat-box .value{
+      font-size:38px;
+      line-height:1;
+      font-weight:1000;
+      letter-spacing:-1px;
+    }
+
+    .stat-box .sub{
+      font-size:12px;
+      color:var(--muted);
+      font-weight:900;
+      line-height:1.35;
+    }
+
+    .modules-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+      gap:14px;
+    }
+
+    .module-card{
+      position:relative;
+      background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(247,250,255,.92) 100%);
+      border:1px solid rgba(11,18,32,.08);
+      border-radius:22px;
+      box-shadow:var(--shadow2);
+      padding:16px;
+      overflow:hidden;
+    }
+
+    .module-card:before{
+      content:"";
+      position:absolute;
+      left:0;top:0;bottom:0;width:5px;
+      border-radius:999px;
+      background:var(--accent, linear-gradient(180deg,var(--pri) 0%,var(--pri2) 100%));
+      opacity:.98;
+    }
+
+    .module-card.state-ok{--accent:linear-gradient(180deg,#10b981 0%,#34d399 100%);}
+    .module-card.state-warn{--accent:linear-gradient(180deg,#f59e0b 0%,#fbbf24 100%);}
+    .module-card.state-bad{--accent:linear-gradient(180deg,#ef4444 0%,#f87171 100%);}
+
+    .module-top{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:14px;
+    }
+
+    .module-id{
+      font-size:12px;
+      font-weight:1000;
+      color:#0b4aa8;
+      letter-spacing:.2px;
+      margin-bottom:4px;
+    }
+
+    .module-name{
+      font-size:20px;
+      line-height:1.2;
+      font-weight:1000;
+      color:var(--text);
+      word-break:break-word;
+    }
+
+    .module-status{
+      padding:8px 10px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:1000;
+      white-space:nowrap;
+      border:1px solid rgba(11,18,32,.08);
+      background:rgba(255,255,255,.90);
+      color:var(--muted);
+      flex-shrink:0;
+    }
+
+    .state-ok .module-status{color:#0f5132;background:rgba(16,185,129,.10);}
+    .state-warn .module-status{color:#9a6700;background:rgba(245,158,11,.14);}
+    .state-bad .module-status{color:#7f1d1d;background:rgba(239,68,68,.12);}
+
+    .count-row{
+      display:flex;
+      align-items:flex-end;
+      gap:8px;
+      margin-bottom:10px;
+    }
+
+    .count-num{
+      font-size:54px;
+      line-height:.9;
+      font-weight:1000;
+      letter-spacing:-2px;
+    }
+
+    .count-max{
+      font-size:14px;
+      font-weight:1000;
+      color:var(--muted);
+      margin-bottom:8px;
+    }
+
+    .state-ok .count-num{color:var(--ok);}
+    .state-warn .count-num{color:var(--warn);}
+    .state-bad .count-num{color:var(--bad);}
+
+    .progress{
+      height:10px;
+      border-radius:999px;
+      background:rgba(11,18,32,.08);
+      overflow:hidden;
+      margin-bottom:12px;
+    }
+
+    .progress-fill{
+      height:100%;
+      width:0;
+      border-radius:999px;
+      transition:width .25s ease;
+      background:var(--pri);
+    }
+
+    .state-ok .progress-fill{background:var(--ok);}
+    .state-warn .progress-fill{background:var(--warn);}
+    .state-bad .progress-fill{background:var(--bad);}
+
+    .slot-label{
+      font-size:11px;
+      font-weight:1000;
+      color:var(--muted);
+      margin-bottom:8px;
+      letter-spacing:.18px;
+    }
+
+    .slots{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+    }
+
+    .slot-pill{
+      padding:7px 10px;
+      border-radius:999px;
+      background:rgba(29,78,216,.08);
+      border:1px solid rgba(29,78,216,.12);
+      color:#24416a;
+      font-size:11px;
+      font-weight:1000;
+      line-height:1;
+    }
+
+    .slot-pill.empty{
+      background:transparent;
+      border-color:rgba(11,18,32,.10);
+      color:var(--muted);
+      opacity:.82;
+    }
+
+    @media (max-width:900px){
+      body{padding:12px;}
+      .hero{
+        grid-template-columns:1fr;
+      }
+      .modules-grid{
+        grid-template-columns:1fr;
+      }
+      .card-head{
+        flex-direction:column;
+        align-items:stretch;
+      }
+      .head-right{
+        justify-content:flex-start;
+      }
+    }
+
+    @media (max-width:560px){
+      body{
+        padding:10px;
+      }
+      .card{
+        border-radius:20px;
+      }
+      .card-head{
+        padding:14px;
+      }
+      .content{
+        padding:14px;
+      }
+      .head-ico{
+        width:42px;height:42px;border-radius:15px;font-size:20px;
+      }
+      .head-title b{
+        font-size:16px;
+      }
+      .head-title span{
+        font-size:12px;
+      }
+      .big-total .num{
+        font-size:48px;
+      }
+      .stat-box{
+        min-height:88px;
+        padding:12px 10px;
+      }
+      .stat-box .value{
+        font-size:32px;
+      }
+      .module-card{
+        padding:14px;
+      }
+      .module-name{
+        font-size:18px;
+      }
+      .count-num{
+        font-size:46px;
+      }
+      .module-top{
+        flex-direction:column;
+        align-items:flex-start;
+      }
+      .module-status{
+        align-self:flex-start;
+      }
+      .stats-grid{
+        grid-template-columns:1fr 1fr;
+      }
+    }
+
+    @media (max-width:390px){
+      .stats-grid{
+        grid-template-columns:1fr;
+      }
+      .big-total .num{
+        font-size:42px;
+      }
+      .count-num{
+        font-size:40px;
+      }
+      .slot-pill{
+        width:100%;
+        text-align:center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="card-head">
+        <div class="head-left">
+          <div class="head-ico">💊</div>
+          <div class="head-title">
+            <b>มอนิเตอร์สถานะตลับยา</b>
+            <span>ดูจำนวนยาคงเหลือของแต่ละตลับแบบอ่านง่าย พร้อมแจ้งเตือนยาใกล้หมดทันที</span>
+          </div>
+        </div>
+        <div class="head-right">
+          <div class="status offline" id="net-status">
+            <span class="dot"></span>
+            <span id="net-status-txt">ออฟไลน์</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="hero">
+          <div class="hero-panel">
+            <h3>ภาพรวมยาทั้งระบบ</h3>
+            <div class="big-total">
+              <div class="num" id="t-total">0</div>
+              <div class="unit">เม็ด</div>
+            </div>
+            <div class="hero-copy">ยอดรวมยาคงเหลือจากทุกตลับ ช่วยให้ดูภาพรวมทั้งเครื่องได้ทันทีแบบหน้าเดียว</div>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-box">
+              <div class="label">ตลับพร้อมจ่าย</div>
+              <div class="value" id="t-ready" style="color:var(--ok);">0</div>
+              <div class="sub">ยังมียาเหลือ</div>
+            </div>
+            <div class="stat-box">
+              <div class="label">ยาใกล้หมด</div>
+              <div class="value" id="t-low" style="color:var(--warn);">0</div>
+              <div class="sub">เหลือไม่เกิน 3 เม็ด</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="module-container" class="modules-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window._sh = {};
+    window._sh.enabled = "${#["esp32cam_dispenser"]["shadow"]["scheduleEnabled"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med1_name = "${#["esp32cam_dispenser"]["shadow"]["med1_name"]}";
+    window._sh.med1_count = "${#["esp32cam_dispenser"]["shadow"]["med1_count"]}";
+    window._sh.med1_slots = "${#["esp32cam_dispenser"]["shadow"]["med1_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med2_name = "${#["esp32cam_dispenser"]["shadow"]["med2_name"]}";
+    window._sh.med2_count = "${#["esp32cam_dispenser"]["shadow"]["med2_count"]}";
+    window._sh.med2_slots = "${#["esp32cam_dispenser"]["shadow"]["med2_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med3_name = "${#["esp32cam_dispenser"]["shadow"]["med3_name"]}";
+    window._sh.med3_count = "${#["esp32cam_dispenser"]["shadow"]["med3_count"]}";
+    window._sh.med3_slots = "${#["esp32cam_dispenser"]["shadow"]["med3_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med4_name = "${#["esp32cam_dispenser"]["shadow"]["med4_name"]}";
+    window._sh.med4_count = "${#["esp32cam_dispenser"]["shadow"]["med4_count"]}";
+    window._sh.med4_slots = "${#["esp32cam_dispenser"]["shadow"]["med4_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med5_name = "${#["esp32cam_dispenser"]["shadow"]["med5_name"]}";
+    window._sh.med5_count = "${#["esp32cam_dispenser"]["shadow"]["med5_count"]}";
+    window._sh.med5_slots = "${#["esp32cam_dispenser"]["shadow"]["med5_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med6_name = "${#["esp32cam_dispenser"]["shadow"]["med6_name"]}";
+    window._sh.med6_count = "${#["esp32cam_dispenser"]["shadow"]["med6_count"]}";
+    window._sh.med6_slots = "${#["esp32cam_dispenser"]["shadow"]["med6_slots"]}";
+  </script>
+
+  <script>
+    var SLOT_LABELS = ["เช้า-ก่อน", "เช้า-หลัง", "เที่ยง-ก่อน", "เที่ยง-หลัง", "เย็น-ก่อน", "เย็น-หลัง", "ก่อนนอน"];
+    var MAX_PILLS = 16;
+    var LOW_STOCK = 3;
+
+    var modules = [];
+    for (var i = 0; i < 6; i++) {
+      modules.push({ id: i + 1, name: "", count: 0, slots: 0 });
+    }
+
+    function safeStr(val) {
+      if (val === undefined || val === null || val === "undefined" || val === "null" || val === "") return "";
+      return String(val);
+    }
+
+    function safeInt(val) {
+      var n = parseInt(val, 10);
+      return isNaN(n) ? 0 : n;
+    }
+
+    function clamp(n, a, b) {
+      n = safeInt(n);
+      return Math.max(a, Math.min(b, n));
+    }
+
+    function escapeHtml(val) {
+      return safeStr(val)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function setStatus(isOnline) {
+      var el = document.getElementById("net-status");
+      var txt = document.getElementById("net-status-txt");
+      if (!el || !txt) return;
+
+      if (isOnline) {
+        el.classList.remove("offline");
+        el.classList.add("online");
+        txt.innerText = "ออนไลน์";
+      } else {
+        el.classList.remove("online");
+        el.classList.add("offline");
+        txt.innerText = "ออฟไลน์";
+      }
+    }
+
+    function initFromShadow() {
+      var sh = window._sh || {};
+      for (var i = 0; i < 6; i++) {
+        var idx = i + 1;
+        modules[i].name = safeStr(sh["med" + idx + "_name"]);
+        modules[i].count = clamp(sh["med" + idx + "_count"], 0, MAX_PILLS);
+        modules[i].slots = safeInt(sh["med" + idx + "_slots"]);
+      }
+    }
+
+    function getState(count) {
+      if (count <= 0) return { key: "bad", label: "ยาหมด" };
+      if (count <= LOW_STOCK) return { key: "warn", label: "ใกล้หมด" };
+      return { key: "ok", label: "พร้อมจ่าย" };
+    }
+
+    function renderModules() {
+      var html = "";
+      var total = 0;
+      var ready = 0;
+      var low = 0;
+
+      for (var i = 0; i < modules.length; i++) {
+        var m = modules[i];
+        var state = getState(m.count);
+        var pct = Math.min(100, Math.round((m.count / MAX_PILLS) * 100));
+
+        total += m.count;
+        if (m.count > 0) ready++;
+        if (m.count > 0 && m.count <= LOW_STOCK) low++;
+
+        html += '<div class="module-card state-' + state.key + '">';
+        html += '  <div class="module-top">';
+        html += '    <div>';
+        html += '      <div class="module-id">ตลับที่ ' + m.id + "</div>";
+        html += '      <div class="module-name">' + (escapeHtml(m.name) || "— ยังไม่ได้ตั้งชื่อยา —") + "</div>";
+        html += "    </div>";
+        html += '    <div class="module-status">' + state.label + "</div>";
+        html += "  </div>";
+
+        html += '  <div class="count-row">';
+        html += '    <div class="count-num">' + m.count + "</div>";
+        html += '    <div class="count-max">/ ' + MAX_PILLS + " เม็ด</div>";
+        html += "  </div>";
+
+        html += '  <div class="progress"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
+        html += '  <div class="slot-label">รอบที่ต้องจ่ายยา</div>';
+        html += '  <div class="slots">';
+
+        var hasSlot = false;
+        for (var j = 0; j < 7; j++) {
+          if (m.slots & (1 << j)) {
+            html += '<div class="slot-pill">' + SLOT_LABELS[j] + "</div>";
+            hasSlot = true;
+          }
+        }
+        if (!hasSlot) {
+          html += '<div class="slot-pill empty">ไม่มีรอบจ่าย</div>';
+        }
+
+        html += "  </div>";
+        html += "</div>";
+      }
+
+      document.getElementById("module-container").innerHTML = html;
+      document.getElementById("t-total").innerText = total;
+      document.getElementById("t-ready").innerText = ready;
+      document.getElementById("t-low").innerText = low;
+    }
+
+    try {
+      initFromShadow();
+      renderModules();
+      setStatus(true);
+    } catch (e) {
+      console.warn("Shadow init:", e);
+      setStatus(false);
+    }
+  </script>
+</body>
+</html>
