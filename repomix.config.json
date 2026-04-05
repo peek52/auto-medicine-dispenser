@@ -1,0 +1,32 @@
+{
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml",
+    "includeLogs": true,
+    "includeLogsCount": 10
+  },
+  "include": [
+    "README.md",
+    "AI_CONTEXT.md",
+    "CMakeLists.txt",
+    "partitions.csv",
+    "sdkconfig.defaults",
+    "*.bat",
+    "*.html",
+    "main/**/*.{c,cpp,h,hpp,yml}",
+    "tools/**/*.ps1"
+  ],
+  "ignore": {
+    "useGitignore": true,
+    "customPatterns": [
+      "components/**",
+      "main/FreeSans*.h",
+      "main/FreeSansBold*.h",
+      "main/ui_*_thai_labels.h",
+      "main/ui_utf8_font_data.h",
+      "main/index_html.h",
+      "main/display_clock.cpp.bak",
+      "thai_test*.png"
+    ]
+  }
+}
