@@ -110,12 +110,16 @@ esp_err_t camera_state_handler(httpd_req_t *req) {
     char json[256];
     snprintf(json, sizeof(json),
              "{\"ok\":true,\"sensor\":\"%s\",\"jpeg_quality\":%d,"
-             "\"stream_delay_ms\":%d,\"mirror\":%d,\"vflip\":%d}",
+             "\"stream_delay_ms\":%d,\"mirror\":%d,\"vflip\":%d,"
+             "\"brightness\":%d,\"contrast\":%d,\"saturation\":%d}",
              camera_get_sensor_name(),
              jpeg_enc_get_quality(),
              camera_stream_get_delay_ms(),
              camera_get_hmirror() ? 1 : 0,
-             camera_get_vflip() ? 1 : 0);
+             camera_get_vflip() ? 1 : 0,
+             camera_get_brightness(),
+             camera_get_contrast(),
+             camera_get_saturation());
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
@@ -143,6 +147,24 @@ esp_err_t camera_set_handler(httpd_req_t *req) {
         esp_err_t ret = camera_set_vflip(value != 0);
         if (ret != ESP_OK) {
             return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "vflip unsupported");
+        }
+    }
+    if (query_value_int(req, "brightness", &value)) {
+        esp_err_t ret = camera_set_brightness(value);
+        if (ret != ESP_OK) {
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "brightness unsupported");
+        }
+    }
+    if (query_value_int(req, "contrast", &value)) {
+        esp_err_t ret = camera_set_contrast(value);
+        if (ret != ESP_OK) {
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "contrast unsupported");
+        }
+    }
+    if (query_value_int(req, "saturation", &value)) {
+        esp_err_t ret = camera_set_saturation(value);
+        if (ret != ESP_OK) {
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "saturation unsupported");
         }
     }
 

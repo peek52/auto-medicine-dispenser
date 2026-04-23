@@ -163,6 +163,7 @@ void ui_confirm_handle_touch(uint16_t tx_n, uint16_t ty_n);
 extern int g_alert_volume;
 extern int g_nav_volume;
 extern bool g_nav_sound_enabled;         // 0-30: current DFPlayer volume
+extern int g_snd_button;
 // Removed g_pre_alert_minutes
 #ifdef __cplusplus
 extern "C" {
@@ -201,3 +202,10 @@ void draw_string_centered(int16_t cx, int16_t baseline_y, const char *str, uint1
 size_t safe_copy(char *dst, size_t dst_sz, const char *src);
 void ui_map_touch(uint16_t raw_x, uint16_t raw_y, uint16_t *ux, uint16_t *uy);
 void draw_top_bar_with_back(const char *title);
+
+// Scaled UTF-8 drawing functions (implemented in ui_standby.cpp)
+#include "ui_utf8_font_data.h"
+void ui_utf8_draw_glyph_mask_scaled(int16_t x, int16_t y, const ui_utf8_font_glyph_t *glyph, uint16_t color, uint8_t target_height);
+int16_t ui_utf8_text_width_scaled_px(const char *text, uint8_t target_height);
+int16_t ui_utf8_draw_text_scaled_px(int16_t x, int16_t y, const char *text, uint16_t color, uint8_t target_height);
+void draw_utf8_centered_line_scaled(int16_t center_x, int16_t top_y, const char *text, uint16_t fg, uint16_t bg, uint8_t target_height);

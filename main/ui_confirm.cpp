@@ -46,8 +46,8 @@ void ui_confirm_render(void)
                     draw_confirm_label((LCD_W - kThPleaseRefill.width) / 2, 173, &kThPleaseRefill);
                     draw_confirm_label((LCD_W - kThTapDismiss.width) / 2, 228, &kThTapDismiss);
                 } else {
-                    draw_string_centered(LCD_W/2, 195, "PLEASE REFILL", 0x0000, THEME_BORDER, &FreeSansBold24pt7b);
-                    draw_string_centered(LCD_W/2, 245, "TAP ANYWHERE TO DISMISS", 0x0000, THEME_BORDER, &FreeSans12pt7b);
+                    draw_string_centered(LCD_W/2, 192, "REFILL NEEDED", 0x0000, THEME_BORDER, &FreeSansBold18pt7b);
+                    draw_string_centered(LCD_W/2, 241, "TAP TO CLOSE", 0x0000, THEME_BORDER, &FreeSans12pt7b);
                 }
             } else {
                 if (g_ui_language == UI_LANG_TH) {

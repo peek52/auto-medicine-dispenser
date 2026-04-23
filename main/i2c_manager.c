@@ -61,10 +61,22 @@ i2c_master_bus_handle_t i2c_manager_get_bus_handle(void)
     return s_bus_handle;
 }
 
-esp_err_t i2c_manager_ping(uint8_t addr)
+#define MAX_I2C_DEVICES 8
+static struct {
+    uint8_t addr;
+    i2c_master_dev_handle_t dev_handle;
+} s_device_cache[MAX_I2C_DEVICES];
+static int s_device_count = 0;
+
+static i2c_master_dev_handle_t get_or_add_device(uint8_t addr)
 {
-    if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+    if (!s_bus_handle) return NULL;
+    for (int i = 0; i < s_device_count; i++) {
+        if (s_device_cache[i].addr == addr) {
+            return s_device_cache[i].dev_handle;
+        }
+    }
+    if (s_device_count >= MAX_I2C_DEVICES) return NULL;
 
     i2c_master_dev_handle_t dev = NULL;
     i2c_device_config_t dev_cfg = {
@@ -72,10 +84,24 @@ esp_err_t i2c_manager_ping(uint8_t addr)
         .device_address  = addr,
         .scl_speed_hz    = I2C_FREQ_HZ,
     };
-    esp_err_t ret = i2c_master_bus_add_device(s_bus_handle, &dev_cfg, &dev);
-    if (ret == ESP_OK) {
+    if (i2c_master_bus_add_device(s_bus_handle, &dev_cfg, &dev) == ESP_OK) {
+        s_device_cache[s_device_count].addr = addr;
+        s_device_cache[s_device_count].dev_handle = dev;
+        s_device_count++;
+        return dev;
+    }
+    return NULL;
+}
+
+esp_err_t i2c_manager_ping(uint8_t addr)
+{
+    if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+
+    esp_err_t ret = ESP_FAIL;
+    i2c_master_dev_handle_t dev = get_or_add_device(addr);
+    if (dev) {
         ret = i2c_master_probe(s_bus_handle, addr, 20);
-        i2c_master_bus_rm_device(dev);
     }
     xSemaphoreGive(g_i2c_mutex);
     return ret;
@@ -86,16 +112,10 @@ esp_err_t i2c_manager_write(uint8_t addr, const uint8_t *data, size_t len)
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
 
-    i2c_master_dev_handle_t dev = NULL;
-    i2c_device_config_t dev_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address  = addr,
-        .scl_speed_hz    = I2C_FREQ_HZ,
-    };
-    esp_err_t ret = i2c_master_bus_add_device(s_bus_handle, &dev_cfg, &dev);
-    if (ret == ESP_OK) {
+    esp_err_t ret = ESP_FAIL;
+    i2c_master_dev_handle_t dev = get_or_add_device(addr);
+    if (dev) {
         ret = i2c_master_transmit(dev, data, len, 50);
-        i2c_master_bus_rm_device(dev);
     }
     xSemaphoreGive(g_i2c_mutex);
     return ret;
@@ -106,16 +126,13 @@ esp_err_t i2c_manager_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t l
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
 
-    i2c_master_dev_handle_t dev = NULL;
-    i2c_device_config_t dev_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address  = addr,
-        .scl_speed_hz    = I2C_FREQ_HZ,
-    };
-    esp_err_t ret = i2c_master_bus_add_device(s_bus_handle, &dev_cfg, &dev);
-    if (ret == ESP_OK) {
-        ret = i2c_master_transmit_receive(dev, &reg, 1, buf, len, 50);
-        i2c_master_bus_rm_device(dev);
+    esp_err_t ret = ESP_FAIL;
+    i2c_master_dev_handle_t dev = get_or_add_device(addr);
+    if (dev) {
+        ret = i2c_master_transmit(dev, &reg, 1, 50);
+        if (ret == ESP_OK) {
+            ret = i2c_master_receive(dev, buf, len, 50);
+        }
     }
     xSemaphoreGive(g_i2c_mutex);
     return ret;
@@ -126,18 +143,11 @@ esp_err_t i2c_manager_read(uint8_t addr, uint8_t *buf, size_t len)
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
 
-    i2c_master_dev_handle_t dev = NULL;
-    i2c_device_config_t dev_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address  = addr,
-        .scl_speed_hz    = I2C_FREQ_HZ,
-    };
-    esp_err_t ret = i2c_master_bus_add_device(s_bus_handle, &dev_cfg, &dev);
-    if (ret == ESP_OK) {
+    esp_err_t ret = ESP_FAIL;
+    i2c_master_dev_handle_t dev = get_or_add_device(addr);
+    if (dev) {
         ret = i2c_master_receive(dev, buf, len, 50);
-        i2c_master_bus_rm_device(dev);
     }
     xSemaphoreGive(g_i2c_mutex);
     return ret;
 }
-

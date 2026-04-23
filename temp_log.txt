@@ -1,0 +1,6 @@
+Executing action: monitor
+Serial port COM6
+Connecting....
+Detecting chip type... ESP32-P4
+Running idf_monitor in directory D:\project\ddddddddd\unified_cam
+Executing "C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\Scripts\python.exe C:\Users\peekz\esp\esp-idf\tools/idf_monitor.py -p COM6 -b 115200 --toolchain-prefix riscv32-esp-elf- --target esp32p4 --revision 1 --decode-panic backtrace D:\project\ddddddddd\unified_cam\build\unified_cam.elf --force-color -m 'C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\Scripts\python.exe' 'C:\Users\peekz\esp\esp-idf\tools\idf.py'"...

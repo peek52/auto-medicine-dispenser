@@ -3,6 +3,7 @@
 #include "dispenser_scheduler.h"
 #include "i2c_manager.h"
 #include "dfplayer.h"
+#include "offline_sync.h"
 #include "wifi_sta.h"
 #include "ui_standby_thai_labels.h"
 #include "ui_utf8_text.h"
@@ -12,15 +13,20 @@
 static bool s_today_schedule_popup_drawn = false;
 static bool s_hw_alert_drawn = false;
 static uint8_t s_hw_alert_mask = 0;
+static uint32_t s_hw_health_next_check_ms = 0;
+static bool s_cached_pca_err = false;
+static bool s_cached_pcf_err = false;
+static bool s_cached_rtc_err = false;
 static int s_schedule_visible_slots[7] = {0};
 static int s_schedule_visible_count = 0;
 static int s_schedule_detail_slot = -1;
+static bool s_show_only_missed = false;
 
 static const int kSchedulePopupX = 24;
 static const int kSchedulePopupY = 24;
 static const int kSchedulePopupW = 432;
 static const int kSchedulePopupH = 272;
-static const int kScheduleCloseX = 382;
+static const int kScheduleCloseX = 390;
 static const int kScheduleCloseY = 36;
 static const int kScheduleCloseW = 58;
 static const int kScheduleCloseH = 32;
@@ -31,6 +37,14 @@ static const int kScheduleRowX = 42;
 static const int kScheduleRowY = 102;
 static const int kScheduleRowW = 396;
 static const int kScheduleRowH = 27;
+static const int kAlertPopupX = 28;
+static const int kAlertPopupY = 42;
+static const int kAlertPopupW = 424;
+static const int kAlertPopupH = 214;
+static const int kAlertButtonX = 172;
+static const int kAlertButtonY = 206;
+static const int kAlertButtonW = 136;
+static const int kAlertButtonH = 40;
 
 static void draw_standby_label(int16_t x, int16_t y, const ui_label_bitmap_t *label)
 {
@@ -61,15 +75,22 @@ static void draw_standby_label_centered(int16_t center_x, int16_t y, const ui_la
     draw_standby_label(center_x - (label->width / 2), y, label);
 }
 
+static void draw_standby_modal_button(int16_t x, int16_t y, int16_t w, int16_t h,
+                                      uint16_t fill, uint16_t border)
+{
+    fill_round_rect_frame(x, y, w, h, 10, fill, border);
+    draw_string_centered(x + (w / 2), y + 27, "OK", 0xFFFF, fill, &FreeSans12pt7b);
+}
+
 static const char *standby_translate_slot_th(const char *slot_label)
 {
     if (!slot_label) return "";
-    if (strcmp(slot_label, "Before Breakfast") == 0) return "ก่อนอาหารเช้า";
-    if (strcmp(slot_label, "After Breakfast") == 0)  return "หลังอาหารเช้า";
-    if (strcmp(slot_label, "Before Lunch") == 0)     return "ก่อนอาหารกลางวัน";
-    if (strcmp(slot_label, "After Lunch") == 0)      return "หลังอาหารกลางวัน";
-    if (strcmp(slot_label, "Before Dinner") == 0)    return "ก่อนอาหารเย็น";
-    if (strcmp(slot_label, "After Dinner") == 0)     return "หลังอาหารเย็น";
+    if (strcmp(slot_label, "Before Breakfast") == 0) return "ก่อนเช้า";
+    if (strcmp(slot_label, "After Breakfast") == 0)  return "หลังเช้า";
+    if (strcmp(slot_label, "Before Lunch") == 0)     return "ก่อนกลางวัน";
+    if (strcmp(slot_label, "After Lunch") == 0)      return "หลังกลางวัน";
+    if (strcmp(slot_label, "Before Dinner") == 0)    return "ก่อนเย็น";
+    if (strcmp(slot_label, "After Dinner") == 0)     return "หลังเย็น";
     if (strcmp(slot_label, "Bedtime") == 0)          return "ก่อนนอน";
     return slot_label;
 }
@@ -342,8 +363,13 @@ static void standby_build_slot_status(int slot_idx, int now_minutes, ui_language
     }
 
     if (slot_minutes < now_minutes) {
-        safe_copy(buf, buf_len, (lang == UI_LANG_TH) ? "ผ่านเวลา" : "Passed");
-        if (color) *color = THEME_TXT_MUTED;
+        if (dispenser_get_missed_slots() & (1 << slot_idx)) {
+            safe_copy(buf, buf_len, (lang == UI_LANG_TH) ? "พลาดการทาน" : "Missed");
+            if (color) *color = THEME_BAD;
+        } else {
+            safe_copy(buf, buf_len, (lang == UI_LANG_TH) ? "ผ่านเวลา" : "Passed");
+            if (color) *color = THEME_TXT_MUTED;
+        }
     } else if (slot_minutes == now_minutes) {
         safe_copy(buf, buf_len, (lang == UI_LANG_TH) ? "ถึงเวลา" : "Due now");
         if (color) *color = THEME_WARN;
@@ -437,7 +463,7 @@ static void standby_format_date_for_ui(const char *src, char *dst, size_t dst_le
     }
 }
 
-static void ui_utf8_draw_glyph_mask_scaled(int16_t x, int16_t y, const ui_utf8_font_glyph_t *glyph,
+void ui_utf8_draw_glyph_mask_scaled(int16_t x, int16_t y, const ui_utf8_font_glyph_t *glyph,
                                            uint16_t color, uint8_t target_height)
 {
     if (!glyph || !glyph->bitmap || glyph->width == 0 || glyph->height == 0 || target_height == 0) return;
@@ -463,13 +489,13 @@ static void ui_utf8_draw_glyph_mask_scaled(int16_t x, int16_t y, const ui_utf8_f
     }
 }
 
-static int16_t ui_utf8_text_width_scaled_px(const char *text, uint8_t target_height)
+int16_t ui_utf8_text_width_scaled_px(const char *text, uint8_t target_height)
 {
     int32_t base_width = ui_utf8_text_width(text);
     return (int16_t)((base_width * target_height) / kUiUtf8FontLineHeight);
 }
 
-static int16_t ui_utf8_draw_text_scaled_px(int16_t x, int16_t y, const char *text, uint16_t color, uint8_t target_height)
+int16_t ui_utf8_draw_text_scaled_px(int16_t x, int16_t y, const char *text, uint16_t color, uint8_t target_height)
 {
     int16_t cursor_x = x;
     int16_t last_base_x = x;
@@ -538,7 +564,7 @@ static int16_t ui_utf8_draw_text_scaled_px(int16_t x, int16_t y, const char *tex
     return cursor_x;
 }
 
-static void draw_utf8_centered_line_scaled(int16_t center_x, int16_t top_y, const char *text,
+void draw_utf8_centered_line_scaled(int16_t center_x, int16_t top_y, const char *text,
                                            uint16_t fg, uint16_t bg, uint8_t target_height)
 {
     int16_t text_w = ui_utf8_text_width_scaled_px(text, target_height);
@@ -547,13 +573,7 @@ static void draw_utf8_centered_line_scaled(int16_t center_x, int16_t top_y, cons
     ui_utf8_draw_text_scaled_px(text_x, top_y, text, fg, target_height);
 }
 
-static void draw_string_centered_scaled(int16_t center_x, int16_t baseline_y, const char *text,
-                                        uint16_t fg, uint16_t bg, const GFXfont *font, uint8_t scale)
-{
-    int16_t text_w = gfx_text_width_scaled(text, font, scale);
-    int16_t text_x = center_x - (text_w / 2);
-    draw_string_gfx_scaled(text_x, baseline_y, text, fg, bg, font, scale);
-}
+
 
 static int16_t standby_schedule_text_width_px(const char *text, uint8_t th_height)
 {
@@ -634,8 +654,8 @@ static void draw_schedule_summary_row(int16_t x, int16_t y, int16_t w, int16_t h
     char status[32] = "";
     uint16_t status_color = THEME_TXT_MAIN;
     standby_build_slot_status(slot_idx, now_minutes, lang, status, sizeof(status), &status_color);
-    uint8_t meal_height = (lang == UI_LANG_EN) ? 18 : 22;
-    uint8_t status_height = (lang == UI_LANG_EN) ? 18 : 22;
+    uint8_t meal_height = (lang == UI_LANG_EN) ? 16 : 18;
+    uint8_t status_height = (lang == UI_LANG_EN) ? 16 : 16;
 
     draw_string_gfx(x + 10, y + 21, sh->slot_time[slot_idx], 0xFFFF, row_bg, &FreeSans12pt7b);
     draw_schedule_text_line(x + 92, y + 4, 154, standby_slot_label_popup(slot_idx, lang), 0xFFFF, row_bg, meal_height);
@@ -678,6 +698,9 @@ static void draw_standby_page(bool force, const char *hhmm, const char *ss, cons
     const uint16_t ST_UP_TEXT      = ST_RGB565(22, 101, 52);
     const uint16_t ST_ONLINE       = ST_RGB565(34, 197, 94);
     const uint16_t ST_OFFLINE      = ST_RGB565(150, 150, 150);
+    const uint16_t ST_SYNC_OK      = ST_RGB565(14, 116, 144);
+    const uint16_t ST_SYNC_WAIT    = ST_RGB565(217, 119, 6);
+    const uint16_t ST_SYNC_IDLE    = ST_RGB565(100, 116, 139);
     const uint16_t ST_TXT_IP       = ST_RGB565(132, 167, 198);
     const uint16_t ST_BG_TOP       = ST_RGB565(21, 43, 71);
     const uint16_t ST_BG_BOT       = ST_RGB565(31, 58, 92);
@@ -795,15 +818,23 @@ static void draw_standby_page(bool force, const char *hhmm, const char *ss, cons
     }
 
     static char prev_ip_line[40] = "";
+    static char prev_sync_line[24] = "";
     char ip_line[40] = "";
+    char sync_line[24] = "";
     char wifi_name[40] = "";
     char web_url[64] = "";
     bool wifi_online = wifi_sta_connected() && strcmp(s_ip, "0.0.0.0") != 0;
+    bool ap_mode = (!wifi_online && strcmp(s_ip, "192.168.4.1") == 0);
+    size_t event_pending_count = offline_sync_pending_event_count();
+    size_t telegram_pending_count = offline_sync_pending_telegram_count();
+    size_t gsheet_pending_count = offline_sync_pending_gsheet_count();
+    size_t shadow_pending_count = offline_sync_pending_shadow_count();
+    uint16_t sync_bg = ST_SYNC_IDLE;
 
     if (wifi_online) {
         snprintf(ip_line, sizeof(ip_line), "IP: %s", s_ip);
-    } else if (strcmp(s_ip, "192.168.4.1") == 0) {
-        safe_copy(ip_line, sizeof(ip_line), "IP: 192.168.4.1");
+    } else if (ap_mode) {
+        safe_copy(ip_line, sizeof(ip_line), "AP: 192.168.4.1");
     } else {
         safe_copy(wifi_name, sizeof(wifi_name), (g_ui_language == UI_LANG_TH) ? "ยังไม่เชื่อม Wi-Fi" : "Wi-Fi not connected");
         safe_copy(web_url, sizeof(web_url), (g_ui_language == UI_LANG_TH) ? "แตะเพื่อดูการเชื่อมต่อ" : "Tap to view network");
@@ -813,9 +844,29 @@ static void draw_standby_page(bool force, const char *hhmm, const char *ss, cons
         safe_copy(ip_line, sizeof(ip_line), "IP: 0.0.0.0");
     }
 
-    if (force || s_ip_dirty || strcmp(ip_line, prev_ip_line) != 0) {
+    if (gsheet_pending_count > 0) {
+        snprintf(sync_line, sizeof(sync_line), "GS %u", (unsigned)gsheet_pending_count);
+        sync_bg = ST_SYNC_WAIT;
+    } else if (telegram_pending_count > 0) {
+        snprintf(sync_line, sizeof(sync_line), "TG %u", (unsigned)telegram_pending_count);
+        sync_bg = ST_SYNC_WAIT;
+    } else if (shadow_pending_count > 0) {
+        snprintf(sync_line, sizeof(sync_line), "NETPIE %u", (unsigned)shadow_pending_count);
+        sync_bg = ST_SYNC_IDLE;
+    } else if (event_pending_count > 0) {
+        snprintf(sync_line, sizeof(sync_line), "EVENT %u", (unsigned)event_pending_count);
+        sync_bg = ST_SYNC_WAIT;
+    } else if (wifi_online) {
+        safe_copy(sync_line, sizeof(sync_line), "SYNC OK");
+        sync_bg = ST_SYNC_OK;
+    } else {
+        safe_copy(sync_line, sizeof(sync_line), "NO PENDING");
+    }
+
+    if (force || s_ip_dirty || strcmp(ip_line, prev_ip_line) != 0 || strcmp(sync_line, prev_sync_line) != 0) {
         s_ip_dirty = false;
         safe_copy(prev_ip_line, sizeof(prev_ip_line), ip_line);
+        safe_copy(prev_sync_line, sizeof(prev_sync_line), sync_line);
         fill_rect(FOOT_X + 10, FOOT_Y + 4, FOOT_W - 20, FOOT_H - 8, ST_TIME_CARD);
 
         if (!wifi_online) {
@@ -834,7 +885,7 @@ static void draw_standby_page(bool force, const char *hhmm, const char *ss, cons
             }
         }
 
-        draw_string_gfx(FOOT_X + 108, FOOT_Y + 26, ip_line, ST_TXT_IP, ST_TIME_CARD, &FreeSans12pt7b);
+        draw_string_gfx(FOOT_X + 112, FOOT_Y + 26, ip_line, ST_TXT_IP, ST_TIME_CARD, &FreeSans12pt7b);
     }
 }
 
@@ -845,6 +896,13 @@ static void ui_standby_render_modal(uint32_t now)
     bool is_forced = force_redraw;
     if (force_redraw) force_redraw = false;
 
+    if (is_forced || now_ms >= s_hw_health_next_check_ms) {
+        s_cached_pca_err = (i2c_manager_ping(ADDR_PCA9685) != ESP_OK);
+        s_cached_pcf_err = (i2c_manager_ping(ADDR_PCF8574) != ESP_OK);
+        s_cached_rtc_err = (i2c_manager_ping(ADDR_DS3231) != ESP_OK);
+        s_hw_health_next_check_ms = now_ms + 10000;
+    }
+
     if (s_netpie_sync_popup_until > 0 && now_ms >= s_netpie_sync_popup_until) {
         s_netpie_sync_popup_until = 0;
         if (s_popup_state == 3) {
@@ -854,7 +912,9 @@ static void ui_standby_render_modal(uint32_t now)
     }
 
     char t_str[16] = "--:--:--";
-    ds3231_get_time_str(t_str, sizeof(t_str));
+    if (!s_cached_rtc_err) {
+        ds3231_get_time_str(t_str, sizeof(t_str));
+    }
 
     char hhmm[6] = "--:--";
     char ss[3] = "--";
@@ -868,8 +928,10 @@ static void ui_standby_render_modal(uint32_t now)
     static char last_valid_date_raw[32] = "";
     char date_raw[32] = "";
     char date_str[32] = "-- --/--/----";
-    if (ds3231_get_date_str(date_raw, sizeof(date_raw)) == ESP_OK && standby_date_is_valid(date_raw)) {
-        safe_copy(last_valid_date_raw, sizeof(last_valid_date_raw), date_raw);
+    if (!s_cached_rtc_err) {
+        if (ds3231_get_date_str(date_raw, sizeof(date_raw)) == ESP_OK && standby_date_is_valid(date_raw)) {
+            safe_copy(last_valid_date_raw, sizeof(last_valid_date_raw), date_raw);
+        }
     }
     if (last_valid_date_raw[0] != '\0') {
         standby_format_date_for_ui(last_valid_date_raw, date_str, sizeof(date_str), g_ui_language);
@@ -891,9 +953,9 @@ static void ui_standby_render_modal(uint32_t now)
         }
     }
 
-    bool pca_err = (i2c_manager_ping(ADDR_PCA9685) != ESP_OK);
-    bool pcf_err = (i2c_manager_ping(ADDR_PCF8574) != ESP_OK);
-    bool rtc_err = (i2c_manager_ping(ADDR_DS3231) != ESP_OK);
+    bool pca_err = s_cached_pca_err;
+    bool pcf_err = s_cached_pcf_err;
+    bool rtc_err = s_cached_rtc_err;
     bool hw_err = (pca_err || pcf_err || rtc_err);
     uint8_t hw_mask = 0;
     if (pca_err) hw_mask |= 0x01;
@@ -909,7 +971,8 @@ static void ui_standby_render_modal(uint32_t now)
         is_forced = true;
     }
 
-    if (s_popup_state != 2 && s_popup_state != 4 && s_popup_state != 5) {
+    if (s_popup_state != 1 && s_popup_state != 2 && s_popup_state != 3 &&
+        s_popup_state != 4 && s_popup_state != 5) {
         draw_standby_page(is_forced, hhmm, ss, date_str, dose_str);
     }
 
@@ -976,21 +1039,16 @@ static void ui_standby_render_modal(uint32_t now)
 
     if (!schedule_ok) {
         if (!s_sched_warn_dismissed && (s_popup_state != 1 || is_forced)) {
-            fill_round_rect_frame(40, 50, 400, 200, 15, THEME_WARN, 0xFFFF);
+            fill_round_rect_frame(kAlertPopupX, kAlertPopupY, kAlertPopupW, kAlertPopupH, 16, THEME_WARN, 0xFFFF);
             if (g_ui_language == UI_LANG_TH) {
-                draw_standby_label((LCD_W - kThNoSchedule1.width) / 2, 82, &kThNoSchedule1);
-                draw_standby_label((LCD_W - kThNoSchedule2.width) / 2, 130, &kThNoSchedule2);
+                draw_standby_label_centered(LCD_W / 2, 82, &kThNoSchedule1);
+                draw_standby_label_centered(LCD_W / 2, 130, &kThNoSchedule2);
             } else {
-                draw_string_centered(240, 100, "NO SCHEDULE DETECTED", 0xFFFF, THEME_WARN, &FreeSansBold18pt7b);
-                draw_string_centered(240, 145, "Please set schedule via Netpie or Menu", 0xFFFF, THEME_WARN, &FreeSans12pt7b);
+                draw_string_centered(LCD_W / 2, 102, "NO SCHEDULE DETECTED", 0xFFFF, THEME_WARN, &FreeSansBold18pt7b);
+                draw_string_centered(LCD_W / 2, 146, "Please set schedule via Netpie or Menu", 0xFFFF, THEME_WARN, &FreeSans12pt7b);
             }
 
-            fill_round_rect_frame(160, 190, 160, 45, 8, 0xFFFF, THEME_WARN);
-            if (g_ui_language == UI_LANG_TH) {
-                draw_standby_label((LCD_W - kThDismiss.width) / 2, 201, &kThDismiss);
-            } else {
-                draw_string_centered(240, 218, "Dismiss", THEME_WARN, 0xFFFF, &FreeSans12pt7b);
-            }
+            draw_standby_modal_button(kAlertButtonX, kAlertButtonY, kAlertButtonW, kAlertButtonH, ST_RGB565(185, 28, 28), 0xFFFF);
 
             s_popup_state = 1;
         }
@@ -1001,19 +1059,57 @@ static void ui_standby_render_modal(uint32_t now)
         if (s_today_schedule_popup_drawn) return;
 
         int now_minutes = standby_time_to_minutes(hhmm);
-        s_schedule_visible_count = standby_collect_today_schedule_slots(s_schedule_visible_slots, 7);
+        
+        uint8_t missed_mask = dispenser_get_missed_slots();
+        int missed_count = 0;
+        for (int i = 0; i < 7; i++) {
+            if (missed_mask & (1 << i)) missed_count++;
+        }
+
+        int all_slots[7] = {0};
+        int count = standby_collect_today_schedule_slots(all_slots, 7);
+        s_schedule_visible_count = 0;
+        for (int i = 0; i < count; i++) {
+            if (s_show_only_missed) {
+                if (missed_mask & (1 << all_slots[i])) {
+                    s_schedule_visible_slots[s_schedule_visible_count++] = all_slots[i];
+                }
+            } else {
+                s_schedule_visible_slots[s_schedule_visible_count++] = all_slots[i];
+            }
+        }
 
         fill_round_rect_frame(kSchedulePopupX, kSchedulePopupY, kSchedulePopupW, kSchedulePopupH, 16, THEME_PANEL, 0xFFFF);
         fill_round_rect(kScheduleCloseX, kScheduleCloseY, kScheduleCloseW, kScheduleCloseH, 8, 0xFFFF);
         draw_string_centered(kScheduleCloseX + (kScheduleCloseW / 2), kScheduleCloseY + 23, "X", THEME_PANEL, 0xFFFF, &FreeSans12pt7b);
 
         if (g_ui_language == UI_LANG_TH) {
-            draw_utf8_centered_line_scaled(LCD_W / 2, 42, "ตารางยาวันนี้", 0xFFFF, THEME_PANEL, 28);
+            draw_utf8_centered_line_scaled(LCD_W / 2, 42, s_show_only_missed ? "มื้อที่พลาดไป" : "ตารางยาวันนี้", 0xFFFF, THEME_PANEL, 26);
+            
+            char toggle_str[64];
+            if (s_show_only_missed) {
+                snprintf(toggle_str, sizeof(toggle_str), "ดูทั้งหมด");
+            } else {
+                snprintf(toggle_str, sizeof(toggle_str), "พลาดไป %d มื้อ", missed_count);
+            }
+            uint16_t btn_color = s_show_only_missed ? THEME_TXT_MUTED : ((missed_count > 0) ? THEME_BAD : ST_RGB565(34, 197, 94));
+            draw_schedule_text_line(kSchedulePopupX + 16, 46, 100, toggle_str, btn_color, THEME_PANEL, 16);
+            
             draw_schedule_text_line(52, 76, 54, "เวลา", THEME_TXT_MUTED, THEME_PANEL, 20);
             draw_schedule_text_line(132, 76, 96, "มื้อ", THEME_TXT_MUTED, THEME_PANEL, 20);
             draw_schedule_text_line(300, 76, 104, "สถานะ", THEME_TXT_MUTED, THEME_PANEL, 20);
         } else {
-            draw_string_centered(kScheduleHeaderCenterX, 74, "TODAY'S SCHEDULE", 0xFFFF, THEME_PANEL, &FreeSansBold18pt7b);
+            draw_string_centered(240, 60, s_show_only_missed ? "MISSED DOSES" : "TODAY'S SCHEDULE", 0xFFFF, THEME_PANEL, &FreeSans12pt7b);
+            
+            char toggle_str[64];
+            if (s_show_only_missed) {
+                snprintf(toggle_str, sizeof(toggle_str), "Show All");
+            } else {
+                snprintf(toggle_str, sizeof(toggle_str), "Missed: %d", missed_count);
+            }
+            uint16_t btn_color = s_show_only_missed ? THEME_TXT_MUTED : ((missed_count > 0) ? THEME_BAD : ST_RGB565(34, 197, 94));
+            draw_string_gfx(kSchedulePopupX + 16, 60, toggle_str, btn_color, THEME_PANEL, &FreeSans9pt7b);
+            
             draw_string_gfx(52, 96, "TIME", THEME_TXT_MUTED, THEME_PANEL, &FreeSans12pt7b);
             draw_string_gfx(132, 96, "MEAL", THEME_TXT_MUTED, THEME_PANEL, &FreeSans12pt7b);
             draw_string_gfx(300, 96, "STATUS", THEME_TXT_MUTED, THEME_PANEL, &FreeSans12pt7b);
@@ -1021,9 +1117,9 @@ static void ui_standby_render_modal(uint32_t now)
 
         if (s_schedule_visible_count == 0) {
             if (g_ui_language == UI_LANG_TH) {
-                draw_utf8_centered_line_scaled(LCD_W / 2, 140, "วันนี้ยังไม่มีรายการจ่ายยา", THEME_TXT_MUTED, THEME_PANEL, 22);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 140, s_show_only_missed ? "ไม่มีมื้อที่พลาด" : "วันนี้ยังไม่มีรายการจ่ายยา", THEME_TXT_MUTED, THEME_PANEL, 22);
             } else {
-                draw_string_centered(240, 164, "No dispensing schedule for today", THEME_TXT_MUTED, THEME_PANEL, &FreeSans12pt7b);
+                draw_string_centered(240, 164, s_show_only_missed ? "No missed doses today" : "No dispensing schedule for today", THEME_TXT_MUTED, THEME_PANEL, &FreeSans12pt7b);
             }
         } else {
             for (int i = 0; i < s_schedule_visible_count; ++i) {
@@ -1093,194 +1189,13 @@ void ui_standby_render(uint32_t now)
 {
     ui_standby_render_modal(now);
     return;
-
-    uint32_t now_ms = now * portTICK_PERIOD_MS;
-    
-    // Consume the global redraw flag locally to prevent infinite flickering loop
-    bool is_forced = force_redraw;
-    if (force_redraw) force_redraw = false;
-
-    // Evaluate popup expiration BEFORE drawing the base page
-    if (s_netpie_sync_popup_until > 0 && now_ms >= s_netpie_sync_popup_until) {
-        s_netpie_sync_popup_until = 0;
-        if (s_popup_state == 3) {
-            s_popup_state = 0;
-            is_forced = true; // Triggers full background wipe in draw_standby_page
-        }
-    }
-
-    char t_str[16] = "--:--:--";
-    ds3231_get_time_str(t_str, sizeof(t_str));
-
-    char hhmm[6] = "--:--";
-    char ss[3] = "--";
-    if (strlen(t_str) >= 8) {
-        strncpy(hhmm, t_str, 5); hhmm[5] = '\0';
-        strncpy(ss, t_str + 6, 2); ss[2] = '\0';
-    }
-
-    static char last_valid_date_raw[32] = "";
-    char date_raw[32] = "";
-    char date_str[32] = "-- --/--/----";
-    if (ds3231_get_date_str(date_raw, sizeof(date_raw)) == ESP_OK && standby_date_is_valid(date_raw)) {
-        safe_copy(last_valid_date_raw, sizeof(last_valid_date_raw), date_raw);
-    }
-
-    if (last_valid_date_raw[0] != '\0') {
-        standby_format_date_for_ui(last_valid_date_raw, date_str, sizeof(date_str), g_ui_language);
-    }
-
-    char dose_str[48] = "No schedule";
-    dispenser_get_next_dose_str(dose_str, sizeof(dose_str));
-
-    if (s_popup_state != 4) {
-        draw_standby_page(is_forced, hhmm, ss, date_str, dose_str);
-    }
-
-    // Check constraints
-    const netpie_shadow_t *sh = netpie_get_shadow();
-    bool schedule_ok = false;
-    if (!sh->loaded || sh->enabled == false) {
-         schedule_ok = true; 
-    } else {
-        for (int i = 0; i < 7; i++) {
-           if (sh->slot_time[i][0] != '\0') {
-               schedule_ok = true; 
-               break;
-           }
-        }
-    }
-    
-    bool pca_err = (i2c_manager_ping(ADDR_PCA9685) != ESP_OK);
-    bool pcf_err = (i2c_manager_ping(ADDR_PCF8574) != ESP_OK);
-    bool rtc_err = (i2c_manager_ping(ADDR_DS3231) != ESP_OK);
-    
-    bool hw_err = (pca_err || pcf_err || rtc_err);
-    
-    if (s_netpie_sync_popup_until > 0) {
-         if (now_ms < s_netpie_sync_popup_until) {
-             if (s_popup_state != 3 || is_forced) {
-                 fill_round_rect_frame(60, 100, 360, 120, 15, THEME_OK, 0xFFFF);
-                 if (g_ui_language == UI_LANG_TH) {
-                     draw_standby_label((LCD_W - kThSyncOk1.width) / 2, 128, &kThSyncOk1);
-                     draw_standby_label((LCD_W - kThSyncOk2.width) / 2, 172, &kThSyncOk2);
-                 } else {
-                     draw_string_centered(240, 145, "NETPIE SYNC", 0xFFFF, THEME_OK, &FreeSansBold18pt7b);
-                     draw_string_centered(240, 185, "Schedule Updated Successfully!", 0xFFFF, THEME_OK, &FreeSans12pt7b);
-                 }
-                 s_popup_state = 3;
-             }
-         }
-    }
-    
-    if (s_popup_state == 3) {
-         // Wait for sync popup to clear before drawing other warnings
-    }
-    else if (hw_err) {
-         if (!s_hw_warn_dismissed) {
-             if (s_popup_state != 2 || is_forced) {
-                 fill_round_rect_frame(40, 50, 400, 220, 15, THEME_BAD, 0xFFFF);
-                 if (g_ui_language == UI_LANG_TH) {
-                     draw_standby_label((LCD_W - kThHwError1.width) / 2, 68, &kThHwError1);
-                 } else {
-                     draw_string_centered(240, 85, "HARDWARE ERROR!", 0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
-                 }
-                 
-                 char emsg[128] = "Disconnected:";
-                 if (pca_err) strcat(emsg, " SERVO[PCA9685]");
-                 if (pcf_err) strcat(emsg, " SENSE[PCF8574]");
-                 if (rtc_err) strcat(emsg, " TIME[DS3231]");
-                 
-                 draw_string_centered(240, 130, emsg, 0xFFFF, THEME_BAD, &FreeSans12pt7b);
-                 if (g_ui_language == UI_LANG_TH) {
-                     draw_standby_label((LCD_W - kThCheckI2c.width) / 2, 154, &kThCheckI2c);
-                 } else {
-                     draw_string_centered(240, 170, "Please check I2C wiring (SDA=7, SCL=8)", 0xFFFF, THEME_BAD, &FreeSans12pt7b);
-                 }
-                 
-                 fill_round_rect_frame(160, 200, 160, 45, 8, 0xFFFF, THEME_BAD);
-                 if (g_ui_language == UI_LANG_TH) {
-                     draw_standby_label((LCD_W - kThDismiss.width) / 2, 211, &kThDismiss);
-                 } else {
-                     draw_string_centered(240, 228, "Dismiss", THEME_BAD, 0xFFFF, &FreeSans12pt7b);
-                 }
-                 
-                 s_popup_state = 2;
-             }
-         }
-    }
-    else if (!schedule_ok) {
-         if (!s_sched_warn_dismissed) {
-             if (s_popup_state != 1 || is_forced) {
-                 fill_round_rect_frame(40, 50, 400, 200, 15, THEME_WARN, 0xFFFF);
-                 if (g_ui_language == UI_LANG_TH) {
-                     draw_standby_label((LCD_W - kThNoSchedule1.width) / 2, 82, &kThNoSchedule1);
-                     draw_standby_label((LCD_W - kThNoSchedule2.width) / 2, 130, &kThNoSchedule2);
-                 } else {
-                     draw_string_centered(240, 100, "NO SCHEDULE DETECTED", 0xFFFF, THEME_WARN, &FreeSansBold18pt7b);
-                     draw_string_centered(240, 145, "Please set schedule via Netpie or Menu", 0xFFFF, THEME_WARN, &FreeSans12pt7b);
-                 }
-                 
-                 fill_round_rect_frame(160, 190, 160, 45, 8, 0xFFFF, THEME_WARN);
-                 if (g_ui_language == UI_LANG_TH) {
-                     draw_standby_label((LCD_W - kThDismiss.width) / 2, 201, &kThDismiss);
-                 } else {
-                     draw_string_centered(240, 218, "Dismiss", THEME_WARN, 0xFFFF, &FreeSans12pt7b);
-                 }
-                 
-                 s_popup_state = 1;
-             }
-         }
-    } else {
-         if (s_popup_state == 4) {
-             // Freeze the popup once drawn so the 1s standby refresh does not repaint it.
-             if (s_today_schedule_popup_drawn) return;
-             {
-                 char lines[7][128] = {{0}};
-                 int line_count = standby_build_today_schedule_lines(lines, 7, g_ui_language);
-                 fill_round_rect_frame(28, 38, 424, 244, 16, THEME_PANEL, 0xFFFF);
-             if (g_ui_language == UI_LANG_TH) {
-                 draw_utf8_centered_line_scaled(LCD_W / 2, 58, "ตารางยาวันนี้", 0xFFFF, THEME_PANEL, 24);
-             } else {
-                 draw_string_centered(240, 80, "TODAY'S SCHEDULE", 0xFFFF, THEME_PANEL, &FreeSansBold18pt7b);
-             }
-
-             if (line_count == 0) {
-                 if (g_ui_language == UI_LANG_TH) {
-                     draw_utf8_centered_line_scaled(LCD_W / 2, 132, "วันนี้ยังไม่มีรายการจ่ายยา", THEME_TXT_MUTED, THEME_PANEL, 20);
-                 } else {
-                     draw_string_centered(240, 154, "No dispensing schedule for today", THEME_TXT_MUTED, THEME_PANEL, &FreeSans12pt7b);
-                 }
-             } else {
-                 int16_t row_y = 98;
-                 for (int i = 0; i < line_count && i < 7; ++i) {
-                     draw_schedule_popup_line(52, row_y, lines[i], 0xFFFF, THEME_PANEL);
-                     row_y += 24;
-                 }
-             }
-
-             fill_round_rect_frame(170, 234, 140, 34, 8, 0xFFFF, THEME_PANEL);
-             if (g_ui_language == UI_LANG_TH) {
-                 draw_utf8_centered_line_scaled(240, 241, "ปิด", THEME_PANEL, 0xFFFF, 20);
-             } else {
-                 draw_string_centered(240, 257, "Close", THEME_PANEL, 0xFFFF, &FreeSans12pt7b);
-             }
-             s_today_schedule_popup_drawn = true;
-             }
-         } else if (s_popup_state != 0 && s_popup_state != 3) {
-             s_today_schedule_popup_drawn = false;
-             s_popup_state = 0;
-             force_redraw = true;
-         } else {
-             s_today_schedule_popup_drawn = false;
-         }
-    }
 }
 
 static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
 {
     if (s_popup_state == 1) {
-        if (tx_n >= 160 && tx_n <= 320 && ty_n >= 190 && ty_n <= 240) {
+        if (tx_n >= kAlertButtonX && tx_n <= (kAlertButtonX + kAlertButtonW) &&
+            ty_n >= kAlertButtonY && ty_n <= (kAlertButtonY + kAlertButtonH)) {
             s_sched_warn_dismissed = true;
             s_today_schedule_popup_drawn = false;
             s_popup_state = 0;
@@ -1298,12 +1213,32 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
                          ty_n >= kSchedulePopupY && ty_n <= (kSchedulePopupY + kSchedulePopupH));
         bool on_close = (tx_n >= kScheduleCloseX && tx_n <= (kScheduleCloseX + kScheduleCloseW) &&
                          ty_n >= kScheduleCloseY && ty_n <= (kScheduleCloseY + kScheduleCloseH));
+        bool on_toggle = (tx_n >= kSchedulePopupX + 10 && tx_n <= kSchedulePopupX + 130 &&
+                          ty_n >= 35 && ty_n <= 65);
 
         if (on_close || !in_popup) {
+            dfplayer_play_track(g_snd_button); // Back sound
+            s_show_only_missed = false; // Reset toggle on close
             s_today_schedule_popup_drawn = false;
             s_schedule_visible_count = 0;
             s_schedule_detail_slot = -1;
             s_popup_state = 0;
+            force_redraw = true;
+            return;
+        }
+
+        if (on_toggle) {
+            if (!s_show_only_missed) {
+                // Tapping "Missed X doses" to show missed
+                if (g_ui_language == UI_LANG_TH) dfplayer_play_track(91);
+                else dfplayer_play_track(92);
+            } else {
+                // Tapping "Show All" to show all
+                if (g_ui_language == UI_LANG_TH) dfplayer_play_track(93); // Assuming 93
+                else dfplayer_play_track(94); // Assuming 94
+            }
+            s_show_only_missed = !s_show_only_missed;
+            s_today_schedule_popup_drawn = false;
             force_redraw = true;
             return;
         }
@@ -1330,6 +1265,7 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
                          ty_n >= kScheduleCloseY && ty_n <= (kScheduleCloseY + kScheduleCloseH));
 
         if (on_close || !in_popup) {
+            dfplayer_play_track(g_snd_button); // Back sound
             s_today_schedule_popup_drawn = false;
             s_popup_state = 4;
             force_redraw = true;
@@ -1341,6 +1277,11 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
         if (strcmp(s_ip, "0.0.0.0") != 0) pending_page = PAGE_WIFI_STATUS;
         else pending_page = PAGE_WIFI_SCAN;
     } else if (tx_n >= 16 && tx_n <= (LCD_W - 16) && ty_n >= 174 && ty_n <= 256) {
+        if (g_ui_language == UI_LANG_TH) {
+            dfplayer_play_track(89);
+        } else {
+            dfplayer_play_track(90);
+        }
         s_schedule_detail_slot = -1;
         s_today_schedule_popup_drawn = false;
         s_popup_state = 4;
@@ -1354,40 +1295,4 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
 void ui_standby_handle_touch(uint16_t tx_n, uint16_t ty_n)
 {
     ui_standby_handle_touch_modal(tx_n, ty_n);
-    return;
-
-    if (s_popup_state == 1) { // Sched Popup
-        if (tx_n >= 160 && tx_n <= 320 && ty_n >= 190 && ty_n <= 240) {
-            s_sched_warn_dismissed = true;
-            s_today_schedule_popup_drawn = false;
-            s_popup_state = 0;
-            force_redraw = true;
-        }
-    } else if (s_popup_state == 2) { // HW Popup
-        if (tx_n >= 160 && tx_n <= 320 && ty_n >= 200 && ty_n <= 245) {
-            s_hw_warn_dismissed = true;
-            s_today_schedule_popup_drawn = false;
-            s_popup_state = 0;
-            force_redraw = true;
-        }
-    } else if (s_popup_state == 4) { // Today schedule popup
-        if ((tx_n >= 170 && tx_n <= 310 && ty_n >= 234 && ty_n <= 268) ||
-            (tx_n >= 28 && tx_n <= 452 && ty_n >= 38 && ty_n <= 282)) {
-            s_today_schedule_popup_drawn = false;
-            s_popup_state = 0;
-            force_redraw = true;
-        }
-    } else {
-        if (tx_n < 150 && ty_n >= 260) {
-            if (strcmp(s_ip, "0.0.0.0") != 0) pending_page = PAGE_WIFI_STATUS;
-            else pending_page = PAGE_WIFI_SCAN;
-        } else if (tx_n >= 16 && tx_n <= (LCD_W - 16) && ty_n >= 174 && ty_n <= 256) {
-            s_today_schedule_popup_drawn = false;
-            s_popup_state = 4;
-            force_redraw = true;
-        } else {
-            dfplayer_play_track(9);
-            pending_page = PAGE_MENU;
-        }
-    }
 }

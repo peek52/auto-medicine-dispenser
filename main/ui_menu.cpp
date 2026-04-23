@@ -1,12 +1,15 @@
 #include "ui_core.h"
 #include "dfplayer.h"
 #include "ui_menu_thai_labels.h"
+#include "ui_utf8_text.h"
 
 typedef struct {
     const char *title_en;
     const char *subtitle_en;
     const ui_label_bitmap_t *title_th;
     const ui_label_bitmap_t *subtitle_th;
+    const char *title_th_utf8;
+    const char *subtitle_th_utf8;
 } menu_card_text_t;
 
 static void draw_label_boldish(int16_t x, int16_t y, const char *text, uint16_t fg, uint16_t bg, const GFXfont *font)
@@ -43,8 +46,17 @@ static void draw_bitmap_label(int16_t x, int16_t y, const ui_label_bitmap_t *lab
 static void draw_menu_label(int16_t x, int16_t title_y, int16_t subtitle_y, const menu_card_text_t *text)
 {
     if (g_ui_language == UI_LANG_TH) {
-        draw_bitmap_label(x, title_y, text->title_th);
-        draw_bitmap_label(x, subtitle_y, text->subtitle_th);
+        if (text->title_th_utf8 && text->title_th_utf8[0]) {
+            ui_utf8_draw_text(x, title_y + 4, text->title_th_utf8, SB_COLOR_TXT_MAIN);
+        } else {
+            draw_bitmap_label(x, title_y, text->title_th);
+        }
+
+        if (text->subtitle_th_utf8 && text->subtitle_th_utf8[0]) {
+            ui_utf8_draw_text(x, subtitle_y + 2, text->subtitle_th_utf8, SB_COLOR_TXT_MUTED);
+        } else {
+            draw_bitmap_label(x, subtitle_y, text->subtitle_th);
+        }
         return;
     }
 
@@ -54,62 +66,96 @@ static void draw_menu_label(int16_t x, int16_t title_y, int16_t subtitle_y, cons
 
 static void draw_language_toggle(void)
 {
-    const int chip_y = 14;
-    const int chip_h = 24;
-    const int chip_w = 38;
-    const int chip_gap = 8;
-    const int en_x = LCD_W - 104;
+    const int chip_y = 5;
+    const int chip_h = 36;
+    const int chip_w = 62;
+    const int chip_gap = 6;
+    const int en_x = LCD_W - 146;
     const int th_x = en_x + chip_w + chip_gap;
 
-    fill_round_rect_frame(en_x, chip_y, chip_w, chip_h, 12,
-                          g_ui_language == UI_LANG_EN ? SB_COLOR_PRIMARY : THEME_PANEL,
-                          SB_COLOR_BORDER);
-    draw_string_centered(en_x + (chip_w / 2), chip_y + 17, "EN", 0xFFFF,
-                         g_ui_language == UI_LANG_EN ? SB_COLOR_PRIMARY : THEME_PANEL,
+    fill_round_rect_frame(en_x, chip_y, chip_w, chip_h, 8,
+                          g_ui_language == UI_LANG_EN ? ST_RGB565(34, 197, 94) : THEME_PANEL,
+                          g_ui_language == UI_LANG_EN ? ST_RGB565(34, 197, 94) : THEME_INACTIVE);
+    draw_string_centered(en_x + (chip_w / 2), chip_y + 24, "EN", 0xFFFF,
+                         g_ui_language == UI_LANG_EN ? ST_RGB565(34, 197, 94) : THEME_PANEL,
                          &FreeSans9pt7b);
 
-    fill_round_rect_frame(th_x, chip_y, chip_w, chip_h, 12,
-                          g_ui_language == UI_LANG_TH ? SB_COLOR_PRIMARY : THEME_PANEL,
-                          SB_COLOR_BORDER);
-    draw_string_centered(th_x + (chip_w / 2), chip_y + 17, "TH", 0xFFFF,
-                         g_ui_language == UI_LANG_TH ? SB_COLOR_PRIMARY : THEME_PANEL,
-                         &FreeSans9pt7b);
+    fill_round_rect_frame(th_x, chip_y, chip_w, chip_h, 8,
+                          g_ui_language == UI_LANG_TH ? ST_RGB565(34, 197, 94) : THEME_PANEL,
+                          g_ui_language == UI_LANG_TH ? ST_RGB565(34, 197, 94) : THEME_INACTIVE);
+    int16_t th_tw = ui_utf8_text_width("ไทย");
+    ui_utf8_draw_text(th_x + (chip_w / 2) - (th_tw / 2), chip_y + 3, "ไทย", 0xFFFF);
 }
 
 static void draw_icon_clock(int cx, int cy, uint16_t color, uint16_t bg_color)
 {
-    fill_round_rect_frame(cx - 18, cy - 18, 36, 36, 18, bg_color, color);
-    fill_round_rect_frame(cx - 17, cy - 17, 34, 34, 17, bg_color, color);
-    fill_round_rect_frame(cx - 16, cy - 16, 32, 32, 16, bg_color, color);
-    fill_round_rect_frame(cx - 15, cy - 15, 30, 30, 15, bg_color, color);
-    fill_rect(cx - 2, cy - 10, 4, 12, color);
-    fill_rect(cx - 2, cy - 2, 12, 4, color);
+    // Base: rounded square clock face
+    fill_round_rect(cx - 27, cy - 27, 54, 54, 18, color);
+    // Inner cutout
+    fill_round_rect(cx - 21, cy - 21, 42, 42, 14, bg_color);
+    
+    // Clock hands
+    fill_round_rect(cx - 3, cy - 12, 6, 15, 3, color); // Hour hand (12)
+    fill_round_rect(cx - 3, cy - 3, 15, 6, 3, color); // Minute hand (3)
+    
+    // Center dot
+    fill_round_rect(cx - 4, cy - 4, 8, 8, 4, color);
 }
 
 static void draw_icon_capsule(int cx, int cy, uint16_t color, uint16_t bg_color)
 {
-    fill_round_rect_frame(cx - 20, cy - 10, 40, 20, 10, bg_color, color);
-    fill_round_rect_frame(cx - 19, cy - 9, 38, 18, 9, bg_color, color);
-    fill_round_rect_frame(cx - 18, cy - 8, 36, 16, 8, bg_color, color);
-    fill_round_rect_frame(cx - 17, cy - 7, 34, 14, 7, bg_color, color);
-    fill_rect(cx - 2, cy - 10, 4, 20, color);
-    fill_round_rect(cx + 6, cy - 3, 6, 6, 3, color);
+    // Pill outline
+    fill_round_rect(cx - 30, cy - 15, 60, 30, 15, color);
+    fill_round_rect(cx - 24, cy - 9, 48, 18, 9, bg_color);
+    
+    // Middle split
+    fill_rect(cx - 3, cy - 15, 6, 30, color);
+    
+    // Left side mark (a tiny plus)
+    fill_rect(cx - 16, cy - 4, 8, 3, color);
+    fill_rect(cx - 13, cy - 7, 3, 9, color);
 }
 
 static void draw_icon_gear(int cx, int cy, uint16_t color, uint16_t bg_color)
 {
-    fill_rect(cx - 4, cy - 18, 8, 36, color);
-    fill_rect(cx - 18, cy - 4, 36, 8, color);
-    fill_round_rect(cx - 12, cy - 12, 24, 24, 12, color);
-    fill_round_rect(cx - 5, cy - 5, 10, 10, 5, bg_color);
+    // 8 teeth
+    fill_round_rect(cx - 4,  cy - 28, 8, 10, 2, color); // top
+    fill_round_rect(cx - 4,  cy + 18, 8, 10, 2, color); // bottom
+    fill_round_rect(cx - 28, cy - 4, 10, 8, 2, color); // left
+    fill_round_rect(cx + 18, cy - 4, 10, 8, 2, color); // right
+    fill_round_rect(cx - 22, cy - 22, 8, 8, 2, color); // top-left
+    fill_round_rect(cx + 14, cy - 22, 8, 8, 2, color); // top-right
+    fill_round_rect(cx - 22, cy + 14, 8, 8, 2, color); // bottom-left
+    fill_round_rect(cx + 14, cy + 14, 8, 8, 2, color); // bottom-right
+
+    // outer gear body
+    fill_round_rect(cx - 18, cy - 18, 36, 36, 18, color);
+    // inner ring cutout
+    fill_round_rect(cx - 11, cy - 11, 22, 22, 11, bg_color);
+    // center hub
+    fill_round_rect(cx - 5, cy - 5, 10, 10, 5, color);
+    fill_round_rect(cx - 2, cy - 2, 4, 4, 2, bg_color);
+}
+
+static bool menu_back_hit(uint16_t x, uint16_t y)
+{
+    return (x >= 14 && x <= 118 && y >= 8 && y <= 34);
 }
 
 static void draw_icon_wifi(int cx, int cy, uint16_t color, uint16_t bg_color)
 {
-    (void)bg_color;
-    fill_round_rect(cx - 4, cy + 8, 8, 8, 4, color);
-    fill_round_rect(cx - 12, cy, 24, 6, 3, color);
-    fill_round_rect(cx - 20, cy - 10, 40, 6, 3, color);
+    // Arc 3 (Outer)
+    fill_round_rect(cx - 33, cy - 15, 66, 66, 33, color);
+    fill_round_rect(cx - 24, cy - 6, 48, 48, 24, bg_color);
+    
+    // Arc 2 (Middle)
+    fill_round_rect(cx - 15, cy + 3, 30, 30, 15, color);
+    
+    // Wipe the bottom half
+    fill_rect(cx - 33, cy + 15, 66, 36, bg_color);
+    
+    // Dot (Inner)
+    fill_round_rect(cx - 6, cy + 12, 12, 12, 6, color);
 }
 
 void ui_menu_render(void)
@@ -118,19 +164,19 @@ void ui_menu_render(void)
 
     static const menu_card_text_t kScheduleText = {
         "Schedule", "Set med times",
-        &kMenuThTitleSchedule, &kMenuThSubSchedule
+        &kMenuThTitleSchedule, &kMenuThSubSchedule, NULL, NULL
     };
     static const menu_card_text_t kMedicineText = {
         "Medicine", "Manage slots",
-        &kMenuThTitleMedicine, &kMenuThSubMedicine
+        &kMenuThTitleMedicine, &kMenuThSubMedicine, NULL, NULL
     };
     static const menu_card_text_t kSettingsText = {
-        "Settings", "Sound & alerts",
-        &kMenuThTitleSettings, &kMenuThSubSettings
+        "System", "Sound & status",
+        &kMenuThTitleSettings, NULL, "ตั้งค่า", "เสียงและสถานะ"
     };
     static const menu_card_text_t kWifiText = {
         "WiFi", "Network setup",
-        &kMenuThTitleWifi, &kMenuThSubWifi
+        &kMenuThTitleWifi, &kMenuThSubWifi, NULL, NULL
     };
 
     const int w = 212;
@@ -143,7 +189,13 @@ void ui_menu_render(void)
     const int y2 = y1 + h + gap_y;
 
     fill_screen(THEME_BG);
-    draw_top_bar_with_back("Setup Menu");
+    draw_top_bar_with_back(NULL);
+    if (g_ui_language == UI_LANG_TH) {
+        draw_utf8_centered_line_scaled(LCD_W / 2, 8, "เมนูหลัก", THEME_TXT_MAIN, THEME_PANEL, 30);
+    }
+    if (g_ui_language != UI_LANG_TH) {
+        draw_label_boldish(140, 29, "Setup Menu", THEME_TXT_MAIN, THEME_PANEL, &FreeSans12pt7b);
+    }
     draw_language_toggle();
 
     fill_round_rect(x1, y1, w, h, 14, SB_COLOR_CARD);
@@ -171,28 +223,34 @@ void ui_menu_render(void)
 
 void ui_menu_handle_touch(uint16_t tx_n, uint16_t ty_n)
 {
-    if (ty_n >= 14 && ty_n <= 38) {
-        if (tx_n >= (LCD_W - 104) && tx_n <= (LCD_W - 66)) {
-            if (g_ui_language != UI_LANG_EN) {
-                g_ui_language = UI_LANG_EN;
-                settings_save_nvs();
-                force_redraw = true;
-            }
-            return;
-        }
-        if (tx_n >= (LCD_W - 58) && tx_n <= (LCD_W - 20)) {
-            if (g_ui_language != UI_LANG_TH) {
-                g_ui_language = UI_LANG_TH;
-                settings_save_nvs();
-                force_redraw = true;
-            }
-            return;
-        }
-    }
-
     if (ty_n < 50) {
-        dfplayer_play_track(10);
-        pending_page = PAGE_STANDBY;
+        if (ty_n >= 4 && ty_n <= 44) {
+            if (tx_n >= (LCD_W - 146) && tx_n <= (LCD_W - 84)) {
+                if (g_ui_language != UI_LANG_EN) {
+                    g_ui_language = UI_LANG_EN;
+                    dfplayer_set_language(1);
+                    dfplayer_play_track(81);
+                    settings_save_nvs();
+                    force_redraw = true;
+                }
+                return;
+            }
+            if (tx_n >= (LCD_W - 78) && tx_n <= (LCD_W - 16)) {
+                if (g_ui_language != UI_LANG_TH) {
+                    g_ui_language = UI_LANG_TH;
+                    dfplayer_set_language(0);
+                    dfplayer_play_track(80);
+                    settings_save_nvs();
+                    force_redraw = true;
+                }
+                return;
+            }
+        }
+
+        if (menu_back_hit(tx_n, ty_n)) {
+            dfplayer_play_track(g_snd_button);
+            pending_page = PAGE_STANDBY;
+        }
         return;
     }
 

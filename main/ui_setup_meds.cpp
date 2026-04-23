@@ -1,4 +1,4 @@
-﻿#include "ui_core.h"
+#include "ui_core.h"
 #include "netpie_mqtt.h"
 #include "dispenser_scheduler.h"
 #include "dfplayer.h"
@@ -9,6 +9,13 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "pill_sensor_status.h"
+
+static uint32_t s_blink_tick   = 0;
+static bool     s_blink_phase  = false;
+static bool     s_validation_popup = false;
+static netpie_med_t s_med_backup = {0};
+static bool     s_med_snapshot_saved = false;
 
 extern volatile int ui_manual_disp_status;
 
@@ -17,6 +24,34 @@ static uint32_t s_disp_done_tick = 0;
 static uint32_t s_disp_fail_tick = 0;
 static int      prev_return_qty  = 1;
 static bool     prev_show_confirm = false;
+
+#define MED_COUNT_BOX_X      302
+#define MED_COUNT_BOX_Y      52
+#define MED_COUNT_BOX_W      78
+#define MED_COUNT_BOX_H      36
+#define MED_COUNT_BOX_CX     (MED_COUNT_BOX_X + (MED_COUNT_BOX_W / 2))
+#define MED_COUNT_BOX_TEXT_Y 74
+
+#define RET_MINUS_X          66
+#define RET_MINUS_Y          140
+#define RET_MINUS_W          48
+#define RET_MINUS_H          40
+#define RET_QTY_X            122
+#define RET_QTY_Y            140
+#define RET_QTY_W            112
+#define RET_QTY_H            40
+#define RET_QTY_CX           (RET_QTY_X + (RET_QTY_W / 2))
+#define RET_QTY_TEXT_Y       166
+#define RET_PLUS_X           242
+#define RET_PLUS_Y           140
+#define RET_PLUS_W           48
+#define RET_PLUS_H           40
+#define RET_ALL_X            304
+#define RET_ALL_Y            140
+#define RET_ALL_W            96
+#define RET_ALL_H            40
+#define RET_ALL_CX           (RET_ALL_X + (RET_ALL_W / 2))
+#define RET_ALL_TEXT_Y       164
 
 static void draw_meds_label(int16_t x, int16_t y, const ui_label_bitmap_t *label)
 {
@@ -110,6 +145,42 @@ static void draw_meds_card_name(int16_t x, int16_t top_y, int16_t max_w, const c
     }
 }
 
+static void draw_med_count_value(int count)
+{
+    char cnt_str[16];
+    snprintf(cnt_str, sizeof(cnt_str), "%d", count);
+    fill_round_rect_frame(MED_COUNT_BOX_X, MED_COUNT_BOX_Y, MED_COUNT_BOX_W, MED_COUNT_BOX_H, 6, SB_COLOR_CARD, SB_COLOR_BORDER);
+    draw_string_centered(MED_COUNT_BOX_CX, MED_COUNT_BOX_TEXT_Y, cnt_str, SB_COLOR_TXT_MAIN, SB_COLOR_CARD, &FreeSans12pt7b);
+}
+
+static void redraw_med_count_value_only(int count)
+{
+    char cnt_str[16];
+    snprintf(cnt_str, sizeof(cnt_str), "%d", count);
+    fill_round_rect(MED_COUNT_BOX_X + 1, MED_COUNT_BOX_Y + 1, MED_COUNT_BOX_W - 2, MED_COUNT_BOX_H - 2, 5, SB_COLOR_CARD);
+    draw_string_centered(MED_COUNT_BOX_CX, MED_COUNT_BOX_TEXT_Y, cnt_str, SB_COLOR_TXT_MAIN, SB_COLOR_CARD, &FreeSans12pt7b);
+}
+
+static void draw_return_qty_value(int return_qty, int current_stock)
+{
+    char ret_str[16];
+    if (return_qty == 100) snprintf(ret_str, sizeof(ret_str), "ALL");
+    else snprintf(ret_str, sizeof(ret_str), "%d / %d", return_qty, current_stock);
+
+    fill_round_rect_frame(RET_QTY_X, RET_QTY_Y, RET_QTY_W, RET_QTY_H, 6, THEME_BG, SB_COLOR_BORDER);
+    draw_string_centered(RET_QTY_CX, RET_QTY_TEXT_Y, ret_str, SB_COLOR_TXT_MAIN, THEME_BG, &FreeSans12pt7b);
+}
+
+static void draw_return_all_button(void)
+{
+    fill_round_rect_frame(RET_ALL_X, RET_ALL_Y, RET_ALL_W, RET_ALL_H, 6, THEME_TXT_MUTED, THEME_TXT_MUTED);
+    if (g_ui_language == UI_LANG_TH) {
+        draw_meds_label(RET_ALL_X + ((RET_ALL_W - kThAll.width) / 2), 151, &kThAll);
+    } else {
+        draw_string_centered(RET_ALL_CX, RET_ALL_TEXT_Y, "ALL", 0x0000, THEME_TXT_MUTED, &FreeSans12pt7b);
+    }
+}
+
 static int16_t ui_utf8_centered_x(int16_t x, int16_t w, const char *text)
 {
     int16_t tw = ui_utf8_text_width(text);
@@ -118,11 +189,21 @@ static int16_t ui_utf8_centered_x(int16_t x, int16_t w, const char *text)
 }
 
 static void draw_slot_choice_button(int16_t x, int16_t y, int16_t w, int16_t h,
-                                    bool active, const char *label_en, const char *label_th)
+                                    bool active, bool blink_lit, const char *label_en, const char *label_th)
 {
-    uint16_t bg = active ? THEME_OK : THEME_BG;
-    uint16_t fg = active ? 0xFFFF : SB_COLOR_TXT_MAIN;
-    uint16_t border = active ? THEME_OK : SB_COLOR_BORDER;
+    // Dark blink phase uses a dim-green so the button is still clearly selected
+    static const uint16_t kDimGreen = ST_RGB565(8, 100, 60);
+
+    uint16_t bg, fg, border;
+    if (active) {
+        bg     = blink_lit ? THEME_OK : kDimGreen;
+        fg     = 0xFFFF;
+        border = THEME_OK;
+    } else {
+        bg     = THEME_BG;
+        fg     = SB_COLOR_TXT_MAIN;
+        border = SB_COLOR_BORDER;
+    }
 
     fill_round_rect_frame(x, y, w, h, 7, bg, border);
 
@@ -157,8 +238,8 @@ static void draw_slot_row_group(int16_t x, int16_t y, int16_t w, int16_t h,
         draw_string_centered(x + (label_w / 2), y + 23, meal_en, SB_COLOR_PRIMARY, SB_COLOR_CARD, &FreeSans9pt7b);
     }
 
-    draw_slot_choice_button(before_x, btn_y, btn_w, btn_h, before_active, "Before", "ก่อน");
-    draw_slot_choice_button(after_x, btn_y, btn_w, btn_h, after_active, "After", "หลัง");
+    draw_slot_choice_button(before_x, btn_y, btn_w, btn_h, before_active, before_active ? s_blink_phase : true, "Before", "ก่อน");
+    draw_slot_choice_button(after_x,  btn_y, btn_w, btn_h, after_active,  after_active  ? s_blink_phase : true, "After",  "หลัง");
 }
 
 static void draw_bedtime_slot_card(int16_t x, int16_t y, int16_t w, int16_t h, bool active)
@@ -243,7 +324,7 @@ void ui_setup_meds_render(void)
             if (g_ui_language == UI_LANG_TH) draw_meds_label(x + 16, y + 8, med_module_title_label(i));
             else draw_string_gfx(x + 16, y + 24, title, mc, SB_COLOR_CARD, &FreeSans12pt7b);
 
-            char med_name[32];
+            char med_name[64];
             if (strlen(sh->med[i].name) > 0) {
                 snprintf(med_name, sizeof(med_name), "%s", sh->med[i].name);
             } else {
@@ -274,8 +355,8 @@ void ui_setup_meds_render(void)
 void ui_setup_meds_handle_touch(uint16_t tx_n, uint16_t ty_n)
 {
     if (ty_n < 50) {
-        if (tx_n < 120) {
-            dfplayer_play_track(10);
+        if (tx_n >= 14 && tx_n <= 118 && ty_n >= 8 && ty_n <= 34) {
+            dfplayer_play_track(g_snd_button);
             pending_page = PAGE_MENU;
         }
     } else {
@@ -325,12 +406,28 @@ void ui_setup_meds_detail_render(void)
     }
 
     if (force_redraw) {
+        // Save snapshot of current med data ONLY on first entry (not on every force_redraw)
+        if (!s_med_snapshot_saved) {
+            const netpie_shadow_t *sh_snap = netpie_get_shadow();
+            s_med_backup = sh_snap->med[selected_med_idx];
+            s_med_snapshot_saved = true;
+        }
+
         fill_screen(THEME_BG);
         draw_top_bar_with_back(NULL);
         char page_title[32];
         snprintf(page_title, sizeof(page_title), "Module %d Setup", selected_med_idx + 1);
-        if (g_ui_language == UI_LANG_TH) draw_meds_label((LCD_W - med_module_setup_label(selected_med_idx)->width) / 2, 8, med_module_setup_label(selected_med_idx));
+        if (g_ui_language == UI_LANG_TH) draw_meds_label((LCD_W / 2) - (med_module_setup_label(selected_med_idx)->width / 2), 8, med_module_setup_label(selected_med_idx));
         else draw_string_centered(LCD_W / 2, 28, page_title, THEME_TXT_MAIN, THEME_PANEL, &FreeSans12pt7b);
+
+        // SAVE button top-right
+        fill_round_rect_frame(330, 6, 140, 34, 8, THEME_OK, THEME_OK);
+        if (g_ui_language == UI_LANG_TH) {
+            int16_t save_tw = ui_utf8_text_width("บันทึก");
+            ui_utf8_draw_text(400 - (save_tw / 2), 13, "บันทึก", 0xFFFF);
+        } else {
+            draw_string_centered(400, 29, "SAVE", 0xFFFF, THEME_OK, &FreeSans12pt7b);
+        }
 
         const netpie_shadow_t *sh = netpie_get_shadow();
         int med_idx = selected_med_idx;
@@ -347,10 +444,7 @@ void ui_setup_meds_detail_render(void)
         fill_round_rect_frame(260, 52, 40, 36, 6, THEME_BAD, SB_COLOR_BORDER);
         draw_string_centered(280, 70, "-", 0xFFFF, THEME_BAD, &FreeSans18pt7b);
         
-        char cnt_str[16];
-        snprintf(cnt_str, sizeof(cnt_str), "%d", sh->med[med_idx].count);
-        fill_round_rect_frame(304, 52, 70, 36, 6, SB_COLOR_CARD, SB_COLOR_BORDER);
-        draw_string_centered(339, 74, cnt_str, SB_COLOR_TXT_MAIN, SB_COLOR_CARD, &FreeSans12pt7b);
+        draw_med_count_value(sh->med[med_idx].count);
 
         fill_round_rect_frame(380, 52, 40, 36, 6, THEME_OK, SB_COLOR_BORDER);
         draw_string_centered(400, 70, "+", 0xFFFF, THEME_OK, &FreeSans18pt7b);
@@ -382,21 +476,15 @@ void ui_setup_meds_detail_render(void)
 
             fill_rect(60, 124, 360, 2, THEME_BG);
             
-            fill_round_rect_frame(70, 140, 50, 40, 6, THEME_BAD, SB_COLOR_BORDER);
+            fill_round_rect_frame(RET_MINUS_X, RET_MINUS_Y, RET_MINUS_W, RET_MINUS_H, 6, THEME_BAD, SB_COLOR_BORDER);
             draw_string_centered(95, 164, "-", 0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
-            
-            char ret_str[16];
-            if (return_qty == 100) snprintf(ret_str, sizeof(ret_str), "ALL");
-            else snprintf(ret_str, sizeof(ret_str), "%d / %d", return_qty, sh->med[med_idx].count);
-            fill_round_rect_frame(130, 140, 90, 40, 6, THEME_BG, SB_COLOR_BORDER);
-            draw_string_centered(175, 166, ret_str, SB_COLOR_TXT_MAIN, THEME_BG, &FreeSansBold18pt7b);
-            
-            fill_round_rect_frame(230, 140, 50, 40, 6, THEME_OK, SB_COLOR_BORDER);
-            draw_string_centered(255, 164, "+", 0xFFFF, THEME_OK, &FreeSansBold18pt7b);
 
-            fill_round_rect_frame(300, 140, 80, 40, 6, THEME_TXT_MUTED, THEME_TXT_MUTED);
-            if (g_ui_language == UI_LANG_TH) draw_meds_label(300 + ((80 - kThAll.width) / 2), 150, &kThAll);
-            else draw_string_centered(340, 164, "ALL", 0x0000, THEME_TXT_MUTED, &FreeSans9pt7b);
+            draw_return_qty_value(return_qty, sh->med[med_idx].count);
+
+            fill_round_rect_frame(RET_PLUS_X, RET_PLUS_Y, RET_PLUS_W, RET_PLUS_H, 6, THEME_OK, SB_COLOR_BORDER);
+            draw_string_centered(RET_PLUS_X + (RET_PLUS_W / 2), 164, "+", 0xFFFF, THEME_OK, &FreeSansBold18pt7b);
+
+            draw_return_all_button();
 
             fill_round_rect_frame(60, 200, 160, 40, 8, THEME_BAD, THEME_BAD);
             if (g_ui_language == UI_LANG_TH) draw_meds_label(100, 208, &kThCancel);
@@ -410,7 +498,6 @@ void ui_setup_meds_detail_render(void)
         tp_prev_sh = *sh;
         prev_return_qty = return_qty;
         prev_show_confirm = show_return_confirm;
-        
         force_redraw = false;
     } else {
         const netpie_shadow_t *sh = netpie_get_shadow();
@@ -419,25 +506,18 @@ void ui_setup_meds_detail_render(void)
         // Trap popup full redraw sequences
         if (show_return_confirm != prev_show_confirm) {
             prev_show_confirm = show_return_confirm;
-            force_redraw = true; 
+            force_redraw = true;
             return;
-        } else if (show_return_confirm) { 
+        } else if (show_return_confirm) {
             // Active Popup Local Partial Updates
             if (return_qty != prev_return_qty) {
-                char ret_str[16];
-                if (return_qty == 100) snprintf(ret_str, sizeof(ret_str), "ALL");
-                else snprintf(ret_str, sizeof(ret_str), "%d / %d", return_qty, sh->med[med_idx].count);
-                fill_round_rect_frame(130, 140, 90, 40, 6, THEME_BG, SB_COLOR_BORDER);
-                draw_string_centered(175, 166, ret_str, SB_COLOR_TXT_MAIN, THEME_BG, &FreeSansBold18pt7b);
+                draw_return_qty_value(return_qty, sh->med[med_idx].count);
                 prev_return_qty = return_qty;
             }
         } else {
             // Background Local Partial Updates
             if (sh->med[med_idx].count != tp_prev_sh.med[med_idx].count) {
-                // Pad the string with wide spaces so the Adafruit GFX text-renderer naturally overwrites the old string's background pixels natively in a single SPI transaction (0 flicker)
-                char cnt_str[16];
-                snprintf(cnt_str, sizeof(cnt_str), "   %d   ", sh->med[med_idx].count);
-                draw_string_centered(339, 74, cnt_str, SB_COLOR_TXT_MAIN, SB_COLOR_CARD, &FreeSans12pt7b);
+                redraw_med_count_value_only(sh->med[med_idx].count);
                 tp_prev_sh.med[med_idx].count = sh->med[med_idx].count;
             }
 
@@ -452,17 +532,18 @@ void ui_setup_meds_detail_render(void)
                 }
                 strncpy(tp_prev_sh.med[med_idx].name, sh->med[med_idx].name, sizeof(tp_prev_sh.med[med_idx].name));
             }
-        
+
             if (sh->med[med_idx].slots != tp_prev_sh.med[med_idx].slots) {
                 fill_rect(10, 96, 458, 122, THEME_BG);
                 draw_slot_selector_panel(sh->med[med_idx].slots);
                 tp_prev_sh.med[med_idx].slots = sh->med[med_idx].slots;
             }
         } // Closed 'else' logic for Background Local Partial Updates!
+
         if (ui_manual_disp_status != prev_disp_status || (!force_redraw && ui_manual_disp_status > 0)) {
             bool is_new_status = (ui_manual_disp_status != prev_disp_status);
             prev_disp_status = ui_manual_disp_status;
-            
+
             if (ui_manual_disp_status == 1) {
                 fill_round_rect_frame(80, 100, 320, 120, 12, THEME_PANEL, THEME_BORDER);
                 if (g_ui_language == UI_LANG_TH) draw_meds_label((LCD_W - kThDispensing.width) / 2, 148, &kThDispensing);
@@ -492,8 +573,24 @@ void ui_setup_meds_detail_render(void)
             }
         }
     }
-}
 
+    // ── Blink update (400 ms): only redraw button colors in-place, no full clear ──
+    uint32_t now_tick = xTaskGetTickCount();
+    if ((now_tick - s_blink_tick) >= pdMS_TO_TICKS(400)) {
+        s_blink_phase = !s_blink_phase;
+        s_blink_tick  = now_tick;
+        if (!show_return_confirm && !s_validation_popup) {
+            const netpie_shadow_t *sh_b = netpie_get_shadow();
+            uint8_t slots = sh_b->med[selected_med_idx].slots;
+            if (slots != 0) {
+                // Redraw only the slot buttons in-place (no full area clear)
+                draw_slot_selector_panel(slots);
+            }
+        }
+    }
+
+    // ── Validation popup overlay (REMOVED per user request) ──
+}
 void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
 {
     int med_idx = selected_med_idx;
@@ -508,17 +605,57 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
     }
 
     if (show_return_confirm) {
+        // ... handled below
+    } else if (tx_n >= 14 && tx_n <= 118 && ty_n >= 8 && ty_n <= 34) {
+
+        // Back: revert ALL changes to snapshot before leaving
+        const netpie_shadow_t *sh_now = netpie_get_shadow();
+        const netpie_med_t *cur = &sh_now->med[med_idx];
+        if (strcmp(cur->name, s_med_backup.name) != 0)
+            netpie_shadow_update_med_name(med_idx + 1, s_med_backup.name);
+        if (cur->count != s_med_backup.count)
+            netpie_shadow_update_count(med_idx + 1, s_med_backup.count);
+        if (cur->slots != s_med_backup.slots)
+            netpie_shadow_update_med_slots(med_idx + 1, s_med_backup.slots);
+        dfplayer_play_track(g_snd_button);
+        s_validation_popup = false;
+        s_med_snapshot_saved = false; // Reset for next entry
+        pending_page = PAGE_SETUP_MEDS;
+        force_redraw = true;
+        return;
+    } else if (ty_n >= 6 && ty_n <= 40 && tx_n >= 330 && tx_n <= 470) {
+        // SAVE button: validate before saving
+        const netpie_shadow_t *sh_check = netpie_get_shadow();
+        bool has_name  = (sh_check->med[med_idx].name[0] != '\0');
+        bool has_count = (sh_check->med[med_idx].count > 0);
+        bool has_slots = (sh_check->med[med_idx].slots != 0);
+        if (!has_name) {
+            // If name is cleared, automatically reset count and slots to 0
+            netpie_shadow_update_count(med_idx + 1, 0);
+            netpie_shadow_update_med_slots(med_idx + 1, 0);
+        } else if (!has_count || !has_slots) {
+            return; // Ignore tap if incomplete but has a name
+        }
+        dfplayer_play_track(14);
+        s_validation_popup = false;
+        s_med_snapshot_saved = false; // Reset for next entry
+        pending_page = PAGE_SETUP_MEDS;
+        force_redraw = true;
+        return;
+    }
+
+    if (show_return_confirm) {
         if (ty_n >= 60 && ty_n <= 310 && tx_n >= 20 && tx_n <= 460) {
             if (ty_n >= 140 && ty_n <= 190) { // Quantity modifiers
-                if (tx_n >= 80 && tx_n <= 130) { 
+                if (tx_n >= RET_MINUS_X && tx_n <= RET_MINUS_X + RET_MINUS_W) { 
                     if (current_stock <= 0) return_qty = 100;
                     else if (return_qty == 100) return_qty = current_stock;
                     else if (return_qty > 0) return_qty--;
-                } else if (tx_n >= 210 && tx_n <= 260) { 
+                } else if (tx_n >= RET_PLUS_X && tx_n <= RET_PLUS_X + RET_PLUS_W) { 
                     if (current_stock <= 0) return_qty = 100;
                     else if (return_qty == 100) return_qty = current_stock;
                     else if (return_qty < current_stock) return_qty++;
-                } else if (tx_n >= 280 && tx_n <= 360) { 
+                } else if (tx_n >= RET_ALL_X && tx_n <= RET_ALL_X + RET_ALL_W) { 
                     dfplayer_play_track(29); // Track 29 for 'ALL' (was 30, physically shifted by FAT)
                     return_qty = 100; // Eject All Flag
                 }
@@ -540,10 +677,6 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
                 }
             }
         }
-    } else if (ty_n < 50 && tx_n < 100) {
-        dfplayer_play_track(10);
-        pending_page = PAGE_SETUP_MEDS;
-        force_redraw = true;
     } else {
         const netpie_shadow_t *sh = netpie_get_shadow();
         
@@ -554,7 +687,10 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
                     dispenser_audit_stock_adjust(med_idx, current_stock, current_stock - 1);
                 }
             } else if (tx_n >= 380 && tx_n <= 420) { // [+] stock
-                if (current_stock < DISPENSER_MAX_PILLS) {
+                int max_pills = DISPENSER_MAX_PILLS;
+                const pill_sensor_status_t *sns = pill_sensor_status_get(med_idx);
+                if (sns && sns->max_pills > 0) max_pills = sns->max_pills;
+                if (current_stock < max_pills) {
                     netpie_shadow_update_count(med_idx + 1, current_stock + 1);
                     dispenser_audit_stock_adjust(med_idx, current_stock, current_stock + 1);
                 }

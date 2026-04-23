@@ -16,6 +16,7 @@
 #include "web_handlers_servo.h"
 #include "web_handlers_status.h"
 #include "web_handlers_stream.h"
+#include "web_log.h"
 
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -52,7 +53,7 @@ static esp_err_t monitor_handler(httpd_req_t *req) {
 httpd_handle_t start_webserver(void) {
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers   = 24;
+    config.max_uri_handlers   = 33;
     config.max_open_sockets   = 12;  /* ป้องกัน socket เต็มตอน polling */
     config.lru_purge_enable   = true;
     config.recv_wait_timeout  = 3;   /* วินาที — ปิด stale connections เร็ว */
@@ -70,6 +71,7 @@ httpd_handle_t start_webserver(void) {
         { "/monitor",       HTTP_GET,  monitor_handler,      NULL },
         { "/maint",         HTTP_GET,  maint_handler,        NULL },
         { "/maint/unlock",  HTTP_POST, maintenance_unlock_handler, NULL },
+        { "/logs/tail",     HTTP_GET,  web_log_tail_handler, NULL },
         { "/status.json",  HTTP_GET,  status_json_handler,  NULL },
         { "/camera/state", HTTP_GET,  camera_state_handler, NULL },
         { "/camera/set",   HTTP_GET,  camera_set_handler,   NULL },
@@ -87,6 +89,14 @@ httpd_handle_t start_webserver(void) {
         { "/cloud/logout", HTTP_GET,  cloud_logout_handler, NULL },
         { "/cloud/save",   HTTP_POST, cloud_save_handler,   NULL },
         { "/cloud/test",   HTTP_GET,  cloud_test_handler,   NULL },
+        { "/access/state", HTTP_GET,  access_state_handler, NULL },
+        { "/access/save",  HTTP_POST, access_save_handler,  NULL },
+        { "/sound/config", HTTP_GET,  sound_state_handler,  NULL },
+        { "/sound/save",   HTTP_POST, sound_save_handler,   NULL },
+        { "/sound/play",   HTTP_GET,  sound_play_handler,   NULL },
+        { "/sensors",         HTTP_GET,  sensors_page_handler,   NULL },
+        { "/sensors.json",    HTTP_GET,  sensors_json_handler,   NULL },
+        { "/sensors/config",  HTTP_POST, sensors_config_handler, NULL },
     };
 
     for (int i = 0; i < sizeof(routes)/sizeof(routes[0]); i++) {

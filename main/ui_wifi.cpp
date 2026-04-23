@@ -229,11 +229,15 @@ void ui_wifi_scan_handle_touch(uint16_t tx_n, uint16_t ty_n)
 
     // BACK — top-left
     if (tx_n >= 10 && tx_n <= 90 && ty_n >= 8 && ty_n <= 34) {
-        dfplayer_play_track(10); // Track 10: Back button audio
+        dfplayer_play_track(g_snd_button); // Track 10: Back button audio
         pending_page = PAGE_MENU;
+        return;
     }
+
+    if (wf_state != 2) return;
+
     // Scroll UP
-    else if (tx_n >= 380 && tx_n <= 420 && ty_n >= 8 && ty_n <= 34) {
+    if (tx_n >= 380 && tx_n <= 420 && ty_n >= 8 && ty_n <= 34) {
         if (wifi_scroll > 0) wifi_scroll--;
     }
     // Scroll DN
@@ -347,7 +351,7 @@ void ui_wifi_status_render(void)
 void ui_wifi_status_handle_touch(uint16_t tx_n, uint16_t ty_n)
 {
     if (tx_n >= 10 && tx_n <= 90 && ty_n >= 8 && ty_n <= 34) {
-        dfplayer_play_track(10);
+        dfplayer_play_track(g_snd_button);
         pending_page = PAGE_STANDBY;
     } else if (tx_n >= 20 && tx_n <= 460 && ty_n >= 268 && ty_n <= 312) {
         if (g_nav_sound_enabled) dfplayer_play_track(38); // Swapped in FAT: Forget WiFi (now 38)

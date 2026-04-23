@@ -1,0 +1,233 @@
+--- Warning: GDB cannot open serial ports accessed as COMx
+--- Using \\.\COM6 instead...
+--- esp-idf-monitor 1.9.0 on \\.\COM6 115200
+--- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H
+Executing action: monitor
+Running idf_monitor in directory D:\project\ddddddddd\unified_cam
+Executing "C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\Scripts\python.exe C:\Users\peekz\esp\esp-idf\tools/idf_monitor.py -p COM6 -b 115200 --toolchain-prefix riscv32-esp-elf- --target esp32p4 --revision 1 --decode-panic backtrace D:\project\ddddddddd\unified_cam\build_idf\unified_cam.elf --force-color -m 'C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\Scripts\python.exe' 'C:\Users\peekz\esp\esp-idf\tools\idf.py' '-B' 'build_idf' '-p' 'COM6'"...
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0x1 (POWERON),boot:0x10f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x18e4
+load:0x4ff2abd0,len:0xd74
+load:0x4ff2cbd0,len:0x322c
+entry 0x4ff2abda
+I (25) boot: ESP-IDF v5.3.2-dirty 2nd stage bootloader
+I (26) boot: compile time Apr  1 2026 11:59:53
+I (26) boot: Multicore bootloader
+I (30) boot: chip revision: v1.3
+I (33) boot: efuse block revision: v0.3
+I (38) boot.esp32p4: SPI Speed      : 80MHz
+I (42) boot.esp32p4: SPI Mode       : DIO
+I (47) boot.esp32p4: SPI Flash Size : 16MB
+I (52) boot: Enabling RNG early entropy source...
+I (57) boot: Partition Table:
+I (61) boot: ## Label            Usage          Type ST Offset   Length
+I (68) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (76) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (83) boot:  2 factory          factory app      00 00 00010000 00300000
+I (92) boot: End of partition table
+I (95) esp_image: segment 0: paddr=00010020 vaddr=400e0020 size=cc4d0h (836816) map
+I (243) esp_image: segment 1: paddr=000dc4f8 vaddr=30100000 size=0005ch (    92) load
+I (245) esp_image: segment 2: paddr=000dc55c vaddr=4ff00000 size=03abch ( 15036) load
+I (253) esp_image: segment 3: paddr=000e0020 vaddr=40000020 size=d5690h (874128) map
+I (403) esp_image: segment 4: paddr=001b56b8 vaddr=4ff03abc size=109fch ( 68092) load
+I (418) esp_image: segment 5: paddr=001c60bc vaddr=4ff14500 size=02814h ( 10260) load
+I (426) boot: Loaded app from partition at offset 0x10000
+I (426) boot: Disabling RNG early entropy source...
+I (439) hex_psram: vendor id    : 0x0d (AP)
+I (440) hex_psram: Latency      : 0x01 (Fixed)
+I (440) hex_psram: DriveStr.    : 0x00 (25 Ohm)
+I (443) hex_psram: dev id       : 0x03 (generation 4)
+I (449) hex_psram: density      : 0x07 (256 Mbit)
+I (454) hex_psram: good-die     : 0x06 (Pass)
+I (459) hex_psram: SRF          : 0x02 (Slow Refresh)
+I (465) hex_psram: BurstType    : 0x00 ( Wrap)
+I (470) hex_psram: BurstLen     : 0x03 (2048 Byte)
+I (476) hex_psram: BitMode      : 0x01 (X16 Mode)
+I (481) hex_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+I (487) hex_psram: DriveStrength: 0x00 (1/1)
+I (492) esp_psram: Found 32MB PSRAM device
+I (497) esp_psram: Speed: 20MHz
+I (501) hex_psram: psram CS IO is dedicated
+I (505) cpu_start: Multicore app
+I (4304) esp_psram: SPI SRAM memory test OK
+W (4313) clk: esp_perip_clk_init() has not been implemented yet
+I (4319) cpu_start: Pro cpu start user code
+I (4320) cpu_start: cpu freq: 360000000 Hz
+I (4320) app_init: Application information:
+I (4323) app_init: Project name:     unified_cam
+I (4328) app_init: App version:      7faf50a-dirty
+I (4333) app_init: Compile time:     Apr  7 2026 15:51:45
+I (4339) app_init: ELF file SHA256:  6c8fa14d6...
+I (4345) app_init: ESP-IDF:          v5.3.2-dirty
+I (4350) efuse_init: Min chip rev:     v0.1
+I (4355) efuse_init: Max chip rev:     v1.99 
+I (4360) efuse_init: Chip rev:         v1.3
+I (4365) heap_init: Initializing. RAM available for dynamic allocation:
+I (4372) heap_init: At 4FF24CB0 len 00016310 (88 KiB): RAM
+I (4378) heap_init: At 4FF3AFC0 len 00004BF0 (18 KiB): RAM
+I (4385) heap_init: At 4FF40000 len 00060000 (384 KiB): RAM
+I (4391) heap_init: At 50108080 len 00007F80 (31 KiB): RTCRAM
+I (4397) heap_init: At 3010005C len 00001FA4 (7 KiB): TCM
+I (4404) esp_psram: Adding pool of 32768K of PSRAM memory to heap allocator
+I (4412) spi_flash: detected chip: generic
+I (4416) spi_flash: flash io: dio
+I (4420) host_init: ESP Hosted : Host chip_ip[18]
+I (4454) H_API: ESP-Hosted starting. Hosted_Tasks: prio:23, stack: 5120 RPC_task_stack: 5120
+I (4454) H_API: ** add_esp_wifi_remote_channels **
+I (4458) gpio: GPIO[18]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (4467) gpio: GPIO[19]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (4476) gpio: GPIO[14]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (4485) gpio: GPIO[15]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (4495) gpio: GPIO[16]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (4504) gpio: GPIO[17]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+I (4514) H_SDIO_DRV: sdio_data_to_rx_buf_task started
+I (4514) main_task: Started on CPU0
+I (4524) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations
+I (4534) main_task: Calling app_main()
+I (4534) unified_cam: Starting Unified Cam & Modules (ESP32-P4 Nano)
+I (4554) cloud_secrets: Cloud secrets loaded from NVS (telegram=set, sheets=set)
+I (4564) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (4564) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (4754) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (4754) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (4754) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (4764) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (4774) i2c_mgr: I2C_NUM_0 ready — SDA=7 SCL=8 @ 50000 Hz
+I (4784) unified_cam: Scanning I2C bus...
+I (4784) unified_cam:  -> Found device at 0x0C
+I (4794) unified_cam:  -> Found device at 0x18
+I (4794) unified_cam:  -> Found device at 0x20
+I (4804) unified_cam:  -> Found device at 0x36
+I (4804) unified_cam:  -> Found device at 0x38
+I (4814) unified_cam:  -> Found device at 0x40
+I (4824) unified_cam:  -> Found device at 0x56
+I (4824) unified_cam:  -> Found device at 0x68
+I (4834) unified_cam: Scan complete.
+I (4834) pca9685: No NVS config for servo found, using defaults
+I (4834) pca9685: PCA9685 initialized (prescale=121, ~50Hz)
+I (4844) unified_cam: PCF8574 initialized — all pins set to INPUT (0xFF)
+I (4854) gpio: GPIO[21]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (4864) FT6336U: Resetting touch controller
+I (5014) FT6336U: Touch controller found. ID: 0x11
+I (5014) display_clk: Init ST7796S 480x320 - Interactive UI Layout
+I (5014) gpio: GPIO[24]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+I (5024) gpio: GPIO[25]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+I (5084) gpio: GPIO[26]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+I (5084) display_clk: SPI2 OK 40MHz
+I (5614) display_clk: Display initialized
+I (5614) display_clk: Clock task started
+I (5614) gpio: GPIO[45]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+I (5624) sd_card: SD power enabled on GPIO45 (active-low)
+I (6594) sd_card: Mounting SD card at /sdcard (slot=0, width=4)
+I (6594) sd_card: SDMMC host already initialized, reusing shared host
+I (6604) gpio: GPIO[42]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+E (6634) sdmmc_common: sdmmc_init_ocr: send_op_cond (1) returned 0x107
+[0;33mHINT: Please reboot the board and then try again[0m
+E (6634) vfs_fat_sdmmc: sdmmc_card_init failed (0x107).
+[0;33mHINT: Please verify if there is an SD card inserted into the SD slot. Then, try rebooting the board.[0m
+W (6634) sd_card: SD mount failed (width=4): ESP_ERR_TIMEOUT
+I (6644) sd_card: Mounting SD card at /sdcard (slot=0, width=1)
+I (6844) sd_card: SDMMC host already initialized, reusing shared host
+E (6864) sdmmc_common: sdmmc_init_ocr: send_op_cond (1) returned 0x107
+[0;33mHINT: Please reboot the board and then try again[0m
+E (6864) vfs_fat_sdmmc: sdmmc_card_init failed (0x107).
+[0;33mHINT: Please verify if there is an SD card inserted into the SD slot. Then, try rebooting the board.[0m
+W (6864) sd_card: SD mount failed (width=1): ESP_ERR_TIMEOUT
+W (6874) sd_card: SD card not available after 4-bit and 1-bit retries
+W (6884) unified_cam: SD card not available
+W (6884) DY_T20L: Audio disabled in firmware; skipping audio module init
+I (6894) ui_settings: Settings loaded: alt=27 nav=19 en=1 lang=1
+I (6904) transport: Attempt connection with slave: retry[0]
+W (6904) H_SDIO_DRV: Reset slave using GPIO[54]
+I (6914) os_wrapper_esp: GPIO [54] configured
+I (6914) gpio: GPIO[54]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+I (8444) sdio_wrapper: SDIO master: Slot 1, Data-Lines: 4-bit Freq(KHz)[40000 KHz]
+I (8444) sdio_wrapper: GPIOs: CLK[18] CMD[19] D0[14] D1[15] D2[16] D3[17] Slave_Reset[54]
+I (8444) sdio_wrapper: Queues: Tx[20] Rx[20] SDIO-Rx-Mode[1]
+I (8484) gpio: GPIO[15]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (8484) gpio: GPIO[17]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (8484) sdio_wrapper: Function 0 Blocksize: 512
+I (8494) sdio_wrapper: Function 1 Blocksize: 512
+I (8594) H_SDIO_DRV: Card init success, TRANSPORT_RX_ACTIVE
+I (8594) transport: set_transport_state: 1
+I (8594) transport: Waiting for esp_hosted slave to be ready
+I (8614) H_SDIO_DRV: SDIO Host operating in STREAMING MODE
+I (8614) H_SDIO_DRV: Open data path at slave
+I (8614) H_SDIO_DRV: Starting SDIO process rx task
+I (8614) H_SDIO_DRV: Received ESP_PRIV_IF type message
+I (8624) transport: Received INIT event from ESP32 peripheral
+I (8624) transport: EVENT: 12
+I (8634) transport: Identified slave [esp32c6]
+I (8634) transport: EVENT: 11
+I (8644) transport: capabilities: 0xd
+I (8644) transport: Features supported are:
+I (8644) transport: 	 * WLAN
+I (8654) transport: 	   - HCI over SDIO
+I (8654) transport: 	   - BLE only
+I (8664) transport: EVENT: 13
+W (8664) transport: Version mismatch: Host [2.12.0] > Co-proc [0.0.0] ==> Upgrade co-proc to avoid RPC timeouts
+I (8674) transport: ESP board type is : 13 
+
+I (8684) transport: Base transport is set-up, TRANSPORT_TX_ACTIVE
+I (8684) H_API: Transport active
+I (8694) transport: Slave chip Id[12]
+I (8694) transport: raw_tp_dir[-], flow_ctrl: low[60] high[80]
+I (8704) transport: transport_delayed_init
+I (8704) esp_cli: Registering command: crash
+I (8714) esp_cli: Registering command: reboot
+I (8714) esp_cli: Registering command: mem-dump
+I (8724) esp_cli: Registering command: task-dump
+I (8724) esp_cli: Registering command: cpu-dump
+I (8734) esp_cli: Registering command: heap-trace
+I (8734) esp_cli: Registering command: sock-dump
+I (8744) esp_cli: Registering command: host-power-save
+I (8744) hci_stub_drv: Host BT Support: Disabled
+I (8754) H_SDIO_DRV: Received INIT event
+I (8754) H_SDIO_DRV: Event type: 0x22
+I (8764) H_SDIO_DRV: Write thread started
+I (9514) RPC_WRAP: Coprocessor Boot-up
+I (9734) wifi_sta: Connecting to SSID: NADOL_2.4G
+I (9744) RPC_WRAP: ESP Event: wifi station started
+I (9754) H_API: esp_wifi_remote_connect
+I (12694) RPC_WRAP: ESP Event: Station mode: Connected
+I (12694) esp_wifi_remote: esp_wifi_internal_reg_rxcb: sta: 0x400968e8
+--- 0x400968e8: wifi_sta_receive at C:/Users/peekz/esp/esp-idf/components/esp_wifi/src/wifi_netif.c:38
+I (15694) esp_netif_handlers: sta ip: 192.168.1.57, mask: 255.255.255.0, gw: 192.168.1.1
+I (15694) wifi_sta: Connected — IP: 192.168.1.57
+I (15694) unified_cam: Initializing SNTP...
+I (15694) netpie: MQTT client started → mqtt.netpie.io:1883
+I (15864) netpie: Connected to NETPIE broker
+I (15874) netpie: Requesting shadow...
+I (15934) camera_init: Initializing JPEG encoder for 800x640
+I (16164) jpeg_enc: JPEG HW encoder initialized: 800x640, out_buf=1024000 bytes x2
+I (16174) ov5647: Detected Camera sensor PID=0x5647
+I (16254) camera_init: Camera capture task started (MJPEG mode)
+I (16264) camera_init: Camera + JPEG HW Encoder Initialized OK
+I (16264) web_server: API server started on port 80
+I (16264) web_server: Stream server started on port 81
+I (16274) dispenser: Dispenser scheduler started
+I (16274) dispenser: Dispenser scheduler task started
+I (16304) usb_mouse: USB Mouse host started (raw usb_host)
+�I (17694) unified_cam: Waiting for system time to be set... (1/30)
+I (17694) unified_cam: Time synced from NTP: Tue Apr  7 19:32:39 2026
+
+I (17694) unified_cam: RTC DS3231 updated from NTP.
+I (17694) TELEGRAM: Starting Telegram Polling Task...
+I (18584) esp-x509-crt-bundle: Certificate validated
+I (18584) esp-x509-crt-bundle: Certificate validated
+I (20214) TELEGRAM: sendMessage OK, status=200 len=678
+I (28154) esp-x509-crt-bundle: Certificate validated
+I (39634) esp-x509-crt-bundle: Certificate validated
+I (49354) esp-x509-crt-bundle: Certificate validated
+I (58974) esp-x509-crt-bundle: Certificate validated
+I (68704) esp-x509-crt-bundle: Certificate validated
+I (78434) esp-x509-crt-bundle: Certificate validated
+I (88264) esp-x509-crt-bundle: Certificate validated
+I (97994) esp-x509-crt-bundle: Certificate validated
+I (107824) esp-x509-crt-bundle: Certificate validated
+I (117344) esp-x509-crt-bundle: Certificate validated
+I (126974) esp-x509-crt-bundle: Certificate validated
+I (136904) esp-x509-crt-bundle: Certificate validated

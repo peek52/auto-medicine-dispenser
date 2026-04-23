@@ -24,6 +24,15 @@
 
 static const char *TAG = "camera_init";
 
+#define CAM_RETURN_ON_ERR(expr, msg) do {         \
+    esp_err_t __err = (expr);                     \
+    if (__err != ESP_OK) {                        \
+        ESP_LOGE(TAG, "%s: %s", msg,              \
+                 esp_err_to_name(__err));         \
+        return __err;                             \
+    }                                             \
+} while (0)
+
 // Control variable for camera frame logging
 static bool s_log_frames = false;
 
@@ -42,6 +51,9 @@ static esp_ldo_channel_handle_t ldo_mipi_phy = NULL;
 static esp_cam_sensor_device_t *s_cam_sensor = NULL;
 static bool s_hmirror = false;
 static bool s_vflip = false;
+static int s_brightness = 0;
+static int s_contrast = 0;
+static int s_saturation = 0;
 static uint8_t *s_square_crop_buf = NULL;
 static size_t s_square_crop_buf_size = 0;
 static size_t s_cache_line_size = 64;
@@ -223,7 +235,8 @@ esp_err_t camera_init(void) {
         .chan_id = CAM_LDO_CHAN_ID,
         .voltage_mv = CAM_LDO_VOLTAGE_MV,
     };
-    ESP_ERROR_CHECK(esp_ldo_acquire_channel(&ldo_config, &ldo_mipi_phy));
+    CAM_RETURN_ON_ERR(esp_ldo_acquire_channel(&ldo_config, &ldo_mipi_phy),
+                      "Failed to acquire camera LDO");
 
     //---------------I2C Init------------------//
     i2c_master_bus_handle_t i2c_bus_handle = i2c_manager_get_bus_handle();
@@ -250,13 +263,26 @@ esp_err_t camera_init(void) {
             .device_address = p->sccb_addr,
             .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         };
-        ESP_ERROR_CHECK(sccb_new_i2c_io(i2c_bus_handle, &sccb_conf, &cam_config.sccb_handle));
+        ret = sccb_new_i2c_io(i2c_bus_handle, &sccb_conf, &cam_config.sccb_handle);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "SCCB init failed at 0x%02X: %s",
+                     p->sccb_addr, esp_err_to_name(ret));
+            cam_config.sccb_handle = NULL;
+            continue;
+        }
 
         cam = (*(p->detect))(&cam_config);
         if (cam) {
             break;
         }
-        ESP_ERROR_CHECK(esp_sccb_del_i2c_io(cam_config.sccb_handle));
+        if (cam_config.sccb_handle) {
+            esp_err_t del_ret = esp_sccb_del_i2c_io(cam_config.sccb_handle);
+            if (del_ret != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to release SCCB handle: %s",
+                         esp_err_to_name(del_ret));
+            }
+            cam_config.sccb_handle = NULL;
+        }
     }
 
     if (!cam) {
@@ -300,14 +326,17 @@ esp_err_t camera_init(void) {
         .byte_swap_en           = false,
         .queue_items            = 2,   // Reverted to 2
     };
-    ESP_ERROR_CHECK(esp_cam_new_csi_ctlr(&csi_config, &cam_handle));
+    CAM_RETURN_ON_ERR(esp_cam_new_csi_ctlr(&csi_config, &cam_handle),
+                      "Failed to create CSI controller");
 
     esp_cam_ctlr_evt_cbs_t cbs = {
         .on_get_new_trans  = camera_get_new_buffer,
         .on_trans_finished = camera_trans_finished,
     };
-    ESP_ERROR_CHECK(esp_cam_ctlr_register_event_callbacks(cam_handle, &cbs, NULL));
-    ESP_ERROR_CHECK(esp_cam_ctlr_enable(cam_handle));
+    CAM_RETURN_ON_ERR(esp_cam_ctlr_register_event_callbacks(cam_handle, &cbs, NULL),
+                      "Failed to register camera callbacks");
+    CAM_RETURN_ON_ERR(esp_cam_ctlr_enable(cam_handle),
+                      "Failed to enable camera controller");
 
     esp_isp_processor_cfg_t isp_config = {
         .clk_hz                = 80 * 1000 * 1000, // Reverted to 80MHz
@@ -319,10 +348,13 @@ esp_err_t camera_init(void) {
         .h_res                 = CSI_HRES,
         .v_res                 = CSI_VRES,
     };
-    ESP_ERROR_CHECK(esp_isp_new_processor(&isp_config, &isp_proc));
-    ESP_ERROR_CHECK(esp_isp_enable(isp_proc));
+    CAM_RETURN_ON_ERR(esp_isp_new_processor(&isp_config, &isp_proc),
+                      "Failed to create ISP processor");
+    CAM_RETURN_ON_ERR(esp_isp_enable(isp_proc),
+                      "Failed to enable ISP processor");
 
-    ESP_ERROR_CHECK(esp_cam_ctlr_start(cam_handle));
+    CAM_RETURN_ON_ERR(esp_cam_ctlr_start(cam_handle),
+                      "Failed to start camera controller");
     if (xTaskCreatePinnedToCore(camera_task, "cam_task", 8192, NULL, 7, NULL, 0) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create camera task");
         return ESP_FAIL;
@@ -370,4 +402,61 @@ bool camera_get_hmirror(void) {
 
 bool camera_get_vflip(void) {
     return s_vflip;
+}
+
+static esp_err_t camera_set_int_param(uint32_t param_id, int value)
+{
+    if (!s_cam_sensor) return ESP_ERR_INVALID_STATE;
+    return esp_cam_sensor_set_para_value(s_cam_sensor, param_id, &value, sizeof(value));
+}
+
+esp_err_t camera_set_brightness(int value)
+{
+    if (value < -3) value = -3;
+    if (value > 3) value = 3;
+    esp_err_t ret = camera_set_int_param(ESP_CAM_SENSOR_BRIGHTNESS, value);
+    if (ret == ESP_OK) {
+        s_brightness = value;
+        ESP_LOGI(TAG, "Camera brightness set to %d", value);
+    }
+    return ret;
+}
+
+esp_err_t camera_set_contrast(int value)
+{
+    if (value < -3) value = -3;
+    if (value > 3) value = 3;
+    esp_err_t ret = camera_set_int_param(ESP_CAM_SENSOR_CONTRAST, value);
+    if (ret == ESP_OK) {
+        s_contrast = value;
+        ESP_LOGI(TAG, "Camera contrast set to %d", value);
+    }
+    return ret;
+}
+
+esp_err_t camera_set_saturation(int value)
+{
+    if (value < -3) value = -3;
+    if (value > 3) value = 3;
+    esp_err_t ret = camera_set_int_param(ESP_CAM_SENSOR_SATURATION, value);
+    if (ret == ESP_OK) {
+        s_saturation = value;
+        ESP_LOGI(TAG, "Camera saturation set to %d", value);
+    }
+    return ret;
+}
+
+int camera_get_brightness(void)
+{
+    return s_brightness;
+}
+
+int camera_get_contrast(void)
+{
+    return s_contrast;
+}
+
+int camera_get_saturation(void)
+{
+    return s_saturation;
 }

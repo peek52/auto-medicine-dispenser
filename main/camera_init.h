@@ -16,8 +16,14 @@ esp_cam_sensor_device_t *camera_get_sensor(void);
 const char *camera_get_sensor_name(void);
 esp_err_t camera_set_hmirror(bool enable);
 esp_err_t camera_set_vflip(bool enable);
+esp_err_t camera_set_brightness(int value);
+esp_err_t camera_set_contrast(int value);
+esp_err_t camera_set_saturation(int value);
 bool camera_get_hmirror(void);
 bool camera_get_vflip(void);
+int camera_get_brightness(void);
+int camera_get_contrast(void);
+int camera_get_saturation(void);
 
 #ifdef __cplusplus
 }

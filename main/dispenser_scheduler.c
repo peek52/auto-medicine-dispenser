@@ -24,11 +24,7 @@
 #include "cloud_secrets.h"
 #include "offline_sync.h"
 #include "wifi_sta.h"
-#include "cJSON.h"
 #include "esp_log.h"
-#include "esp_http_client.h"
-#include "esp_tls.h"
-#include "esp_crt_bundle.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
@@ -40,6 +36,8 @@
 
 static const char *TAG = "dispenser";
 static const uint32_t STOCK_AUDIT_IDLE_MS = 2500;
+static const uint32_t DISPENSER_TASK_STACK_SIZE = 8192;
+static const uint32_t MANUAL_DISPENSE_TASK_STACK_SIZE = 6144;
 
 // label แต่ละ slot (ตรงกับ HTML)
 static const char *SLOT_LABELS[7] = {
@@ -51,6 +49,13 @@ static char s_last_triggered[6] = "";   // "HH:MM" ที่ trigger ล่า�
 
 // cache next dose string สำหรับ display
 static char s_next_dose[32] = "No schedule";
+
+// track missed slots for today
+static uint8_t g_missed_slots_mask = 0;
+
+uint8_t dispenser_get_missed_slots(void) {
+    return g_missed_slots_mask;
+}
 
 typedef struct {
     bool pending;
@@ -64,6 +69,7 @@ static portMUX_TYPE s_stock_audit_mux = portMUX_INITIALIZER_UNLOCKED;
 static SemaphoreHandle_t s_dispense_mutex = NULL;
 static portMUX_TYPE s_dispense_state_mux = portMUX_INITIALIZER_UNLOCKED;
 static bool s_dispense_busy = false;
+static bool s_low_stock_alert_sent[DISPENSER_MED_COUNT] = {0};
 
 static const char *TG_SLOT_LABELS_TH[7] = {
     "ก่อนอาหารเช้า", "หลังอาหารเช้า", "ก่อนอาหารกลางวัน", "หลังอาหารกลางวัน",
@@ -71,100 +77,15 @@ static const char *TG_SLOT_LABELS_TH[7] = {
 };
 
 /* ── Google Sheets Log Task ── */
-typedef struct {
-    char event[32];
-    char meds[128];
-    char detail[128];
-} gsheet_args_t;
-
-static void gsheet_post_task(void *pvParam) {
-    const char *gs_url = cloud_secrets_get_google_script_url();
-    if (!gs_url || gs_url[0] == '\0') {
-        vTaskDelete(NULL);
-        return;
-    }
-    gsheet_args_t *args = (gsheet_args_t *)pvParam;
-    
-    esp_http_client_config_t config = {
-        .url = gs_url,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-        .timeout_ms = 15000,
-    };
-    
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (!client) {
-        free(args);
-        vTaskDelete(NULL);
-        return;
-    }
-    
-    cJSON *root = cJSON_CreateObject();
-    if (!root ||
-        !cJSON_AddStringToObject(root, "event", args->event) ||
-        !cJSON_AddStringToObject(root, "meds", args->meds) ||
-        !cJSON_AddStringToObject(root, "detail", args->detail)) {
-        cJSON_Delete(root);
-        esp_http_client_cleanup(client);
-        free(args);
-        vTaskDelete(NULL);
-        return;
-    }
-    char *post_data = cJSON_PrintUnformatted(root);
-    cJSON_Delete(root);
-    if (!post_data) {
-        esp_http_client_cleanup(client);
-        free(args);
-        vTaskDelete(NULL);
-        return;
-    }
-    
-    esp_http_client_set_method(client, HTTP_METHOD_POST);
-    esp_http_client_set_header(client, "Content-Type", "application/json");
-    esp_http_client_set_post_field(client, post_data, strlen(post_data));
-    
-    esp_err_t err = esp_http_client_perform(client);
-    if (err == ESP_OK) {
-        int status = esp_http_client_get_status_code(client);
-        if (status >= 200 && status < 300) {
-            ESP_LOGI(TAG, "GSheet Log Sent! Status = %d", status);
-        } else {
-            ESP_LOGW(TAG, "GSheet returned status = %d", status);
-            offline_sync_queue_google_sheets(args->event, args->meds, args->detail);
-        }
-    } else {
-        ESP_LOGE(TAG, "GSheet HTTP Request failed: %s", esp_err_to_name(err));
-        offline_sync_queue_google_sheets(args->event, args->meds, args->detail);
-    }
-    
-    free(post_data);
-    esp_http_client_cleanup(client);
-    free(args);
-    vTaskDelete(NULL);
-}
-
 void google_sheets_log(const char *event, const char *meds, const char *detail) {
     if (!cloud_secrets_has_google_script()) return;
-    if (!wifi_sta_connected()) {
-        offline_sync_queue_google_sheets(event, meds, detail);
-        return;
-    }
-    
-    gsheet_args_t *args = malloc(sizeof(gsheet_args_t));
-    if (!args) return;
-    
-    strncpy(args->event, event ? event : "-", sizeof(args->event)-1);
-    args->event[sizeof(args->event)-1] = '\0';
-    
-    strncpy(args->meds, meds ? meds : "-", sizeof(args->meds)-1);
-    args->meds[sizeof(args->meds)-1] = '\0';
-    
-    strncpy(args->detail, detail ? detail : "-", sizeof(args->detail)-1);
-    args->detail[sizeof(args->detail)-1] = '\0';
-    
-    if (xTaskCreate(gsheet_post_task, "gsheet", 4096, args, 3, NULL) != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create Google Sheets task");
-        offline_sync_queue_google_sheets(args->event, args->meds, args->detail);
-        free(args);
+
+    offline_sync_queue_google_sheets(event ? event : "-",
+                                     meds ? meds : "-",
+                                     detail ? detail : "-");
+
+    if (wifi_sta_connected()) {
+        offline_sync_flush_async();
     }
 }
 
@@ -287,6 +208,179 @@ static const char *telegram_unknown_name(void)
     return telegram_lang_is_th() ? "ไม่ได้ตั้งชื่อ" : "Unknown";
 }
 
+static bool dispenser_slot_index_valid(int slot_idx)
+{
+    return slot_idx >= 0 && slot_idx < 7;
+}
+
+static void build_slot_med_names(int slot_idx, char *buf, size_t buf_len, bool only_in_stock)
+{
+    if (!buf || buf_len == 0) return;
+    buf[0] = '\0';
+
+    const netpie_shadow_t *sh = netpie_get_shadow();
+    if (!sh || slot_idx < 0 || slot_idx >= 7) return;
+
+    for (int i = 0; i < DISPENSER_MED_COUNT; i++) {
+        if (!((sh->med[i].slots >> slot_idx) & 1)) continue;
+        if (only_in_stock && sh->med[i].count <= 0) continue;
+
+        const char *name = sh->med[i].name[0] ? sh->med[i].name : "Unknown";
+        if (buf[0] != '\0') strncat(buf, ", ", buf_len - strlen(buf) - 1);
+        strncat(buf, name, buf_len - strlen(buf) - 1);
+    }
+}
+
+static void append_med_name(char *buf, size_t buf_len, const char *name)
+{
+    if (!buf || buf_len == 0 || !name || !name[0]) return;
+    if (buf[0] != '\0') strncat(buf, ", ", buf_len - strlen(buf) - 1);
+    strncat(buf, name, buf_len - strlen(buf) - 1);
+}
+
+static void reset_low_stock_alert_if_restocked(int med_idx, int current_count)
+{
+    if (med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return;
+    if (current_count > 2) {
+        s_low_stock_alert_sent[med_idx] = false;
+    }
+}
+
+static void send_low_stock_alert(int med_idx, int current_count, const char *reason_th, const char *reason_en, bool force)
+{
+    const netpie_shadow_t *sh = netpie_get_shadow();
+    if (!sh || med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return;
+
+    if (!force) {
+        if (current_count > 2) {
+            s_low_stock_alert_sent[med_idx] = false;
+            return;
+        }
+        if (s_low_stock_alert_sent[med_idx]) return;
+    }
+
+    char time_str[16] = "--:--";
+    ds3231_get_time_str(time_str, sizeof(time_str));
+
+    const char *med_name = sh->med[med_idx].name[0] ? sh->med[med_idx].name : telegram_unknown_name();
+    char msg[384];
+    if (telegram_lang_is_th()) {
+        snprintf(msg, sizeof(msg),
+                 "⚠️ แจ้งเตือนเติมยา\nเวลา: %s\nตลับยา: %d (%s)\nคงเหลือ: %d เม็ด\n%s",
+                 time_str, med_idx + 1, med_name, current_count,
+                 (reason_th && reason_th[0]) ? reason_th : "กรุณาเติมยาเพื่อให้เครื่องพร้อมใช้งานครั้งถัดไป");
+    } else {
+        snprintf(msg, sizeof(msg),
+                 "⚠️ Refill reminder\nTime: %s\nCartridge: %d (%s)\nRemaining: %d pills\n%s",
+                 time_str, med_idx + 1, med_name, current_count,
+                 (reason_en && reason_en[0]) ? reason_en : "Please refill this medicine so the dispenser is ready for the next dose.");
+    }
+    telegram_send_text(msg);
+    s_low_stock_alert_sent[med_idx] = true;
+}
+
+static void send_dispense_result_summary(int slot_idx,
+                                         const char *dispensed_meds,
+                                         const char *empty_meds,
+                                         const char *missed_meds)
+{
+    if (!dispenser_slot_index_valid(slot_idx)) {
+        ESP_LOGE(TAG, "Invalid slot index for dispense summary: %d", slot_idx);
+        return;
+    }
+
+    const netpie_shadow_t *sh = netpie_get_shadow();
+    if (!sh) {
+        ESP_LOGE(TAG, "Shadow is unavailable while building dispense summary");
+        return;
+    }
+
+    char time_str[16] = "--:--:--";
+    ds3231_get_time_str(time_str, sizeof(time_str));
+
+    bool has_dispensed = dispensed_meds && dispensed_meds[0];
+    bool has_empty = empty_meds && empty_meds[0];
+    bool has_missed = missed_meds && missed_meds[0];
+
+    char *msg = (char *)calloc(1, 768);
+    char *detail = (char *)calloc(1, 256);
+    if (!msg || !detail) {
+        ESP_LOGE(TAG, "Failed to allocate summary buffers");
+        free(msg);
+        free(detail);
+        return;
+    }
+
+    const char *event_name = "Dispensed";
+    const char *meds_field = (has_dispensed ? dispensed_meds :
+                             (has_empty ? empty_meds :
+                             (has_missed ? missed_meds : "-")));
+
+    if (has_dispensed && !has_empty && !has_missed) {
+        if (telegram_lang_is_th()) {
+            snprintf(msg, 768,
+                     "✅ ยืนยันการรับยาแล้ว\nเวลา: %s\nมื้อ: %s (%s)\nยาที่จ่ายออกมา: %s",
+                     time_str, telegram_slot_label(slot_idx),
+                     sh->slot_time[slot_idx], dispensed_meds);
+        } else {
+            snprintf(msg, 768,
+                     "Medication confirmed\nTime: %s\nDose: %s (%s)\nDispensed: %s",
+                     time_str, telegram_slot_label(slot_idx),
+                     sh->slot_time[slot_idx], dispensed_meds);
+        }
+        snprintf(detail, 256, "Slot %d (%s) | Out: %s",
+                 slot_idx, SLOT_LABELS[slot_idx], dispensed_meds);
+        event_name = "Dispensed";
+    } else if (has_dispensed) {
+        if (telegram_lang_is_th()) {
+            snprintf(msg, 768,
+                     "⚠️ ยืนยันการรับยาแล้ว\nเวลา: %s\nมื้อ: %s (%s)\nยาที่จ่ายออกมา: %s\nยาที่ควรเติม: %s\nยาที่ต้องตรวจสอบการจ่าย: %s",
+                     time_str, telegram_slot_label(slot_idx),
+                     sh->slot_time[slot_idx],
+                     dispensed_meds,
+                     has_empty ? empty_meds : "-",
+                     has_missed ? missed_meds : "-");
+        } else {
+            snprintf(msg, 768,
+                     "Medication confirmed with warnings\nTime: %s\nDose: %s (%s)\nDispensed: %s\nRefill: %s\nCheck dispenser: %s",
+                     time_str, telegram_slot_label(slot_idx),
+                     sh->slot_time[slot_idx],
+                     dispensed_meds,
+                     has_empty ? empty_meds : "-",
+                     has_missed ? missed_meds : "-");
+        }
+        snprintf(detail, 256, "Slot %d (%s) | Out: %s | Empty: %s | Check: %s",
+                 slot_idx, SLOT_LABELS[slot_idx], dispensed_meds,
+                 has_empty ? empty_meds : "-", has_missed ? missed_meds : "-");
+        event_name = "Partial Dispense";
+    } else {
+        if (telegram_lang_is_th()) {
+            snprintf(msg, 768,
+                     "⚠️ มีการยืนยันรับยาแล้ว แต่ไม่พบยาจ่ายออกมา\nเวลา: %s\nมื้อ: %s (%s)\nยาที่ควรเติม: %s\nยาที่ต้องตรวจสอบการจ่าย: %s\nโปรดตรวจสอบเครื่องหรือเติมยา",
+                     time_str, telegram_slot_label(slot_idx),
+                     sh->slot_time[slot_idx],
+                     has_empty ? empty_meds : "-",
+                     has_missed ? missed_meds : "-");
+        } else {
+            snprintf(msg, 768,
+                     "Medication confirmed, but no pill was dispensed\nTime: %s\nDose: %s (%s)\nRefill: %s\nCheck dispenser: %s",
+                     time_str, telegram_slot_label(slot_idx),
+                     sh->slot_time[slot_idx],
+                     has_empty ? empty_meds : "-",
+                     has_missed ? missed_meds : "-");
+        }
+        snprintf(detail, 256, "Slot %d (%s) | Out: none | Empty: %s | Check: %s",
+                 slot_idx, SLOT_LABELS[slot_idx],
+                 has_empty ? empty_meds : "-", has_missed ? missed_meds : "-");
+        event_name = "Not Dispensed";
+    }
+
+    send_telegram_photo_or_text(msg);
+    google_sheets_log(event_name, meds_field, detail);
+    free(msg);
+    free(detail);
+}
+
 static void send_stock_adjust_audit(int med_idx, int from_count, int to_count)
 {
     const netpie_shadow_t *sh = netpie_get_shadow();
@@ -295,11 +389,11 @@ static void send_stock_adjust_audit(int med_idx, int from_count, int to_count)
     char time_str[16] = "--:--";
     ds3231_get_time_str(time_str, sizeof(time_str));
 
-    char med_name[40];
+    char med_name[64];
     snprintf(med_name, sizeof(med_name), "%s",
              sh->med[med_idx].name[0] ? sh->med[med_idx].name : telegram_unknown_name());
 
-    char msg[320];
+    char msg[384];
     if (telegram_lang_is_th()) {
         snprintf(msg, sizeof(msg),
                  "มีการปรับจำนวนยาในหน้า Setup\nเวลา: %s\nโมดูล: %d (%s)\nจำนวน: %d -> %d (%+d)",
@@ -311,10 +405,6 @@ static void send_stock_adjust_audit(int med_idx, int from_count, int to_count)
     }
     send_telegram_photo_or_text(msg);
 
-    char detail[96];
-    snprintf(detail, sizeof(detail), "Module %d: %d -> %d (%+d)",
-             med_idx + 1, from_count, to_count, to_count - from_count);
-    google_sheets_log("Stock Adjust", med_name, detail);
 }
 
 static void flush_pending_stock_audits(TickType_t now_ticks)
@@ -336,6 +426,7 @@ static void flush_pending_stock_audits(TickType_t now_ticks)
 
         if (should_send && from_count != to_count) {
             send_stock_adjust_audit(i, from_count, to_count);
+            reset_low_stock_alert_if_restocked(i, to_count);
         }
     }
 }
@@ -343,6 +434,12 @@ static void flush_pending_stock_audits(TickType_t now_ticks)
 /* ── Execute Dispense Logic (extracted from task) ── */
 static void execute_dispense(int slot_idx)
 {
+    if (!dispenser_slot_index_valid(slot_idx)) {
+        ESP_LOGE(TAG, "Invalid slot index for execute_dispense: %d", slot_idx);
+        dispenser_clear_busy();
+        return;
+    }
+
     if (!s_dispense_mutex) {
         ESP_LOGE(TAG, "Dispense mutex is not initialized");
         dispenser_clear_busy();
@@ -356,10 +453,33 @@ static void execute_dispense(int slot_idx)
     }
 
     const netpie_shadow_t *sh = netpie_get_shadow();
+    if (!sh) {
+        ESP_LOGE(TAG, "Shadow is unavailable while dispensing");
+        xSemaphoreGive(s_dispense_mutex);
+        dispenser_clear_busy();
+        return;
+    }
+
+    enum { MED_LIST_BUF_LEN = 256 };
+    char *dispensed_meds = (char *)calloc(1, MED_LIST_BUF_LEN);
+    char *empty_meds = (char *)calloc(1, MED_LIST_BUF_LEN);
+    char *missed_meds = (char *)calloc(1, MED_LIST_BUF_LEN);
+    if (!dispensed_meds || !empty_meds || !missed_meds) {
+        ESP_LOGE(TAG, "Failed to allocate dispense result buffers");
+        free(dispensed_meds);
+        free(empty_meds);
+        free(missed_meds);
+        xSemaphoreGive(s_dispense_mutex);
+        dispenser_clear_busy();
+        return;
+    }
+
     for (int i = 0; i < DISPENSER_MED_COUNT; i++) {
         if (!((sh->med[i].slots >> slot_idx) & 1)) continue;
         if (sh->med[i].count <= 0) {
             ESP_LOGW(TAG, "  med%d (%s) empty!", i+1, sh->med[i].name);
+            append_med_name(empty_meds, MED_LIST_BUF_LEN,
+                            sh->med[i].name[0] ? sh->med[i].name : telegram_unknown_name());
             continue;
         }
 
@@ -396,23 +516,12 @@ static void execute_dispense(int slot_idx)
 
         if (!pill_detected) {
             ESP_LOGW(TAG, "      ❌ [IR SENSOR] MISSED! No pill detected dropping for med%d", i+1);
-            char alert_msg[512];
-            if (telegram_lang_is_th()) {
-                snprintf(alert_msg, sizeof(alert_msg),
-                         "⚠️ เกิดข้อผิดพลาดในการจ่ายยา\nโมดูล %d: %s\nเซ็นเซอร์ไม่พบยาตกลงมา\nโปรดตรวจสอบเครื่องจ่ายยา",
-                         i + 1, sh->med[i].name[0] ? sh->med[i].name : telegram_unknown_name());
-            } else {
-                snprintf(alert_msg, sizeof(alert_msg),
-                         "Dispense error detected\nModule %d: %s\nThe sensor did not detect a pill drop.\nPlease inspect the dispenser.",
-                         i + 1, sh->med[i].name[0] ? sh->med[i].name : telegram_unknown_name());
-            }
-            telegram_send_text(alert_msg);
-            
-            // Log Error to Google Sheets
-            google_sheets_log("Error - Not Dropped", sh->med[i].name[0] ? sh->med[i].name : "Unknown", "Sensor missed pill drop");
-            
+            append_med_name(missed_meds, MED_LIST_BUF_LEN,
+                            sh->med[i].name[0] ? sh->med[i].name : telegram_unknown_name());
         } else {
             ESP_LOGI(TAG, "      ✅ [IR SENSOR] SUCCESS! Pill drop confirmed for med%d", i+1);
+            append_med_name(dispensed_meds, MED_LIST_BUF_LEN,
+                            sh->med[i].name[0] ? sh->med[i].name : telegram_unknown_name());
         }
 
         vTaskDelay(pdMS_TO_TICKS(500));
@@ -421,12 +530,26 @@ static void execute_dispense(int slot_idx)
             int new_count = sh->med[i].count - 1;
             if (new_count < 0) new_count = 0;
             netpie_shadow_update_count(i + 1, new_count);
+            send_low_stock_alert(i, new_count,
+                                 "ยาใกล้หมด เหลือ 2 เม็ดสุดท้ายหรือน้อยกว่า",
+                                 "Medicine is running low. Two pills or fewer remain.",
+                                 false);
+        } else {
+            send_low_stock_alert(i, sh->med[i].count,
+                                 "มีการยืนยันรับยาแต่ไม่พบยาออกจากช่อง กรุณาตรวจสอบและเติมยา",
+                                 "Dose was confirmed but no pill was detected. Please check and refill.",
+                                 true);
         }
         vTaskDelay(pdMS_TO_TICKS(200));
     }
 
     xSemaphoreGive(s_dispense_mutex);
     dispenser_clear_busy();
+
+    send_dispense_result_summary(slot_idx, dispensed_meds, empty_meds, missed_meds);
+    free(dispensed_meds);
+    free(empty_meds);
+    free(missed_meds);
 }
 
 /* ── Dispenser Task ── */
@@ -447,6 +570,7 @@ static void dispenser_task(void *arg)
             uint32_t elapsed_sec = (now_ticks - s_wait_start_ticks) * portTICK_PERIOD_MS / 1000;
             if (elapsed_sec > 900) { // 15 mins
                 ESP_LOGW(TAG, "User missed medication for slot %d", s_pending_slot_idx);
+                g_missed_slots_mask |= (1 << s_pending_slot_idx);
                 dispenser_skip_meds();
             }
             continue; // Suspend RTC trigger checks while waiting
@@ -464,6 +588,18 @@ static void dispenser_task(void *arg)
         // Time check logic (Every 10 secs)
         if (now_ms - last_rtc_check > 10000) {
             last_rtc_check = now_ms;
+
+            static char s_current_date[32] = "";
+            char dt_str[32] = "";
+            if (ds3231_get_date_str(dt_str, sizeof(dt_str)) == ESP_OK && dt_str[0] != '\0') {
+                if (s_current_date[0] == '\0') {
+                    strncpy(s_current_date, dt_str, sizeof(s_current_date));
+                } else if (strcmp(dt_str, s_current_date) != 0) {
+                    // Day changed, reset missed slots mask
+                    strncpy(s_current_date, dt_str, sizeof(s_current_date));
+                    g_missed_slots_mask = 0;
+                }
+            }
 
             char t_str[16] = "";
             ds3231_get_time_str(t_str, sizeof(t_str));
@@ -540,6 +676,16 @@ static void dispenser_task(void *arg)
                 int th, tm;
                 if (!parse_hhmm(sh->slot_time[s], &th, &tm)) continue;
 
+                // Check if this slot has any medicine assigned
+                bool has_assigned = false;
+                for (int i = 0; i < DISPENSER_MED_COUNT; i++) {
+                    if ((sh->med[i].slots >> s) & 1) {
+                        has_assigned = true;
+                        break;
+                    }
+                }
+                if (!has_assigned) continue;
+
                 // Check: difference between current time and target slot time
                 int slot_total = th * 60 + tm;
                 int cur_total  = cur_h * 60 + cur_m;
@@ -601,7 +747,7 @@ void dispenser_scheduler_start(void)
             return;
         }
     }
-    if (xTaskCreate(dispenser_task, "dispenser", 4096, NULL, 4, NULL) != pdPASS) {
+    if (xTaskCreate(dispenser_task, "dispenser", DISPENSER_TASK_STACK_SIZE, NULL, 4, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create dispenser scheduler task");
         return;
     }
@@ -631,47 +777,13 @@ void dispenser_confirm_meds(void) {
         s_dispense_approved = true;
         s_waiting_confirm = false;
         ESP_LOGI(TAG, "User CONFIRMED medication drop.");
-        
-        char press_time[16] = "--:--:--";
-        ds3231_get_time_str(press_time, sizeof(press_time));
-        
-        char drop_meds[256] = "";
-        const netpie_shadow_t *sh = netpie_get_shadow();
-        for (int i = 0; i < DISPENSER_MED_COUNT; i++) {
-            if (((sh->med[i].slots >> s_pending_slot_idx) & 1) && sh->med[i].count > 0) {
-                if (strlen(drop_meds) > 0) strcat(drop_meds, ", ");
-                strncat(drop_meds, sh->med[i].name[0] ? sh->med[i].name : "Unknown", sizeof(drop_meds) - strlen(drop_meds) - 1);
-            }
-        }
-
-        char msg[512];
-        if (telegram_lang_is_th()) {
-            snprintf(msg, sizeof(msg),
-                     "✅ ยืนยันการรับยาเรียบร้อย\nเวลา: %s\nมื้อ: %s (%s)\nยาที่จ่าย: %s",
-                     press_time,
-                     telegram_slot_label(s_pending_slot_idx),
-                     sh->slot_time[s_pending_slot_idx],
-                     strlen(drop_meds) > 0 ? drop_meds : "ไม่มี (ยาหมด)");
-        } else {
-            snprintf(msg, sizeof(msg),
-                     "Medication confirmed\nTime: %s\nDose: %s (%s)\nDispensed: %s",
-                     press_time,
-                     telegram_slot_label(s_pending_slot_idx),
-                     sh->slot_time[s_pending_slot_idx],
-                     strlen(drop_meds) > 0 ? drop_meds : "None (out of stock)");
-        }
-        send_telegram_photo_or_text(msg);
-        
-        // Log Success to Google Sheets
-        char detail_str[64];
-        snprintf(detail_str, sizeof(detail_str), "Slot %d (%s)", s_pending_slot_idx, SLOT_LABELS[s_pending_slot_idx]);
-        google_sheets_log("Dispensed", strlen(drop_meds) > 0 ? drop_meds : "None", detail_str);
     }
 }
 
 void dispenser_skip_meds(void) {
     if (s_waiting_confirm) {
         ESP_LOGI(TAG, "User SKIPPED medication drop.");
+        g_missed_slots_mask |= (1 << s_pending_slot_idx);
         
         char msg[512];
         if (telegram_lang_is_th()) {
@@ -687,9 +799,11 @@ void dispenser_skip_meds(void) {
         send_telegram_photo_or_text(msg);
 
         // Log Skipped to Google Sheets
+        char skipped_meds[256] = "";
+        build_slot_med_names(s_pending_slot_idx, skipped_meds, sizeof(skipped_meds), true);
         char detail_str[64];
         snprintf(detail_str, sizeof(detail_str), "Slot %d (%s)", s_pending_slot_idx, SLOT_LABELS[s_pending_slot_idx]);
-        google_sheets_log("Skipped (Timeout)", "-", detail_str);
+        google_sheets_log("Skipped (Timeout)", strlen(skipped_meds) > 0 ? skipped_meds : "-", detail_str);
 
         s_waiting_confirm = false;
         s_pending_slot_idx = -1;
@@ -732,6 +846,7 @@ static void manual_dispense_task(void *arg) {
     int actually_dropped = 0;
     bool eject_all = (qty == 100);
     int loops = eject_all ? 100 : qty; // Hard cap 100 loops
+    bool forced_empty = false;
     char requested_str[16];
     snprintf(requested_str, sizeof(requested_str), "%s", eject_all ? "ALL" : "");
     if (!eject_all) snprintf(requested_str, sizeof(requested_str), "%d", qty);
@@ -760,12 +875,12 @@ static void manual_dispense_task(void *arg) {
 
         if (err1 != ESP_OK || err2 != ESP_OK) {
             ESP_LOGE(TAG, "Hardware I2C failure during dispense. Aborting task.");
-            char med_name[40];
+            char med_name[64];
             snprintf(med_name, sizeof(med_name), "%s",
                      sh->med[m_idx].name[0] ? sh->med[m_idx].name : telegram_unknown_name());
             char time_str[16] = "--:--";
             ds3231_get_time_str(time_str, sizeof(time_str));
-            char msg[320];
+            char msg[384];
             if (telegram_lang_is_th()) {
                 snprintf(msg, sizeof(msg),
                          "คืนยาหรือจ่ายยาแบบแมนนวลไม่สำเร็จ\nเวลา: %s\nโมดูล: %d (%s)\nจำนวนที่สั่ง: %s",
@@ -776,7 +891,6 @@ static void manual_dispense_task(void *arg) {
                          time_str, m_idx + 1, med_name, requested_str);
             }
             send_telegram_photo_or_text(msg);
-            google_sheets_log("Manual Dispense Fail", med_name, "Hardware I2C failure");
             ui_manual_disp_status = 3;
             xSemaphoreGive(s_dispense_mutex);
             dispenser_clear_busy();
@@ -788,29 +902,47 @@ static void manual_dispense_task(void *arg) {
             actually_dropped++;
             int current_count = sh->med[m_idx].count;
             if (current_count > 0) {
-                netpie_shadow_update_count(m_idx + 1, current_count - 1);
+                int new_count = current_count - 1;
+                if (new_count < 0) new_count = 0;
+                netpie_shadow_update_count(m_idx + 1, new_count);
+                send_low_stock_alert(m_idx, new_count,
+                                     "ยาใกล้หมด เหลือ 2 เม็ดสุดท้ายหรือน้อยกว่า",
+                                     "Medicine is running low. Two pills or fewer remain.",
+                                     false);
             }
         } else {
-            if (eject_all) {
-                ESP_LOGI(TAG, "Eject ALL: No pill detected. Compartment is empty.");
-                netpie_shadow_update_count(m_idx + 1, 0);
-                break;
-            } else {
-                ESP_LOGW(TAG, "Missed drop during manual dispense.");
-            }
+            ESP_LOGW(TAG, "No pill detected during manual dispense/return. Marking stock empty.");
+            extern int g_snd_nomeds_th, g_snd_nomeds_en;
+            dfplayer_play_track(telegram_lang_is_th() ? g_snd_nomeds_th : g_snd_nomeds_en);
+            netpie_shadow_update_count(m_idx + 1, 0);
+            forced_empty = true;
+            send_low_stock_alert(m_idx, 0,
+                                 "ไม่พบยาผ่านเซนเซอร์ระหว่างคืนยา/จ่ายยา ระบบตั้งค่ายาคงเหลือเป็น 0 แล้ว กรุณาเติมยา",
+                                 "No pill passed the IR sensor during manual dispense/return. Stock was set to 0. Please refill.",
+                                 true);
+            break;
         }
     }
     
     ESP_LOGI(TAG, "Manual dispense complete. Dropped: %d pills", actually_dropped);
-    dfplayer_play_track(33); // Track 33: Finished!
+    // Play result audio via configurable track globals
+    extern int g_snd_disp_th, g_snd_disp_en, g_snd_return_th, g_snd_return_en, g_snd_nomeds_th, g_snd_nomeds_en;
+    bool is_th = telegram_lang_is_th();
+    if (forced_empty || actually_dropped == 0) {
+        dfplayer_play_track(is_th ? g_snd_nomeds_th : g_snd_nomeds_en);
+    } else if (eject_all) {
+        dfplayer_play_track(is_th ? g_snd_return_th : g_snd_return_en);
+    } else {
+        dfplayer_play_track(is_th ? g_snd_disp_th : g_snd_disp_en);
+    }
 
-    char med_name[40];
+    char med_name[64];
     snprintf(med_name, sizeof(med_name), "%s",
              sh->med[m_idx].name[0] ? sh->med[m_idx].name : telegram_unknown_name());
     char time_str[16] = "--:--";
     ds3231_get_time_str(time_str, sizeof(time_str));
     int remaining_count = netpie_get_shadow()->med[m_idx].count;
-    char msg[320];
+    char msg[384];
     if (telegram_lang_is_th()) {
         snprintf(msg, sizeof(msg),
                  "คืนยาหรือจ่ายยาแบบแมนนวลเสร็จแล้ว\nเวลา: %s\nโมดูล: %d (%s)\nจำนวนที่สั่ง: %s\nจ่ายจริง: %d\nคงเหลือ: %d",
@@ -824,10 +956,21 @@ static void manual_dispense_task(void *arg) {
     }
     send_telegram_photo_or_text(msg);
 
-    char detail[96];
-    snprintf(detail, sizeof(detail), "Module %d dropped %d, left %d",
-             m_idx + 1, actually_dropped, remaining_count);
-    google_sheets_log("Manual Dispense", med_name, detail);
+    if (!eject_all && actually_dropped < qty) {
+        send_low_stock_alert(m_idx, remaining_count,
+                             forced_empty
+                                 ? "จ่ายยาได้ไม่ครบและระบบตรวจว่าช่องยาน่าจะหมดแล้ว กรุณาเติมยา"
+                                 : "จ่ายยาได้ไม่ครบตามจำนวนที่สั่ง กรุณาตรวจสอบและเติมยา",
+                             forced_empty
+                                 ? "Dispense completed incompletely and the compartment appears empty. Please refill."
+                                 : "Dispense completed with fewer pills than requested. Please check and refill.",
+                             true);
+    } else if (eject_all && forced_empty) {
+        send_low_stock_alert(m_idx, remaining_count,
+                             "คืนยาหรือจ่ายยาแบบ ALL จนหมดช่องแล้ว กรุณาเติมยา",
+                             "ALL dispense/return emptied the compartment. Please refill.",
+                             true);
+    }
 
     xSemaphoreGive(s_dispense_mutex);
     dispenser_clear_busy();
@@ -844,7 +987,7 @@ void dispenser_manual_dispense(int med_idx, int qty) {
         args->med_idx = med_idx;
         args->qty = qty;
         // Run completely detached from any UI threads
-        if (xTaskCreate(manual_dispense_task, "man_disp", 4096, args, 4, NULL) != pdPASS) {
+        if (xTaskCreate(manual_dispense_task, "man_disp", MANUAL_DISPENSE_TASK_STACK_SIZE, args, 4, NULL) != pdPASS) {
             free(args);
             dispenser_clear_busy();
             ESP_LOGE(TAG, "Failed to create manual dispense task");

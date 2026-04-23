@@ -2,12 +2,14 @@
 #include "config.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-static const char *TAG = "DY_T20L";
-static const bool s_audio_enabled = false;
+static const char *TAG = "DY_HV20T";
+static const bool s_audio_enabled = true;
+static bool s_uart_ready = false;
 
 // Configuration validation
 #ifndef DFPLAYER_UART_NUM
@@ -19,6 +21,10 @@ static const bool s_audio_enabled = false;
 static void dy_send_cmd(uint8_t cmd, const uint8_t *data, uint8_t len)
 {
     if (!s_audio_enabled) {
+        return;
+    }
+    if (!s_uart_ready) {
+        ESP_LOGW(TAG, "Audio UART not ready, skipping cmd 0x%02X", cmd);
         return;
     }
 
@@ -41,11 +47,17 @@ static void dy_send_cmd(uint8_t cmd, const uint8_t *data, uint8_t len)
     }
 
     buf[idx++] = sum;
-    uart_write_bytes(DFPLAYER_UART_NUM, (const char *)buf, idx);
+    int written = uart_write_bytes(DFPLAYER_UART_NUM, (const char *)buf, idx);
+    if (written < 0) {
+        ESP_LOGW(TAG, "UART write failed for cmd 0x%02X, disabling audio UART until reinit", cmd);
+        s_uart_ready = false;
+    }
 }
 
 void dfplayer_init(void)
 {
+    s_uart_ready = false;
+
     if (!s_audio_enabled) {
         ESP_LOGW(TAG, "Audio disabled in firmware; skipping audio module init");
         return;
@@ -60,11 +72,29 @@ void dfplayer_init(void)
         .source_clk = UART_SCLK_DEFAULT,
     };
 
-    ESP_ERROR_CHECK(uart_driver_install(DFPLAYER_UART_NUM, 256, 0, 0, NULL, 0));
-    ESP_ERROR_CHECK(uart_param_config(DFPLAYER_UART_NUM, &uart_config));
-    ESP_ERROR_CHECK(uart_set_pin(DFPLAYER_UART_NUM, DFPLAYER_TX_PIN, DFPLAYER_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    if (!uart_is_driver_installed(DFPLAYER_UART_NUM)) {
+        esp_err_t ret = uart_driver_install(DFPLAYER_UART_NUM, 256, 0, 0, NULL, 0);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to install audio UART driver: %s", esp_err_to_name(ret));
+            return;
+        }
+    }
 
-    ESP_LOGI(TAG, "DY-T20L UART initialized on TX:%d RX:%d", DFPLAYER_TX_PIN, DFPLAYER_RX_PIN);
+    esp_err_t ret = uart_param_config(DFPLAYER_UART_NUM, &uart_config);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to configure audio UART: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    ret = uart_set_pin(DFPLAYER_UART_NUM, DFPLAYER_TX_PIN, DFPLAYER_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to assign audio UART pins: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    s_uart_ready = true;
+
+    ESP_LOGI(TAG, "DY-HV20T UART initialized on TX:%d RX:%d", DFPLAYER_TX_PIN, DFPLAYER_RX_PIN);
 
     // Give the module a moment to boot before sending commands.
     vTaskDelay(pdMS_TO_TICKS(500));
@@ -74,13 +104,20 @@ void dfplayer_init(void)
 }
 
 static uint8_t s_current_hw_vol = 255;
+static bool s_is_eng_mode = false;
+
+void dfplayer_set_language(int lang_is_eng)
+{
+    s_is_eng_mode = (lang_is_eng != 0);
+    ESP_LOGI(TAG, "Audio language set to: %s", s_is_eng_mode ? "English" : "Thai");
+}
 
 void dfplayer_set_volume(uint8_t vol)
 {
     if (vol > 30) vol = 30;
     if (vol == s_current_hw_vol) return;
 
-    if (!s_audio_enabled) {
+    if (!s_audio_enabled || !s_uart_ready) {
         s_current_hw_vol = vol;
         return;
     }
@@ -93,14 +130,14 @@ void dfplayer_set_volume(uint8_t vol)
 
 void dfplayer_play_track(uint16_t num)
 {
-    // Tracks 1-4 = Alarm/Pre-alerts, track 34 = boot intro, 35-36 = nav toggle feedback (must always play)
-    bool is_alert = (num >= 1 && num <= 4) || (num == 34) || (num == 35) || (num == 36);
+    // Tracks 1-4 = Alarm/Pre-alerts, 80-82 = system/language feedback, 34-36 = nav toggle (must always play)
+    bool is_alert = (num >= 1 && num <= 4) || (num == 34) || (num == 35) || (num == 36) || (num >= 80 && num <= 99);
     
     extern int g_alert_volume;
     extern int g_nav_volume;
     extern bool g_nav_sound_enabled;
 
-    if (!s_audio_enabled) {
+    if (!s_audio_enabled || !s_uart_ready) {
         return;
     }
 
@@ -115,17 +152,40 @@ void dfplayer_play_track(uint16_t num)
         vTaskDelay(pdMS_TO_TICKS(80));
     }
 
+    uint16_t actual_num = (s_is_eng_mode && num < 80) ? (num + 40) : num;
+
     uint8_t data[2] = {
-        (uint8_t)((num >> 8) & 0xFF),
-        (uint8_t)(num & 0xFF)
+        (uint8_t)((actual_num >> 8) & 0xFF),
+        (uint8_t)(actual_num & 0xFF)
     };
     dy_send_cmd(0x07, data, 2);
-    ESP_LOGI(TAG, "Playing Track: %d (HW Vol: %d)", num, target_vol);
+    ESP_LOGI(TAG, "Playing Track: %d (HW Vol: %d)", actual_num, target_vol);
+}
+
+void dfplayer_play_track_force_vol(uint16_t num, uint8_t force_vol)
+{
+    if (!s_audio_enabled || !s_uart_ready) {
+        return;
+    }
+
+    if (s_current_hw_vol != force_vol) {
+        dfplayer_set_volume(force_vol);
+        vTaskDelay(pdMS_TO_TICKS(80));
+    }
+
+    uint16_t actual_num = (s_is_eng_mode && num < 80) ? (num + 40) : num;
+
+    uint8_t data[2] = {
+        (uint8_t)((actual_num >> 8) & 0xFF),
+        (uint8_t)(actual_num & 0xFF)
+    };
+    dy_send_cmd(0x07, data, 2);
+    ESP_LOGI(TAG, "Playing Track: %d (HW Vol: %d [FORCED])", actual_num, force_vol);
 }
 
 void dfplayer_stop(void)
 {
-    if (!s_audio_enabled) {
+    if (!s_audio_enabled || !s_uart_ready) {
         return;
     }
 

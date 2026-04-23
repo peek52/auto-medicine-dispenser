@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>   // size_t
+#include <stdint.h>
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  dispenser_scheduler.h — Medicine dispenser timing logic
@@ -25,6 +26,7 @@ bool dispenser_is_waiting(void);
 bool dispenser_is_empty_warning(void);
 int dispenser_seconds_left(void);
 int dispenser_waiting_slot(void);
+uint8_t dispenser_get_missed_slots(void);
 void dispenser_confirm_meds(void);
 void dispenser_skip_meds(void);
 

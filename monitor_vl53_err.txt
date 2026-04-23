@@ -1,0 +1,3 @@
+Not using an unsupported version of tool cmake found in PATH: 3.30.4.
+Error: Monitor requires standard input to be attached to TTY. Try using a different terminal.
+idf_monitor failed with exit code 1, output of the command is in the D:\project\ddddddddd\unified_cam\build_idf\log\idf_py_stderr_output_6376 and D:\project\ddddddddd\unified_cam\build_idf\log\idf_py_stdout_output_6376

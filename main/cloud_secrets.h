@@ -20,6 +20,9 @@ bool cloud_secrets_verify_cloud_access_code(const char *code);
 bool cloud_secrets_verify_technician_access_code(const char *code);
 bool cloud_secrets_verify_admin_access_code(const char *code);
 bool cloud_secrets_store_access_codes(const char *cloud_code, const char *tech_code, const char *admin_code);
+const char *cloud_secrets_get_cloud_access_code(void);
+const char *cloud_secrets_get_technician_access_code(void);
+const char *cloud_secrets_get_admin_access_code(void);
 
 #ifdef __cplusplus
 }

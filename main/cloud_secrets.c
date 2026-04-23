@@ -16,10 +16,35 @@ static char s_cloud_access_code[32] = {0};
 static char s_tech_access_code[32] = {0};
 static char s_admin_access_code[32] = {0};
 
+static void trim_ascii_inplace(char *text)
+{
+    if (!text) return;
+
+    char *start = text;
+    while (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n') {
+        ++start;
+    }
+
+    if (start != text) {
+        memmove(text, start, strlen(start) + 1);
+    }
+
+    size_t len = strlen(text);
+    while (len > 0) {
+        char ch = text[len - 1];
+        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') {
+            text[--len] = '\0';
+        } else {
+            break;
+        }
+    }
+}
+
 static void load_secret_str(nvs_handle_t h, const char *key, char *dst, size_t dst_len)
 {
     size_t sz = dst_len;
     if (nvs_get_str(h, key, dst, &sz) == ESP_OK && dst[0] != '\0') {
+        trim_ascii_inplace(dst);
         return;
     }
 
@@ -36,6 +61,7 @@ static void load_setting_with_default(nvs_handle_t h, const char *key, char *dst
     if (fallback && fallback[0] != '\0') {
         strncpy(dst, fallback, dst_len - 1);
         dst[dst_len - 1] = '\0';
+        trim_ascii_inplace(dst);
         (void)nvs_set_str(h, key, dst);
     } else {
         dst[0] = '\0';
@@ -119,9 +145,17 @@ bool cloud_secrets_store(const char *tg_token, const char *tg_chat_id, const cha
         return false;
     }
 
-    const char *safe_token = tg_token ? tg_token : "";
-    const char *safe_chat = tg_chat_id ? tg_chat_id : "";
-    const char *safe_url = gs_url ? gs_url : "";
+    char safe_token[sizeof(s_tg_token)] = {0};
+    char safe_chat[sizeof(s_tg_chat_id)] = {0};
+    char safe_url[sizeof(s_google_script_url)] = {0};
+
+    snprintf(safe_token, sizeof(safe_token), "%s", tg_token ? tg_token : "");
+    snprintf(safe_chat, sizeof(safe_chat), "%s", tg_chat_id ? tg_chat_id : "");
+    snprintf(safe_url, sizeof(safe_url), "%s", gs_url ? gs_url : "");
+
+    trim_ascii_inplace(safe_token);
+    trim_ascii_inplace(safe_chat);
+    trim_ascii_inplace(safe_url);
 
     if (nvs_set_str(h, "tg_token", safe_token) != ESP_OK ||
         nvs_set_str(h, "tg_chat", safe_chat) != ESP_OK ||
@@ -214,4 +248,22 @@ bool cloud_secrets_store_access_codes(const char *cloud_code, const char *tech_c
 
     ESP_LOGI(TAG, "Access codes updated via runtime config");
     return true;
+}
+
+const char *cloud_secrets_get_cloud_access_code(void)
+{
+    cloud_secrets_init();
+    return s_cloud_access_code;
+}
+
+const char *cloud_secrets_get_technician_access_code(void)
+{
+    cloud_secrets_init();
+    return s_tech_access_code;
+}
+
+const char *cloud_secrets_get_admin_access_code(void)
+{
+    cloud_secrets_init();
+    return s_admin_access_code;
 }

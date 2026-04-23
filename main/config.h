@@ -9,11 +9,34 @@
 #define WIFI_SSID_DEFAULT   "PJ_Main router_true"
 #define WIFI_PASS_DEFAULT   "pajaroen"
 
+// ── Optional peripherals ────────────────────────────
+#define ENABLE_VL53_PILL_SENSORS 1
+
 // ── I2C Bus (I2C_NUM_0) ────────────────────────────
 // Shared by: Camera sensor (SCCB), PCF8574, PCA9685, DS3231, FT6336U
 #define I2C_SDA_PIN         7
 #define I2C_SCL_PIN         8
-#define I2C_FREQ_HZ         50000   // 50 kHz — required for FT6336U stability
+#if ENABLE_VL53_PILL_SENSORS
+#define I2C_FREQ_HZ         10000   // 10 kHz — slower shared bus for 6x VL53L0X + touch/RTC stability
+#else
+#define I2C_FREQ_HZ         100000  // 100 kHz — better touch responsiveness when VL53 is disabled
+#endif
+
+// ── VL53L0X Multi-Sensor Bus (shared I2C + per-module XSHUT) ────────────────
+#define VL53L0X_DEFAULT_ADDR 0x29
+#define VL53L0X_ADDR_M1      0x71
+#define VL53L0X_ADDR_M2      0x72
+#define VL53L0X_ADDR_M3      0x73
+#define VL53L0X_ADDR_M4      0x74
+#define VL53L0X_ADDR_M5      0x75
+#define VL53L0X_ADDR_M6      0x76
+
+#define VL53L0X_XSHUT_M1     20
+#define VL53L0X_XSHUT_M2     22
+#define VL53L0X_XSHUT_M3     23
+#define VL53L0X_XSHUT_M4     47
+#define VL53L0X_XSHUT_M5     48
+#define VL53L0X_XSHUT_M6     53
 
 // ── I2C Device Addresses ──────────────────────────
 #define ADDR_PCF8574        0x20    // IR sensor (PCF8574) — confirmed by I2C scan
@@ -21,8 +44,17 @@
 #define ADDR_DS3231         0x68    // RTC (DS3231)
 #define ADDR_EEPROM         0x56    // EEPROM on RTC module (optional)
 #define ADDR_FT6336U        0x38    // Touch controller (FT6336U) — needs CTP_RST init before I2C responds
+#define ADDR_TCA9548A       0x70    // TCA9548A I2C Multiplexer (A0=A1=A2=GND)
 #define CTP_RST_PIN         21      // FT6336U hardware reset (active-low pulse)
 #define CTP_INT_PIN         -1      // FT6336U interrupt — not connected (-1 = unused)
+
+// ── VL53L0X Pill Stock Measurement ──────────────────
+// ตลับยาสูง 15mm/เม็ด, ยาเต็มอยู่ห่าง sensor 50mm
+// pill_count = max_pills - round((dist_mm - full_dist_mm) / pill_height_mm)
+#define VL53_FULL_DIST_MM       50   // ระยะจาก sensor ถึงยาตลับบนสุดเมื่อยาเต็ม (mm)
+#define VL53_PILL_HEIGHT_MM     15   // ความสูงของยา 1 เม็ด (mm) — 1.5cm
+#define VL53_MAX_PILLS          16   // จำนวนยาสูงสุดต่อตลับ
+#define VL53_EMPTY_DIST_MM      (VL53_FULL_DIST_MM + VL53_PILL_HEIGHT_MM * VL53_MAX_PILLS)  // = 290mm
 
 // ── Camera (MIPI-CSI2 / OV5647) ──────────────────
 #define CAM_LDO_CHAN_ID     3
@@ -48,6 +80,16 @@
 #define TFT_CS      26
 #define TFT_DC      24
 #define TFT_RST     25
+
+#define ENABLE_SD_CARD        0
+#define SD_CARD_CLK_PIN       43
+#define SD_CARD_CMD_PIN       44
+#define SD_CARD_D0_PIN        39
+#define SD_CARD_D1_PIN        40
+#define SD_CARD_D2_PIN        41
+#define SD_CARD_D3_PIN        42
+#define SD_CARD_POWER_PIN     45
+#define SD_CARD_MOUNT_POINT   "/sdcard"
 
 // ── NETPIE 2020 (MQTT) ───────────────────────────
 #define NETPIE_BROKER       "mqtt.netpie.io"

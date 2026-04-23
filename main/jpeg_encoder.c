@@ -18,7 +18,7 @@ static size_t s_jpeg_len[JPEG_BUFS] = {0, 0, 0};
 static volatile int s_write_idx = 0;
 static volatile int s_read_idx = -1;
 static volatile int s_active_read_idx = -1;
-static int s_jpeg_quality = 60;
+static int s_jpeg_quality = 45;
 
 static SemaphoreHandle_t s_swap_mutex = NULL;
 static SemaphoreHandle_t s_frame_ready = NULL;

@@ -450,6 +450,7 @@ static void spi_display_bus_init(void)
 enum ui_page_t current_page = PAGE_STANDBY;
 enum ui_page_t pending_page = PAGE_STANDBY;
 bool force_redraw = true;
+static TickType_t s_intro_deadline = 0;
 
 /* Warnings Modal States */
 bool s_sched_warn_dismissed = false;
@@ -489,8 +490,12 @@ extern "C" void display_clock_init(void)
         ESP_LOGE(TAG, "SPI fail");
         return;
     }
+    ESP_LOGI(TAG, "Display SPI ready");
     st7796_init();
-    fill_screen(COLOR_BG);
+    ESP_LOGI(TAG, "Display controller initialized");
+    // Avoid a full-screen clear in app_main(). The first UI task render will
+    // paint the initial page and is less likely to trip instability during boot.
+    force_redraw = true;
     ESP_LOGI(TAG, "Display initialized");
     // NOTE: settings_load_nvs() is called from main.c AFTER dfplayer_init()
     //       so that the Set Volume command reaches an initialized DFPlayer UART.
@@ -568,27 +573,26 @@ static void clock_task(void *)
             last_ty = ty;
         }
 
-        static uint32_t last_log_ms = 0;
-        if (touched && (xTaskGetTickCount() * portTICK_PERIOD_MS - last_log_ms > 200)) {
-            ESP_LOGI(TAG, "RAW TOUCH x=%d y=%d", tx, ty);
-            last_log_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        }
-
         bool long_press = false;
         bool trigger_action = false;
 
         static uint32_t s_last_local_touch_ms = 0;
 
         if (touched && !prev_touch) {
-            touch_start_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-            s_last_local_touch_ms = touch_start_ms;
-            last_repeat_ms = touch_start_ms;
-            touch_handled = false;
-            if (current_page == PAGE_TIME_PICKER || current_page == PAGE_KEYBOARD) {
-                long_press = false;
+            uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            touch_start_ms = now_ms;
+            s_last_local_touch_ms = now_ms;
+            last_repeat_ms = now_ms;
+            long_press = false;
+            
+            static uint32_t s_last_trigger_ms = 0;
+            if (now_ms - s_last_trigger_ms > 300) {
                 trigger_action = true;
-                touch_handled = true;
+                s_last_trigger_ms = now_ms;
+            } else {
+                trigger_action = false;
             }
+            touch_handled = true;
         } else if (touched && prev_touch) {
             if (!touch_handled && ((xTaskGetTickCount() * portTICK_PERIOD_MS) - touch_start_ms > 350)) {
                 long_press = true;
@@ -606,8 +610,7 @@ static void clock_task(void *)
 
         if (trigger_action) {
             uint16_t atx = last_tx, aty = last_ty;
-            ESP_LOGI(TAG, "Touch action at tx=%d ty=%d long=%d", atx, aty, long_press);
-            
+
             uint16_t tx_n, ty_n;
             ui_map_touch(atx, aty, &tx_n, &ty_n);
 
@@ -639,7 +642,7 @@ static void clock_task(void *)
                 ui_setup_meds_detail_handle_touch(tx_n, ty_n);
             }
             else if (current_page == PAGE_MANUAL) {
-                if (ty_n < 50) pending_page = PAGE_MENU;
+                if (tx_n >= 14 && tx_n <= 118 && ty_n >= 8 && ty_n <= 34) pending_page = PAGE_MENU;
             }
             else if (current_page == PAGE_SETTINGS) {
                 ui_settings_handle_touch(tx_n, ty_n);
@@ -651,17 +654,18 @@ static void clock_task(void *)
 
         // --- Auto-switch to Confirm Page if medication is waiting ---
         static uint32_t s_last_play_ms = 0;
-        
+
         if (dispenser_is_waiting()) {
             if (current_page != PAGE_CONFIRM_MEDS) {
                 pending_page = PAGE_CONFIRM_MEDS;
             }
-            
-            // Re-trigger audio playback periodically (every 6 seconds) until confirmed
+
+            // Audio cycle: Track 1 x2 → Track 82 x1, loop until user confirms
             if (current_page == PAGE_CONFIRM_MEDS || pending_page == PAGE_CONFIRM_MEDS) {
+                extern int g_snd_alarm;
                 uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-                if (s_last_play_ms == 0 || (now_ms - s_last_play_ms) > 6000) {
-                    dfplayer_play_track(1);
+                if (s_last_play_ms == 0 || (now_ms - s_last_play_ms) > 5000) {
+                    dfplayer_play_track(g_snd_alarm);
                     s_last_play_ms = now_ms;
                 }
             }
@@ -669,7 +673,7 @@ static void clock_task(void *)
             s_last_play_ms = 0;
             if (current_page == PAGE_CONFIRM_MEDS) {
                 pending_page = PAGE_STANDBY;
-                dfplayer_stop(); // Instantly stop repeating audio upon confirmation pickup
+                dfplayer_stop();
             }
         }
 
@@ -696,7 +700,12 @@ static void clock_task(void *)
         }
 
         uint32_t now = xTaskGetTickCount();
-        bool periodic_render = (now - last_render_ticks) >= pdMS_TO_TICKS(1000);
+        bool page_needs_live_tick =
+            (current_page == PAGE_STANDBY || current_page == PAGE_CONFIRM_MEDS);
+        bool page_needs_service_loop =
+            (current_page == PAGE_TIME_PICKER || current_page == PAGE_WIFI_SCAN);
+        bool periodic_render =
+            page_needs_live_tick && ((now - last_render_ticks) >= pdMS_TO_TICKS(1000));
 
         static netpie_shadow_t s_last_sh_for_popup = {0};
         static bool s_popup_init = false;
@@ -730,18 +739,28 @@ static void clock_task(void *)
                  uint32_t rx_age = now_ms - (netpie_mqtt_get_last_rx_time() * portTICK_PERIOD_MS);
                  uint32_t local_touch_age = now_ms - s_last_local_touch_ms;
                  
-                 // If the shadow changed AND the last MQTT RX was recent, BUT the user hasn't touched the screen in the last 2.5 seconds, it's a genuine remote dashboard sync!
-                 // This completely prevents the local touch echo from forcing a global redraw.
+                 // Keep standby calm: the page already refreshes once per second,
+                 // so a remote shadow sync does not need a full-screen popup/redraw.
+                 // Outside standby we still allow a normal refresh to pick up changes.
                  if (rx_age <= 1500 && local_touch_age > 2500) {
-                     s_netpie_sync_popup_until = now_ms + 3000;
-                     force_redraw = true;
+                     if (current_page != PAGE_STANDBY) {
+                         force_redraw = true;
+                     } else {
+                         s_netpie_sync_popup_until = 0;
+                     }
                  }
                  s_last_sh_for_popup = *curr_sh_ptr;
              }
         }
 
-        if (force_redraw || periodic_render) {
-            last_render_ticks = now;
+        bool immediate_interaction_render = trigger_action;
+        bool should_render =
+            force_redraw || periodic_render || immediate_interaction_render || page_needs_service_loop;
+
+        if (should_render) {
+            if (force_redraw || periodic_render || page_needs_live_tick) {
+                last_render_ticks = now;
+            }
 
             char t_str[16] = "--:--:--";
             ds3231_get_time_str(t_str, sizeof(t_str));
@@ -781,8 +800,12 @@ static void clock_task(void *)
 
                     fill_round_rect(185, 282, 110, 26, 13, 0xFFFF);
                     draw_string_gfx(205, 302, "Starting...", 0x0478, 0xFFFF, &FreeSans9pt7b);
+                    s_intro_deadline = xTaskGetTickCount() + pdMS_TO_TICKS(2500);
+                }
 
-                    vTaskDelay(pdMS_TO_TICKS(2500));
+                if (s_intro_deadline != 0 &&
+                    (int32_t)(xTaskGetTickCount() - s_intro_deadline) >= 0) {
+                    s_intro_deadline = 0;
                     pending_page = PAGE_STANDBY;
                     force_redraw = true;
                 }
@@ -879,7 +902,13 @@ static void clock_task(void *)
             prev_lbtn = ms.btn_left;
         }
 
-        TickType_t ui_sleep = (current_page == PAGE_KEYBOARD) ? pdMS_TO_TICKS(20) : pdMS_TO_TICKS(50);
+        TickType_t ui_sleep = pdMS_TO_TICKS(16);
+        if (current_page == PAGE_KEYBOARD || current_page == PAGE_TIME_PICKER) {
+            ui_sleep = pdMS_TO_TICKS(12);
+        }
+        if (touched) {
+            ui_sleep = pdMS_TO_TICKS(10);
+        }
         vTaskDelay(ui_sleep);
     }
 }

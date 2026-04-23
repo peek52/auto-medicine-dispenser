@@ -4,6 +4,7 @@
 #include "netpie_mqtt.h"
 #include "ui_utf8_text.h"
 #include "ui_keyboard_thai_labels.h"
+#include "dfplayer.h"
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -119,8 +120,31 @@ void ui_keyboard_prepare(bool prefer_th)
 
 static void keyboard_store_med_name(void)
 {
-    char publish_name[32];
+    char publish_name[64];
     ui_utf8_safe_truncate_copy(publish_name, sizeof(publish_name), kb_input_buf);
+
+    // Treat an all-space name as a true delete action for the medicine slot.
+    size_t start = 0;
+    while (publish_name[start] == ' ') start++;
+    size_t end = strlen(publish_name);
+    while (end > start && publish_name[end - 1] == ' ') end--;
+
+    if (start > 0 || end < strlen(publish_name)) {
+        size_t out = 0;
+        for (size_t i = start; i < end && out + 1 < sizeof(publish_name); ++i) {
+            publish_name[out++] = publish_name[i];
+        }
+        publish_name[out] = '\0';
+    }
+
+    if (publish_name[0] == '\0') {
+        netpie_shadow_update_med_name(edit_slot + 1, "");
+        netpie_shadow_update_count(edit_slot + 1, 0);
+        netpie_shadow_update_med_slots(edit_slot + 1, 0);
+        ESP_LOGI(TAG, "Medicine slot %d cleared from keyboard", edit_slot + 1);
+        return;
+    }
+
     netpie_shadow_update_med_name(edit_slot + 1, publish_name);
 }
 
@@ -132,6 +156,7 @@ static void keyboard_submit(void)
         fill_screen(0xFFFF);
         fill_rect(0, 130, LCD_W, 50, THEME_PANEL);
         draw_string_gfx(20, 162, "Connecting to WiFi...", 0xFFFF, THEME_PANEL, &FreeSans18pt7b);
+        dfplayer_play_track(14); // Save sound
         wifi_sta_reconnect(selected_ssid, kb_input_buf);
         pending_page = PAGE_STANDBY;
         is_wifi_setup = false;
@@ -139,11 +164,13 @@ static void keyboard_submit(void)
     }
     else if (is_med_name_setup) {
         keyboard_store_med_name();
+        dfplayer_play_track(14); // Save sound
         pending_page = PAGE_SETUP_MEDS_DETAIL;
         is_med_name_setup = false;
         force_redraw = true;
     }
     else {
+        dfplayer_play_track(g_snd_button);
         pending_page = PAGE_STANDBY;
         force_redraw = true;
     }
@@ -340,7 +367,8 @@ static void keyboard_handle_th_touch(uint16_t tx_n, uint16_t ty_n)
         const kb_th_key_t *k = &page[i];
         if (tx_n >= (uint16_t)k->x && tx_n <= (uint16_t)(k->x + k->w) &&
             ty_n >= (uint16_t)k->y && ty_n <= (uint16_t)(k->y + k->h)) {
-            if (ui_utf8_append(kb_input_buf, sizeof(kb_input_buf), k->label, 31)) {
+            size_t max_len = is_med_name_setup ? 63 : 31;
+            if (ui_utf8_append(kb_input_buf, sizeof(kb_input_buf), k->label, max_len)) {
                 kb_input_dirty = true;
             }
             return;
@@ -365,7 +393,8 @@ static void keyboard_handle_th_touch(uint16_t tx_n, uint16_t ty_n)
                 kb_shift = false;
                 force_redraw = true;
             } else if (i == 3) {
-                if (ui_utf8_append(kb_input_buf, sizeof(kb_input_buf), " ", 31)) kb_input_dirty = true;
+                size_t max_len = is_med_name_setup ? 63 : 31;
+                if (ui_utf8_append(kb_input_buf, sizeof(kb_input_buf), " ", max_len)) kb_input_dirty = true;
             } else if (i == 4) {
                 if (ui_utf8_backspace(kb_input_buf)) kb_input_dirty = true;
             } else if (i == 5) {
@@ -416,7 +445,7 @@ void ui_keyboard_handle_touch(uint16_t tx_n, uint16_t ty_n)
                 } else if (k->letter == '\n') {
                     keyboard_submit();
                 } else if (k->letter == ' ') {
-                    size_t max_len = is_med_name_setup ? 31 : 31;
+                    size_t max_len = is_med_name_setup ? 63 : 31;
                     if (ui_utf8_append(kb_input_buf, sizeof(kb_input_buf), " ", max_len)) kb_input_dirty = true;
                 } else {
                     char ch;
@@ -424,7 +453,7 @@ void ui_keyboard_handle_touch(uint16_t tx_n, uint16_t ty_n)
                     else ch = kb_shift ? (char)toupper((unsigned char)k->letter) : k->letter;
 
                     char text[2] = { ch, '\0' };
-                    size_t max_len = is_med_name_setup ? 31 : 31;
+                    size_t max_len = is_med_name_setup ? 63 : 31;
                     if (ui_utf8_append(kb_input_buf, sizeof(kb_input_buf), text, max_len)) {
                         kb_input_dirty = true;
                         if (kb_shift && !kb_num_mode) {

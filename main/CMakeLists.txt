@@ -21,14 +21,20 @@ idf_component_register(SRCS "camera_init.c"
                             "web_handlers_servo.c"
                             "web_handlers_status.c"
                             "web_handlers_stream.c"
+                            "web_log.c"
                             "netpie_mqtt.c"
                             "offline_sync.c"
+                            "pill_sensor_status.c"
                             "dispenser_scheduler.c"
+                            "sd_card.c"
+                            "vl53l0x_multi.c"
                             "wifi_sta.c"
                             "usb_mouse.c"
                             "telegram_bot.c"
+                            "tca9548a.c"
                     INCLUDE_DIRS "."
                     REQUIRES esp_http_server esp_driver_cam esp_driver_isp
                              esp_driver_jpeg nvs_flash esp_wifi driver
                              esp_timer esp_hw_support mqtt LovyanGFX
-                             usb esp_http_client esp-tls mbedtls json)
+                             usb esp_http_client esp-tls mbedtls json
+                             fatfs sdmmc esp_driver_sdmmc)
