@@ -111,7 +111,7 @@ esp_err_t i2c_manager_ping(uint8_t addr)
     // Probe must not create/cache device handles. The boot-time scan checks many
     // empty addresses, and caching those dummy handles can fill the small device
     // cache before real devices like FT6336U/PCA9685/PCF8574/DS3231 are reached.
-    esp_err_t ret = i2c_master_probe(s_bus_handle, addr, 20);
+    esp_err_t ret = i2c_master_probe(s_bus_handle, addr, 100);
     xSemaphoreGive(g_i2c_mutex);
     return ret;
 }
@@ -130,10 +130,9 @@ esp_err_t i2c_manager_write(uint8_t addr, const uint8_t *data, size_t len)
     return ret;
 }
 
-esp_err_t i2c_manager_write_nolock(uint8_t addr, const uint8_t *data, size_t len)
+esp_err_t i2c_manager_write_locked(uint8_t addr, const uint8_t *data, size_t len)
 {
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
-    // Caller holds g_i2c_mutex — do NOT take it again
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
     if (!dev) return ESP_FAIL;
     return i2c_master_transmit(dev, data, len, 50);

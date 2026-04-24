@@ -36,9 +36,12 @@ esp_err_t i2c_manager_ping(uint8_t addr);
  */
 esp_err_t i2c_manager_write(uint8_t addr, const uint8_t *data, size_t len);
 
-/** Same as i2c_manager_write but WITHOUT acquiring the mutex.
- *  Caller MUST hold g_i2c_mutex before calling this. */
-esp_err_t i2c_manager_write_nolock(uint8_t addr, const uint8_t *data, size_t len);
+/**
+ * Like i2c_manager_write but the caller must already hold g_i2c_mutex.
+ * Used to batch multiple operations (e.g. TCA channel-select + sensor I/O)
+ * under a single lock to prevent channel races.
+ */
+esp_err_t i2c_manager_write_locked(uint8_t addr, const uint8_t *data, size_t len);
 
 /**
  * Write register byte then read reply. Acquires mutex internally.

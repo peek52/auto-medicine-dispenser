@@ -21,14 +21,15 @@ esp_err_t tca9548a_init(void);
 // Returns ESP_OK on success
 esp_err_t tca9548a_select_channel(uint8_t ch);
 
+// Same as tca9548a_select_channel but assumes the caller already holds g_i2c_mutex.
+// Use this when channel-select must be batched with sensor I/O under one lock.
+esp_err_t tca9548a_select_channel_locked(uint8_t ch);
+
 // Disable all channels (write 0x00)
 esp_err_t tca9548a_disable_all(void);
 
 // Ping TCA9548A to check if it's present on I2C bus
 bool tca9548a_is_present(void);
-
-// Select channel WITHOUT taking the i2c mutex (caller must hold it)
-esp_err_t tca9548a_select_channel_nolock(uint8_t ch);
 
 #ifdef __cplusplus
 }

@@ -31,11 +31,11 @@ esp_err_t tca9548a_select_channel(uint8_t ch)
     return i2c_manager_write(ADDR_TCA9548A, &val, 1);
 }
 
-esp_err_t tca9548a_select_channel_nolock(uint8_t ch)
+esp_err_t tca9548a_select_channel_locked(uint8_t ch)
 {
     if (ch > 7) return ESP_ERR_INVALID_ARG;
     uint8_t val = (uint8_t)(1u << ch);
-    return i2c_manager_write_nolock(ADDR_TCA9548A, &val, 1);
+    return i2c_manager_write_locked(ADDR_TCA9548A, &val, 1);
 }
 
 esp_err_t tca9548a_disable_all(void)

@@ -12,7 +12,11 @@
 // I2C bus: shared by camera SCCB, PCF8574, PCA9685, DS3231, FT6336U, and TCA9548A.
 #define I2C_SDA_PIN         7
 #define I2C_SCL_PIN         8
-#define I2C_FREQ_HZ         10000   // Stable speed for the long shared I2C bus.
+#if ENABLE_VL53_PILL_SENSORS
+#define I2C_FREQ_HZ         50000   // VL53 via TCA9548A: 50 kHz handles weak pull-ups / long wires.
+#else
+#define I2C_FREQ_HZ         100000
+#endif
 
 // VL53L0X multi-sensor bus through TCA9548A, with one XSHUT line per module.
 #define VL53L0X_DEFAULT_ADDR 0x29

@@ -247,15 +247,7 @@ static void deferred_init_task(void *arg)
         ESP_LOGE(TAG, "Failed to create cli_task");
     }
 
-#if ENABLE_VL53_PILL_SENSORS
-    if (tca9548a_init() == ESP_OK) {
-        vl53l0x_multi_bootstrap();
-        vl53l0x_multi_start();
-        ESP_LOGI(TAG, "VL53 pill sensors started");
-    } else {
-        ESP_LOGW(TAG, "TCA9548A not found — VL53 skipped");
-    }
-#endif
+    // VL53 pill sensors are started in app_main (they don't need Wi-Fi).
 
     extern bool g_system_ready;
     g_system_ready = true;
@@ -302,6 +294,8 @@ void app_main(void)
     }
     if (i2c_ready) {
 
+// VL53 bootstrap moved to deferred_init_task to avoid double-init
+
     ESP_LOGI(TAG, "Scanning I2C bus...");
     for (uint8_t a = 3; a < 0x78; a++) {
         if (i2c_manager_ping(a) == ESP_OK) {
@@ -309,6 +303,12 @@ void app_main(void)
         }
     }
     ESP_LOGI(TAG, "Scan complete.");
+
+#if ENABLE_VL53_PILL_SENSORS
+    if (tca9548a_init() != ESP_OK) {
+        ESP_LOGW(TAG, "TCA9548A not found at 0x%02X — VL53 will be skipped", ADDR_TCA9548A);
+    }
+#endif
 
     // 3. Initialize I2C Devices
     // PCA9685 (Servo)
@@ -329,8 +329,18 @@ void app_main(void)
     // FT6336U (Touch screen)
     ft6336u_init();
 
+#if ENABLE_VL53_PILL_SENSORS
+    // VL53 init must not sit in deferred_init_task — that path is gated on
+    // wifi_sta_init() which blocks waiting for the ESP-Hosted slave chip.
+    // Sensors only need I2C + TCA, both ready here.
+    if (tca9548a_is_present()) {
+        vl53l0x_multi_bootstrap();
+        vl53l0x_multi_start();
     }
-    // Display hardware init first, but keep the periodic UI task stopped until after VL53 bootstrap.
+#endif
+
+    }
+    // Display hardware init first, then start the periodic UI task immediately.
     display_clock_init();
     display_clock_start_task();
 #if ENABLE_SD_CARD

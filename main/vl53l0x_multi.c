@@ -23,16 +23,11 @@
 #define VL53_REG_RESULT_INTERRUPT_STATUS                0x13
 #define VL53_REG_RESULT_RANGE_STATUS                    0x14
 #define VL53_REG_GPIO_HV_MUX_ACTIVE_HIGH                0x84
-#define VL53_REG_I2C_SLAVE_DEVICE_ADDRESS               0x8A
 #define VL53_REG_VHV_CONFIG_PAD_SCL_SDA__EXTSUP_HV      0x89
 #define VL53_REG_MSRC_CONFIG_CONTROL                    0x60
 #define VL53_REG_FINAL_RANGE_CONFIG_MIN_COUNT_RATE      0x44
-#define VL53_REG_FINAL_RANGE_CONFIG_VALID_PHASE_LOW     0x47
-#define VL53_REG_FINAL_RANGE_CONFIG_VALID_PHASE_HIGH    0x48
 #define VL53_REG_FINAL_RANGE_CONFIG_TIMEOUT_MACROP_HI   0x71
 #define VL53_REG_FINAL_RANGE_CONFIG_VCSEL_PERIOD        0x70
-#define VL53_REG_PRE_RANGE_CONFIG_VALID_PHASE_LOW       0x56
-#define VL53_REG_PRE_RANGE_CONFIG_VALID_PHASE_HIGH      0x57
 #define VL53_REG_PRE_RANGE_CONFIG_TIMEOUT_MACROP_HI     0x51
 #define VL53_REG_PRE_RANGE_CONFIG_VCSEL_PERIOD          0x50
 #define VL53_REG_MSRC_CONFIG_TIMEOUT_MACROP             0x46
@@ -41,16 +36,12 @@
 #define VL53_REG_GLOBAL_CONFIG_REF_EN_START_SELECT      0xB6
 #define VL53_REG_DYNAMIC_SPAD_NUM_REQUESTED_REF_SPAD    0x4E
 #define VL53_REG_DYNAMIC_SPAD_REF_EN_START_OFFSET       0x4F
-#define VL53_REG_GLOBAL_CONFIG_VCSEL_WIDTH              0x32
 #define VL53_REG_OSC_CALIBRATE_VAL                      0xF8
-#define VL53_REG_ALGO_PHASECAL_LIM                      0x30
-#define VL53_REG_ALGO_PHASECAL_CONFIG_TIMEOUT           0x30
 
 #define VL53_MODEL_ID                                   0xEE
-#define VL53_INIT_DELAY_MS                              100
-#define VL53_BOOT_RETRIES                               8
+#define VL53_BOOT_RETRIES                               3
 #define VL53_BOOT_RETRY_DELAY_MS                        50
-#define VL53_RANGING_TIMEOUT_MS                         250
+#define VL53_RANGING_TIMEOUT_MS                         1000
 #define VL53_READ_INTERVAL_MS                           1000
 #define VL53_MAX_VALID_MM                               2000
 #define VL53_EMA_ALPHA                                  0.20f
@@ -59,9 +50,9 @@
 #define VL53_CONTINUOUS_PERIOD_MS                       50
 #define VL53_RESTART_AFTER_FAILS                        5
 #define VL53_INVALID_GRACE_READS                        3
+#define VL53_STABLE_TICKS_BEFORE_SYNC                   3
 
 #define decodeVcselPeriod(reg_val)      (((reg_val) + 1U) << 1U)
-#define encodeVcselPeriod(period_pclks) (((period_pclks) >> 1U) - 1U)
 #define calcMacroPeriod(vcsel_period_pclks) ((((uint32_t)2304U * (vcsel_period_pclks) * 1655U) + 500U) / 1000U)
 
 static const char *TAG = "vl53_multi";
@@ -85,10 +76,10 @@ typedef struct {
     uint32_t final_range_us;
 } vl53_sequence_step_timeouts_t;
 
-// ── ใช้ TCA9548A: sensor ทุกตัวอยู่ที่ address 0x29 แยกด้วย channel ──
+// Every VL53L0X sits at I2C addr 0x29; the TCA9548A isolates them by channel.
+// One shared device handle is enough because channel-select and each
+// transaction share the same I2C mutex.
 typedef struct {
-    uint8_t  channel;       // TCA9548A channel (0-5)
-    uint8_t  address;       // VL53L0X I2C addr = 0x29 ทุกตัว
     bool     present;
     bool     filter_ready;
     uint8_t  stop_variable;
@@ -96,22 +87,56 @@ typedef struct {
     uint8_t  invalid_sample_count;
     uint32_t measurement_timing_budget_us;
     float    filtered_mm;
-    i2c_master_dev_handle_t dev;
 } vl53_sensor_t;
 
-static vl53_sensor_t s_sensors[PILL_SENSOR_COUNT] = {
-    { 0, VL53L0X_DEFAULT_ADDR, false, false, 0, 0, 0, 0, 0.0f, NULL },
-    { 1, VL53L0X_DEFAULT_ADDR, false, false, 0, 0, 0, 0, 0.0f, NULL },
-    { 2, VL53L0X_DEFAULT_ADDR, false, false, 0, 0, 0, 0, 0.0f, NULL },
-    { 3, VL53L0X_DEFAULT_ADDR, false, false, 0, 0, 0, 0, 0.0f, NULL },
-    { 4, VL53L0X_DEFAULT_ADDR, false, false, 0, 0, 0, 0, 0.0f, NULL },
-    { 5, VL53L0X_DEFAULT_ADDR, false, false, 0, 0, 0, 0, 0.0f, NULL },
-};
+static vl53_sensor_t s_sensors[PILL_SENSOR_COUNT];
 static TickType_t s_retry_after_ticks[PILL_SENSOR_COUNT] = {0};
-static i2c_master_dev_handle_t s_default_dev = NULL;
-// Active sensor index — set before any vl53_read/write so vl53_with_device
-// can atomically re-select the correct TCA9548A channel inside the mutex.
-static int s_vl53_current_idx = 0;
+static i2c_master_dev_handle_t s_vl53_dev = NULL;
+
+// ─── Low-level I/O ──────────────────────────────────────────────────────────
+
+static esp_err_t vl53_ensure_dev_locked(void)
+{
+    if (s_vl53_dev) return ESP_OK;
+    i2c_master_bus_handle_t bus = i2c_manager_get_bus_handle();
+    if (!bus) return ESP_ERR_INVALID_STATE;
+
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address  = VL53L0X_DEFAULT_ADDR,
+        .scl_speed_hz    = VL53_I2C_SPEED_HZ,
+    };
+    return i2c_master_bus_add_device(bus, &dev_cfg, &s_vl53_dev);
+}
+
+static void vl53_release_dev(void)
+{
+    if (!g_i2c_mutex) return;
+    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+    if (s_vl53_dev) {
+        i2c_master_bus_rm_device(s_vl53_dev);
+        s_vl53_dev = NULL;
+    }
+    xSemaphoreGive(g_i2c_mutex);
+}
+
+// Acquire mutex, select TCA channel, then run fn — all atomic under one lock.
+// Prevents any other task from flipping the TCA channel mid-transaction.
+static esp_err_t vl53_io(int ch, esp_err_t (*fn)(i2c_master_dev_handle_t dev, void *ctx), void *ctx)
+{
+    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+
+    esp_err_t ret = tca9548a_select_channel_locked((uint8_t)ch);
+    if (ret == ESP_OK) {
+        ret = vl53_ensure_dev_locked();
+        if (ret == ESP_OK) {
+            ret = fn(s_vl53_dev, ctx);
+        }
+    }
+
+    xSemaphoreGive(g_i2c_mutex);
+    return ret;
+}
 
 typedef struct {
     uint8_t reg;
@@ -124,256 +149,92 @@ typedef struct {
     size_t len;
 } vl53_write_ctx_t;
 
-static esp_err_t vl53_read_reg(uint8_t addr, uint8_t reg, uint8_t *value);
-
-// ── TCA9548A: เลือก channel ก่อนทุกครั้งที่สื่อสารกับ sensor ──
-static esp_err_t vl53_select_channel(int idx)
-{
-    return tca9548a_select_channel((uint8_t)s_sensors[idx].channel);
-}
-
-static esp_err_t vl53_add_device_handle_locked(uint8_t addr, i2c_master_dev_handle_t *out_dev)
-{
-    i2c_master_bus_handle_t bus = i2c_manager_get_bus_handle();
-    if (!bus) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    if (!out_dev) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    i2c_device_config_t dev_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = addr,
-        .scl_speed_hz = VL53_I2C_SPEED_HZ,
-    };
-
-    return i2c_master_bus_add_device(bus, &dev_cfg, out_dev);
-}
-
-static void vl53_remove_device_handle_locked(i2c_master_dev_handle_t *dev)
-{
-    if (dev && *dev) {
-        i2c_master_bus_rm_device(*dev);
-        *dev = NULL;
-    }
-}
-
-static vl53_sensor_t *vl53_find_sensor_by_addr(uint8_t addr)
-{
-    for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
-        if (s_sensors[i].address == addr) {
-            return &s_sensors[i];
-        }
-    }
-    return NULL;
-}
-
-static esp_err_t vl53_ensure_device_handle_locked(uint8_t addr, i2c_master_dev_handle_t *out_dev)
-{
-    if (!out_dev) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    if (addr == VL53L0X_DEFAULT_ADDR) {
-        if (!s_default_dev) {
-            esp_err_t ret = vl53_add_device_handle_locked(addr, &s_default_dev);
-            if (ret != ESP_OK) {
-                return ret;
-            }
-        }
-        *out_dev = s_default_dev;
-        return ESP_OK;
-    }
-
-    vl53_sensor_t *sensor = vl53_find_sensor_by_addr(addr);
-    if (!sensor) {
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    if (!sensor->dev) {
-        esp_err_t ret = vl53_add_device_handle_locked(addr, &sensor->dev);
-        if (ret != ESP_OK) {
-            return ret;
-        }
-    }
-
-    *out_dev = sensor->dev;
-    return ESP_OK;
-}
-
-static esp_err_t vl53_with_device(uint8_t addr, esp_err_t (*fn)(i2c_master_dev_handle_t dev, void *ctx), void *ctx)
-{
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-
-    // ── Atomic channel-select ──
-    // Re-select the TCA9548A channel every time inside the mutex so no other
-    // task can switch channels between this select and the actual I2C transfer.
-    if (s_vl53_current_idx >= 0 && s_vl53_current_idx < PILL_SENSOR_COUNT) {
-        tca9548a_select_channel_nolock((uint8_t)s_sensors[s_vl53_current_idx].channel);
-    }
-
-    i2c_master_dev_handle_t dev = NULL;
-    esp_err_t ret = vl53_ensure_device_handle_locked(addr, &dev);
-    if (ret == ESP_OK) {
-        ret = fn(dev, ctx);
-    }
-
-    xSemaphoreGive(g_i2c_mutex);
-    return ret;
-}
-
 static esp_err_t vl53_write_impl(i2c_master_dev_handle_t dev, void *ctx)
 {
-    vl53_write_ctx_t *write_ctx = (vl53_write_ctx_t *)ctx;
-    return i2c_master_transmit(dev, write_ctx->buf, write_ctx->len, 100);
+    vl53_write_ctx_t *w = (vl53_write_ctx_t *)ctx;
+    return i2c_master_transmit(dev, w->buf, w->len, 100);
 }
 
 static esp_err_t vl53_read_impl(i2c_master_dev_handle_t dev, void *ctx)
 {
-    vl53_read_ctx_t *read_ctx = (vl53_read_ctx_t *)ctx;
-    esp_err_t ret = i2c_master_transmit(dev, &read_ctx->reg, 1, 100);
-    if (ret != ESP_OK) {
-        return ret;
-    }
-    return i2c_master_receive(dev, read_ctx->buf, read_ctx->len, 100);
+    vl53_read_ctx_t *r = (vl53_read_ctx_t *)ctx;
+    esp_err_t ret = i2c_master_transmit(dev, &r->reg, 1, 100);
+    if (ret != ESP_OK) return ret;
+    return i2c_master_receive(dev, r->buf, r->len, 100);
 }
 
-static esp_err_t vl53_probe(uint8_t addr)
-{
-    i2c_master_bus_handle_t bus = i2c_manager_get_bus_handle();
-    if (!bus) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-    esp_err_t ret = i2c_master_probe(bus, addr, 100);
-    xSemaphoreGive(g_i2c_mutex);
-    return ret;
-}
-
-static bool vl53_wait_for_model_id(uint8_t addr, uint8_t expected_model_id, int retries, int retry_delay_ms)
-{
-    uint8_t model_id = 0;
-    for (int attempt = 0; attempt < retries; ++attempt) {
-        if (vl53_read_reg(addr, VL53_REG_IDENTIFICATION_MODEL_ID, &model_id) == ESP_OK &&
-            model_id == expected_model_id) {
-            return true;
-        }
-        vTaskDelay(pdMS_TO_TICKS(retry_delay_ms));
-    }
-    return false;
-}
-
-static esp_err_t vl53_write_reg(uint8_t addr, uint8_t reg, uint8_t value)
+static esp_err_t vl53_write_reg(int ch, uint8_t reg, uint8_t value)
 {
     uint8_t buf[2] = { reg, value };
-    vl53_write_ctx_t ctx = {
-        .buf = buf,
-        .len = sizeof(buf),
-    };
-    return vl53_with_device(addr, vl53_write_impl, &ctx);
+    vl53_write_ctx_t ctx = { .buf = buf, .len = sizeof(buf) };
+    return vl53_io(ch, vl53_write_impl, &ctx);
 }
 
-static esp_err_t vl53_write_reg16(uint8_t addr, uint8_t reg, uint16_t value)
+static esp_err_t vl53_write_reg16(int ch, uint8_t reg, uint16_t value)
 {
-    uint8_t buf[3] = {
-        reg,
-        (uint8_t)(value >> 8),
-        (uint8_t)value,
-    };
-    vl53_write_ctx_t ctx = {
-        .buf = buf,
-        .len = sizeof(buf),
-    };
-    return vl53_with_device(addr, vl53_write_impl, &ctx);
+    uint8_t buf[3] = { reg, (uint8_t)(value >> 8), (uint8_t)value };
+    vl53_write_ctx_t ctx = { .buf = buf, .len = sizeof(buf) };
+    return vl53_io(ch, vl53_write_impl, &ctx);
 }
 
-static esp_err_t vl53_write_reg32(uint8_t addr, uint8_t reg, uint32_t value)
+static esp_err_t vl53_write_reg32(int ch, uint8_t reg, uint32_t value)
 {
     uint8_t buf[5] = {
         reg,
-        (uint8_t)(value >> 24),
-        (uint8_t)(value >> 16),
-        (uint8_t)(value >> 8),
-        (uint8_t)value,
+        (uint8_t)(value >> 24), (uint8_t)(value >> 16),
+        (uint8_t)(value >> 8),  (uint8_t)value,
     };
-    vl53_write_ctx_t ctx = {
-        .buf = buf,
-        .len = sizeof(buf),
-    };
-    return vl53_with_device(addr, vl53_write_impl, &ctx);
+    vl53_write_ctx_t ctx = { .buf = buf, .len = sizeof(buf) };
+    return vl53_io(ch, vl53_write_impl, &ctx);
 }
 
-static esp_err_t vl53_write_multi(uint8_t addr, uint8_t reg, const uint8_t *src, size_t count)
+static esp_err_t vl53_write_multi(int ch, uint8_t reg, const uint8_t *src, size_t count)
 {
+    if (count > 6) return ESP_ERR_INVALID_ARG;
     uint8_t buf[1 + 6];
-    if (count > 6) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
     buf[0] = reg;
     memcpy(&buf[1], src, count);
-    vl53_write_ctx_t ctx = {
-        .buf = buf,
-        .len = 1 + count,
-    };
-    return vl53_with_device(addr, vl53_write_impl, &ctx);
+    vl53_write_ctx_t ctx = { .buf = buf, .len = 1 + count };
+    return vl53_io(ch, vl53_write_impl, &ctx);
 }
 
-static esp_err_t vl53_read_reg(uint8_t addr, uint8_t reg, uint8_t *value)
+static esp_err_t vl53_read_reg(int ch, uint8_t reg, uint8_t *value)
 {
-    vl53_read_ctx_t ctx = {
-        .reg = reg,
-        .buf = value,
-        .len = 1,
-    };
-    return vl53_with_device(addr, vl53_read_impl, &ctx);
+    vl53_read_ctx_t ctx = { .reg = reg, .buf = value, .len = 1 };
+    return vl53_io(ch, vl53_read_impl, &ctx);
 }
 
-static esp_err_t vl53_read_reg16(uint8_t addr, uint8_t reg, uint16_t *value)
+static esp_err_t vl53_read_reg16(int ch, uint8_t reg, uint16_t *value)
 {
     uint8_t buf[2] = {0};
-    vl53_read_ctx_t ctx = {
-        .reg = reg,
-        .buf = buf,
-        .len = sizeof(buf),
-    };
-    esp_err_t ret = vl53_with_device(addr, vl53_read_impl, &ctx);
+    vl53_read_ctx_t ctx = { .reg = reg, .buf = buf, .len = sizeof(buf) };
+    esp_err_t ret = vl53_io(ch, vl53_read_impl, &ctx);
     if (ret == ESP_OK) {
         *value = (uint16_t)(((uint16_t)buf[0] << 8) | buf[1]);
     }
     return ret;
 }
 
-static esp_err_t vl53_read_reg32(uint8_t addr, uint8_t reg, uint32_t *value)
+static esp_err_t vl53_read_multi(int ch, uint8_t reg, uint8_t *dst, size_t count)
 {
-    uint8_t buf[4] = {0};
-    vl53_read_ctx_t ctx = {
-        .reg = reg,
-        .buf = buf,
-        .len = sizeof(buf),
-    };
-    esp_err_t ret = vl53_with_device(addr, vl53_read_impl, &ctx);
-    if (ret == ESP_OK) {
-        *value = ((uint32_t)buf[0] << 24) |
-                 ((uint32_t)buf[1] << 16) |
-                 ((uint32_t)buf[2] << 8) |
-                 (uint32_t)buf[3];
-    }
-    return ret;
+    vl53_read_ctx_t ctx = { .reg = reg, .buf = dst, .len = count };
+    return vl53_io(ch, vl53_read_impl, &ctx);
 }
 
-static esp_err_t vl53_read_multi(uint8_t addr, uint8_t reg, uint8_t *dst, size_t count)
+static bool vl53_wait_for_model_id(int ch)
 {
-    vl53_read_ctx_t ctx = {
-        .reg = reg,
-        .buf = dst,
-        .len = count,
-    };
-    return vl53_with_device(addr, vl53_read_impl, &ctx);
+    uint8_t model_id = 0;
+    for (int attempt = 0; attempt < VL53_BOOT_RETRIES; ++attempt) {
+        if (vl53_read_reg(ch, VL53_REG_IDENTIFICATION_MODEL_ID, &model_id) == ESP_OK &&
+            model_id == VL53_MODEL_ID) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(VL53_BOOT_RETRY_DELAY_MS));
+    }
+    return false;
 }
+
+// ─── Timeout encode/decode helpers ──────────────────────────────────────────
 
 static uint16_t vl53_decode_timeout(uint16_t reg_val)
 {
@@ -382,19 +243,13 @@ static uint16_t vl53_decode_timeout(uint16_t reg_val)
 
 static uint16_t vl53_encode_timeout(uint32_t timeout_mclks)
 {
-    uint32_t ls_byte = 0;
+    if (timeout_mclks == 0) return 0;
+    uint32_t ls_byte = timeout_mclks - 1U;
     uint16_t ms_byte = 0;
-
-    if (timeout_mclks == 0) {
-        return 0;
-    }
-
-    ls_byte = timeout_mclks - 1U;
     while ((ls_byte & 0xFFFFFF00U) > 0U) {
         ls_byte >>= 1;
         ms_byte++;
     }
-
     return (uint16_t)((ms_byte << 8) | (ls_byte & 0xFFU));
 }
 
@@ -410,465 +265,247 @@ static uint32_t vl53_timeout_microseconds_to_mclks(uint32_t timeout_period_us, u
     return ((timeout_period_us * 1000U) + (macro_period_ns / 2U)) / macro_period_ns;
 }
 
-static bool vl53_wait_until(uint8_t addr, uint8_t reg, uint8_t mask, uint8_t expected, int timeout_ms)
+// ─── VL53L0X init / configuration (STMicro sequence) ────────────────────────
+
+static bool vl53_set_signal_rate_limit(int ch, float limit_mcps)
 {
-    int waited_ms = 0;
-    uint8_t value = 0;
-
-    while (waited_ms < timeout_ms) {
-        if (vl53_read_reg(addr, reg, &value) == ESP_OK && (value & mask) == expected) {
-            return true;
-        }
-        vTaskDelay(pdMS_TO_TICKS(5));
-        waited_ms += 5;
-    }
-
-    return false;
-}
-
-static bool vl53_set_signal_rate_limit(uint8_t addr, float limit_mcps)
-{
-    if (limit_mcps < 0.0f || limit_mcps > 511.99f) {
-        return false;
-    }
-
+    if (limit_mcps < 0.0f || limit_mcps > 511.99f) return false;
     uint16_t limit_fixed = (uint16_t)(limit_mcps * (1 << 7));
-    return vl53_write_reg16(addr, VL53_REG_FINAL_RANGE_CONFIG_MIN_COUNT_RATE, limit_fixed) == ESP_OK;
+    return vl53_write_reg16(ch, VL53_REG_FINAL_RANGE_CONFIG_MIN_COUNT_RATE, limit_fixed) == ESP_OK;
 }
 
-static bool vl53_get_spad_info(uint8_t addr, uint8_t *count, bool *type_is_aperture)
+static bool vl53_get_spad_info(int ch, uint8_t *count, bool *type_is_aperture)
 {
     uint8_t tmp = 0;
     int waited_ms = 0;
 
-    if (vl53_write_reg(addr, 0x80, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, 0xFF, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, 0x00, 0x00) != ESP_OK ||
-        vl53_write_reg(addr, 0xFF, 0x06) != ESP_OK) {
-        return false;
-    }
+    if (vl53_write_reg(ch, 0x80, 0x01) != ESP_OK ||
+        vl53_write_reg(ch, 0xFF, 0x01) != ESP_OK ||
+        vl53_write_reg(ch, 0x00, 0x00) != ESP_OK ||
+        vl53_write_reg(ch, 0xFF, 0x06) != ESP_OK) return false;
 
-    if (vl53_read_reg(addr, 0x83, &tmp) != ESP_OK) {
-        return false;
-    }
-    if (vl53_write_reg(addr, 0x83, tmp | 0x04) != ESP_OK ||
-        vl53_write_reg(addr, 0xFF, 0x07) != ESP_OK ||
-        vl53_write_reg(addr, 0x81, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, 0x80, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, 0x94, 0x6B) != ESP_OK ||
-        vl53_write_reg(addr, 0x83, 0x00) != ESP_OK) {
-        return false;
-    }
+    if (vl53_read_reg(ch, 0x83, &tmp) != ESP_OK) return false;
+    if (vl53_write_reg(ch, 0x83, tmp | 0x04) != ESP_OK ||
+        vl53_write_reg(ch, 0xFF, 0x07) != ESP_OK ||
+        vl53_write_reg(ch, 0x81, 0x01) != ESP_OK ||
+        vl53_write_reg(ch, 0x80, 0x01) != ESP_OK ||
+        vl53_write_reg(ch, 0x94, 0x6B) != ESP_OK ||
+        vl53_write_reg(ch, 0x83, 0x00) != ESP_OK) return false;
 
     while (waited_ms < VL53_RANGING_TIMEOUT_MS) {
-        if (vl53_read_reg(addr, 0x83, &tmp) == ESP_OK && tmp != 0x00) {
-            break;
-        }
+        if (vl53_read_reg(ch, 0x83, &tmp) == ESP_OK && tmp != 0x00) break;
         vTaskDelay(pdMS_TO_TICKS(5));
         waited_ms += 5;
     }
 
     if (tmp == 0x00 ||
-        vl53_write_reg(addr, 0x83, 0x01) != ESP_OK ||
-        vl53_read_reg(addr, 0x92, &tmp) != ESP_OK) {
-        return false;
-    }
+        vl53_write_reg(ch, 0x83, 0x01) != ESP_OK ||
+        vl53_read_reg(ch, 0x92, &tmp) != ESP_OK) return false;
 
     *count = tmp & 0x7F;
     *type_is_aperture = ((tmp >> 7) & 0x01U) != 0;
 
-    return vl53_write_reg(addr, 0x81, 0x00) == ESP_OK &&
-           vl53_write_reg(addr, 0xFF, 0x06) == ESP_OK &&
-           vl53_read_reg(addr, 0x83, &tmp) == ESP_OK &&
-           vl53_write_reg(addr, 0x83, tmp & ~0x04U) == ESP_OK &&
-           vl53_write_reg(addr, 0xFF, 0x01) == ESP_OK &&
-           vl53_write_reg(addr, 0x00, 0x01) == ESP_OK &&
-           vl53_write_reg(addr, 0xFF, 0x00) == ESP_OK &&
-           vl53_write_reg(addr, 0x80, 0x00) == ESP_OK;
+    return vl53_write_reg(ch, 0x81, 0x00) == ESP_OK &&
+           vl53_write_reg(ch, 0xFF, 0x06) == ESP_OK &&
+           vl53_read_reg(ch, 0x83, &tmp) == ESP_OK &&
+           vl53_write_reg(ch, 0x83, tmp & ~0x04U) == ESP_OK &&
+           vl53_write_reg(ch, 0xFF, 0x01) == ESP_OK &&
+           vl53_write_reg(ch, 0x00, 0x01) == ESP_OK &&
+           vl53_write_reg(ch, 0xFF, 0x00) == ESP_OK &&
+           vl53_write_reg(ch, 0x80, 0x00) == ESP_OK;
 }
 
-static bool vl53_get_sequence_step_enables(uint8_t addr, vl53_sequence_step_enables_t *enables)
+static bool vl53_get_sequence_step_enables(int ch, vl53_sequence_step_enables_t *enables)
 {
-    uint8_t sequence_config = 0;
-    if (vl53_read_reg(addr, VL53_REG_SYSTEM_SEQUENCE_CONFIG, &sequence_config) != ESP_OK) {
-        return false;
-    }
-
-    enables->tcc = ((sequence_config >> 4) & 0x1U) != 0;
-    enables->dss = ((sequence_config >> 3) & 0x1U) != 0;
-    enables->msrc = ((sequence_config >> 2) & 0x1U) != 0;
-    enables->pre_range = ((sequence_config >> 6) & 0x1U) != 0;
-    enables->final_range = ((sequence_config >> 7) & 0x1U) != 0;
+    uint8_t cfg = 0;
+    if (vl53_read_reg(ch, VL53_REG_SYSTEM_SEQUENCE_CONFIG, &cfg) != ESP_OK) return false;
+    enables->tcc         = ((cfg >> 4) & 0x1U) != 0;
+    enables->dss         = ((cfg >> 3) & 0x1U) != 0;
+    enables->msrc        = ((cfg >> 2) & 0x1U) != 0;
+    enables->pre_range   = ((cfg >> 6) & 0x1U) != 0;
+    enables->final_range = ((cfg >> 7) & 0x1U) != 0;
     return true;
 }
 
-static bool vl53_get_sequence_step_timeouts(uint8_t addr, const vl53_sequence_step_enables_t *enables, vl53_sequence_step_timeouts_t *timeouts)
+static bool vl53_get_sequence_step_timeouts(int ch,
+                                            const vl53_sequence_step_enables_t *enables,
+                                            vl53_sequence_step_timeouts_t *timeouts)
 {
-    uint8_t reg8 = 0;
+    uint8_t  reg8 = 0;
     uint16_t reg16 = 0;
 
-    if (vl53_read_reg(addr, VL53_REG_PRE_RANGE_CONFIG_VCSEL_PERIOD, &reg8) != ESP_OK) {
-        return false;
-    }
+    if (vl53_read_reg(ch, VL53_REG_PRE_RANGE_CONFIG_VCSEL_PERIOD, &reg8) != ESP_OK) return false;
     timeouts->pre_range_vcsel_period_pclks = decodeVcselPeriod(reg8);
 
-    if (vl53_read_reg(addr, VL53_REG_MSRC_CONFIG_TIMEOUT_MACROP, &reg8) != ESP_OK) {
-        return false;
-    }
+    if (vl53_read_reg(ch, VL53_REG_MSRC_CONFIG_TIMEOUT_MACROP, &reg8) != ESP_OK) return false;
     timeouts->msrc_dss_tcc_mclks = reg8 + 1U;
     timeouts->msrc_dss_tcc_us = vl53_timeout_mclks_to_microseconds(
-        timeouts->msrc_dss_tcc_mclks,
-        (uint8_t)timeouts->pre_range_vcsel_period_pclks
-    );
+        timeouts->msrc_dss_tcc_mclks, (uint8_t)timeouts->pre_range_vcsel_period_pclks);
 
-    if (vl53_read_reg16(addr, VL53_REG_PRE_RANGE_CONFIG_TIMEOUT_MACROP_HI, &reg16) != ESP_OK) {
-        return false;
-    }
+    if (vl53_read_reg16(ch, VL53_REG_PRE_RANGE_CONFIG_TIMEOUT_MACROP_HI, &reg16) != ESP_OK) return false;
     timeouts->pre_range_mclks = vl53_decode_timeout(reg16);
     timeouts->pre_range_us = vl53_timeout_mclks_to_microseconds(
-        timeouts->pre_range_mclks,
-        (uint8_t)timeouts->pre_range_vcsel_period_pclks
-    );
+        timeouts->pre_range_mclks, (uint8_t)timeouts->pre_range_vcsel_period_pclks);
 
-    if (vl53_read_reg(addr, VL53_REG_FINAL_RANGE_CONFIG_VCSEL_PERIOD, &reg8) != ESP_OK) {
-        return false;
-    }
+    if (vl53_read_reg(ch, VL53_REG_FINAL_RANGE_CONFIG_VCSEL_PERIOD, &reg8) != ESP_OK) return false;
     timeouts->final_range_vcsel_period_pclks = decodeVcselPeriod(reg8);
 
-    if (vl53_read_reg16(addr, VL53_REG_FINAL_RANGE_CONFIG_TIMEOUT_MACROP_HI, &reg16) != ESP_OK) {
-        return false;
-    }
+    if (vl53_read_reg16(ch, VL53_REG_FINAL_RANGE_CONFIG_TIMEOUT_MACROP_HI, &reg16) != ESP_OK) return false;
     timeouts->final_range_mclks = vl53_decode_timeout(reg16);
-    if (enables->pre_range) {
-        timeouts->final_range_mclks -= timeouts->pre_range_mclks;
-    }
+    if (enables->pre_range) timeouts->final_range_mclks -= timeouts->pre_range_mclks;
     timeouts->final_range_us = vl53_timeout_mclks_to_microseconds(
-        timeouts->final_range_mclks,
-        (uint8_t)timeouts->final_range_vcsel_period_pclks
-    );
+        timeouts->final_range_mclks, (uint8_t)timeouts->final_range_vcsel_period_pclks);
 
     return true;
 }
 
-static bool vl53_get_measurement_timing_budget(uint8_t addr, vl53_sensor_t *sensor)
+static bool vl53_get_measurement_timing_budget(int ch, vl53_sensor_t *sensor)
 {
-    static const uint16_t StartOverhead = 1910;
-    static const uint16_t EndOverhead = 960;
-    static const uint16_t MsrcOverhead = 660;
-    static const uint16_t TccOverhead = 590;
-    static const uint16_t DssOverhead = 690;
-    static const uint16_t PreRangeOverhead = 660;
-    static const uint16_t FinalRangeOverhead = 550;
+    static const uint16_t StartOverhead = 1910, EndOverhead = 960;
+    static const uint16_t MsrcOverhead = 660, TccOverhead = 590, DssOverhead = 690;
+    static const uint16_t PreRangeOverhead = 660, FinalRangeOverhead = 550;
 
-    vl53_sequence_step_enables_t enables;
-    vl53_sequence_step_timeouts_t timeouts;
-    if (!vl53_get_sequence_step_enables(addr, &enables) ||
-        !vl53_get_sequence_step_timeouts(addr, &enables, &timeouts)) {
-        return false;
-    }
+    vl53_sequence_step_enables_t en;
+    vl53_sequence_step_timeouts_t to;
+    if (!vl53_get_sequence_step_enables(ch, &en) ||
+        !vl53_get_sequence_step_timeouts(ch, &en, &to)) return false;
 
-    uint32_t budget_us = StartOverhead + EndOverhead;
-    if (enables.tcc) {
-        budget_us += timeouts.msrc_dss_tcc_us + TccOverhead;
-    }
-    if (enables.dss) {
-        budget_us += 2U * (timeouts.msrc_dss_tcc_us + DssOverhead);
-    } else if (enables.msrc) {
-        budget_us += timeouts.msrc_dss_tcc_us + MsrcOverhead;
-    }
-    if (enables.pre_range) {
-        budget_us += timeouts.pre_range_us + PreRangeOverhead;
-    }
-    if (enables.final_range) {
-        budget_us += timeouts.final_range_us + FinalRangeOverhead;
-    }
+    uint32_t budget = StartOverhead + EndOverhead;
+    if (en.tcc)         budget += to.msrc_dss_tcc_us + TccOverhead;
+    if (en.dss)         budget += 2U * (to.msrc_dss_tcc_us + DssOverhead);
+    else if (en.msrc)   budget += to.msrc_dss_tcc_us + MsrcOverhead;
+    if (en.pre_range)   budget += to.pre_range_us + PreRangeOverhead;
+    if (en.final_range) budget += to.final_range_us + FinalRangeOverhead;
+
+    sensor->measurement_timing_budget_us = budget;
+    return true;
+}
+
+static bool vl53_set_measurement_timing_budget(int ch, vl53_sensor_t *sensor, uint32_t budget_us)
+{
+    static const uint16_t StartOverhead = 1910, EndOverhead = 960;
+    static const uint16_t MsrcOverhead = 660, TccOverhead = 590, DssOverhead = 690;
+    static const uint16_t PreRangeOverhead = 660, FinalRangeOverhead = 550;
+
+    vl53_sequence_step_enables_t en;
+    vl53_sequence_step_timeouts_t to;
+    if (!vl53_get_sequence_step_enables(ch, &en) ||
+        !vl53_get_sequence_step_timeouts(ch, &en, &to)) return false;
+
+    uint32_t used = StartOverhead + EndOverhead;
+    if (en.tcc)       used += to.msrc_dss_tcc_us + TccOverhead;
+    if (en.dss)       used += 2U * (to.msrc_dss_tcc_us + DssOverhead);
+    else if (en.msrc) used += to.msrc_dss_tcc_us + MsrcOverhead;
+    if (en.pre_range) used += to.pre_range_us + PreRangeOverhead;
+    if (!en.final_range) return false;
+
+    used += FinalRangeOverhead;
+    if (used > budget_us) return false;
+
+    uint32_t final_timeout_us    = budget_us - used;
+    uint32_t final_timeout_mclks = vl53_timeout_microseconds_to_mclks(
+        final_timeout_us, (uint8_t)to.final_range_vcsel_period_pclks);
+    if (en.pre_range) final_timeout_mclks += to.pre_range_mclks;
+
+    if (vl53_write_reg16(ch, VL53_REG_FINAL_RANGE_CONFIG_TIMEOUT_MACROP_HI,
+                         vl53_encode_timeout(final_timeout_mclks)) != ESP_OK) return false;
 
     sensor->measurement_timing_budget_us = budget_us;
     return true;
 }
 
-static bool vl53_set_measurement_timing_budget(uint8_t addr, vl53_sensor_t *sensor, uint32_t budget_us)
-{
-    static const uint16_t StartOverhead = 1910;
-    static const uint16_t EndOverhead = 960;
-    static const uint16_t MsrcOverhead = 660;
-    static const uint16_t TccOverhead = 590;
-    static const uint16_t DssOverhead = 690;
-    static const uint16_t PreRangeOverhead = 660;
-    static const uint16_t FinalRangeOverhead = 550;
-
-    vl53_sequence_step_enables_t enables;
-    vl53_sequence_step_timeouts_t timeouts;
-    if (!vl53_get_sequence_step_enables(addr, &enables) ||
-        !vl53_get_sequence_step_timeouts(addr, &enables, &timeouts)) {
-        return false;
-    }
-
-    uint32_t used_budget_us = StartOverhead + EndOverhead;
-    if (enables.tcc) {
-        used_budget_us += timeouts.msrc_dss_tcc_us + TccOverhead;
-    }
-    if (enables.dss) {
-        used_budget_us += 2U * (timeouts.msrc_dss_tcc_us + DssOverhead);
-    } else if (enables.msrc) {
-        used_budget_us += timeouts.msrc_dss_tcc_us + MsrcOverhead;
-    }
-    if (enables.pre_range) {
-        used_budget_us += timeouts.pre_range_us + PreRangeOverhead;
-    }
-    if (!enables.final_range) {
-        return false;
-    }
-
-    used_budget_us += FinalRangeOverhead;
-    if (used_budget_us > budget_us) {
-        return false;
-    }
-
-    uint32_t final_range_timeout_us = budget_us - used_budget_us;
-    uint32_t final_range_timeout_mclks = vl53_timeout_microseconds_to_mclks(
-        final_range_timeout_us,
-        (uint8_t)timeouts.final_range_vcsel_period_pclks
-    );
-    if (enables.pre_range) {
-        final_range_timeout_mclks += timeouts.pre_range_mclks;
-    }
-
-    if (vl53_write_reg16(addr, VL53_REG_FINAL_RANGE_CONFIG_TIMEOUT_MACROP_HI,
-                         vl53_encode_timeout(final_range_timeout_mclks)) != ESP_OK) {
-        return false;
-    }
-
-    sensor->measurement_timing_budget_us = budget_us;
-    return true;
-}
-
-static bool vl53_perform_single_ref_calibration(uint8_t addr, uint8_t vhv_init_byte)
+static bool vl53_perform_single_ref_calibration(int ch, uint8_t vhv_init_byte)
 {
     uint8_t status = 0;
     int waited_ms = 0;
 
-    if (vl53_write_reg(addr, VL53_REG_SYSRANGE_START, (uint8_t)(0x01 | vhv_init_byte)) != ESP_OK) {
-        return false;
-    }
+    if (vl53_write_reg(ch, VL53_REG_SYSRANGE_START, (uint8_t)(0x01 | vhv_init_byte)) != ESP_OK) return false;
 
     while (waited_ms < VL53_RANGING_TIMEOUT_MS) {
-        if (vl53_read_reg(addr, VL53_REG_RESULT_INTERRUPT_STATUS, &status) == ESP_OK &&
-            (status & 0x07U) != 0) {
-            break;
-        }
+        if (vl53_read_reg(ch, VL53_REG_RESULT_INTERRUPT_STATUS, &status) == ESP_OK &&
+            (status & 0x07U) != 0) break;
         vTaskDelay(pdMS_TO_TICKS(5));
         waited_ms += 5;
     }
+    if ((status & 0x07U) == 0) return false;
 
-    if ((status & 0x07U) == 0) {
-        return false;
-    }
-
-    return vl53_write_reg(addr, VL53_REG_SYSTEM_INTERRUPT_CLEAR, 0x01) == ESP_OK &&
-           vl53_write_reg(addr, VL53_REG_SYSRANGE_START, 0x00) == ESP_OK;
+    return vl53_write_reg(ch, VL53_REG_SYSTEM_INTERRUPT_CLEAR, 0x01) == ESP_OK &&
+           vl53_write_reg(ch, VL53_REG_SYSRANGE_START, 0x00) == ESP_OK;
 }
 
-static bool vl53_read_range_continuous_mm(uint8_t addr, uint16_t *range_mm)
+static bool vl53_read_range_continuous_mm(int ch, uint16_t *range_mm)
 {
     int waited_ms = 0;
     uint8_t status = 0;
 
     while (waited_ms < VL53_RANGING_TIMEOUT_MS) {
-        if (vl53_read_reg(addr, VL53_REG_RESULT_INTERRUPT_STATUS, &status) == ESP_OK &&
-            (status & 0x07U) != 0) {
-            break;
-        }
+        if (vl53_read_reg(ch, VL53_REG_RESULT_INTERRUPT_STATUS, &status) == ESP_OK &&
+            (status & 0x07U) != 0) break;
         vTaskDelay(pdMS_TO_TICKS(5));
         waited_ms += 5;
     }
+    if ((status & 0x07U) == 0) return false;
 
-    if ((status & 0x07U) == 0) {
-        return false;
-    }
-
-    if (vl53_read_reg16(addr, (uint8_t)(VL53_REG_RESULT_RANGE_STATUS + 10U), range_mm) != ESP_OK) {
-        return false;
-    }
-
-    return vl53_write_reg(addr, VL53_REG_SYSTEM_INTERRUPT_CLEAR, 0x01) == ESP_OK;
+    if (vl53_read_reg16(ch, (uint8_t)(VL53_REG_RESULT_RANGE_STATUS + 10U), range_mm) != ESP_OK) return false;
+    return vl53_write_reg(ch, VL53_REG_SYSTEM_INTERRUPT_CLEAR, 0x01) == ESP_OK;
 }
 
-static bool vl53_start_continuous(vl53_sensor_t *sensor, uint32_t period_ms)
+static bool vl53_start_continuous(int ch, uint8_t stop_variable, uint32_t period_ms)
 {
-    uint8_t addr = sensor->address;
-    uint16_t osc_calibrate_val = 0;
-
-    if (vl53_write_reg(addr, 0x80, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, 0xFF, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, 0x00, 0x00) != ESP_OK ||
-        vl53_write_reg(addr, 0x91, sensor->stop_variable) != ESP_OK ||
-        vl53_write_reg(addr, 0x00, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, 0xFF, 0x00) != ESP_OK ||
-        vl53_write_reg(addr, 0x80, 0x00) != ESP_OK) {
-        return false;
-    }
+    if (vl53_write_reg(ch, 0x80, 0x01) != ESP_OK ||
+        vl53_write_reg(ch, 0xFF, 0x01) != ESP_OK ||
+        vl53_write_reg(ch, 0x00, 0x00) != ESP_OK ||
+        vl53_write_reg(ch, 0x91, stop_variable) != ESP_OK ||
+        vl53_write_reg(ch, 0x00, 0x01) != ESP_OK ||
+        vl53_write_reg(ch, 0xFF, 0x00) != ESP_OK ||
+        vl53_write_reg(ch, 0x80, 0x00) != ESP_OK) return false;
 
     if (period_ms != 0) {
-        if (vl53_read_reg16(addr, VL53_REG_OSC_CALIBRATE_VAL, &osc_calibrate_val) != ESP_OK) {
-            return false;
-        }
-        if (osc_calibrate_val != 0) {
-            period_ms *= osc_calibrate_val;
-        }
-        if (vl53_write_reg32(addr, VL53_REG_SYSTEM_INTERMEASUREMENT_PERIOD, period_ms) != ESP_OK ||
-            vl53_write_reg(addr, VL53_REG_SYSRANGE_START, 0x04) != ESP_OK) {
-            return false;
-        }
+        uint16_t osc_cal = 0;
+        if (vl53_read_reg16(ch, VL53_REG_OSC_CALIBRATE_VAL, &osc_cal) != ESP_OK) return false;
+        if (osc_cal != 0) period_ms *= osc_cal;
+        if (vl53_write_reg32(ch, VL53_REG_SYSTEM_INTERMEASUREMENT_PERIOD, period_ms) != ESP_OK ||
+            vl53_write_reg(ch, VL53_REG_SYSRANGE_START, 0x04) != ESP_OK) return false;
     } else {
-        if (vl53_write_reg(addr, VL53_REG_SYSRANGE_START, 0x02) != ESP_OK) {
-            return false;
-        }
+        if (vl53_write_reg(ch, VL53_REG_SYSRANGE_START, 0x02) != ESP_OK) return false;
     }
-
     return true;
 }
 
-static bool vl53_read_single_mm(vl53_sensor_t *sensor, uint16_t *range_mm)
+#define LOG_FAIL(fmt, ...) do { ESP_LOGW(TAG, "Ch%d init fail: " fmt, ch, ##__VA_ARGS__); return false; } while (0)
+
+static bool vl53_init_device(int ch, vl53_sensor_t *sensor)
 {
-    uint8_t addr = sensor->address;
-    uint8_t start = 0;
-    int waited_ms = 0;
-
-    if (vl53_write_reg(addr, 0x80, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, 0xFF, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, 0x00, 0x00) != ESP_OK ||
-        vl53_write_reg(addr, 0x91, sensor->stop_variable) != ESP_OK ||
-        vl53_write_reg(addr, 0x00, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, 0xFF, 0x00) != ESP_OK ||
-        vl53_write_reg(addr, 0x80, 0x00) != ESP_OK ||
-        vl53_write_reg(addr, VL53_REG_SYSRANGE_START, 0x01) != ESP_OK) {
-        return false;
-    }
-
-    while (waited_ms < VL53_RANGING_TIMEOUT_MS) {
-        if (vl53_read_reg(addr, VL53_REG_SYSRANGE_START, &start) == ESP_OK &&
-            (start & 0x01U) == 0) {
-            break;
-        }
-        vTaskDelay(pdMS_TO_TICKS(5));
-        waited_ms += 5;
-    }
-
-    if ((start & 0x01U) != 0) {
-        return false;
-    }
-
-    return vl53_read_range_continuous_mm(addr, range_mm);
-}
-
-static int vl53_apply_filter(int idx, uint16_t raw_mm)
-{
-    if (!s_sensors[idx].filter_ready) {
-        s_sensors[idx].filtered_mm = (float)raw_mm;
-        s_sensors[idx].filter_ready = true;
-    } else {
-        s_sensors[idx].filtered_mm =
-            (s_sensors[idx].filtered_mm * (1.0f - VL53_EMA_ALPHA)) +
-            ((float)raw_mm * VL53_EMA_ALPHA);
-    }
-
-    return (int)(s_sensors[idx].filtered_mm + 0.5f);
-}
-
-static void vl53_release_sensor_handle(int idx)
-{
-    if (idx < 0 || idx >= PILL_SENSOR_COUNT || !g_i2c_mutex) {
-        return;
-    }
-
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-    vl53_remove_device_handle_locked(&s_sensors[idx].dev);
-    xSemaphoreGive(g_i2c_mutex);
-}
-
-static void vl53_release_default_handle(void)
-{
-    if (!g_i2c_mutex) {
-        return;
-    }
-
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-    vl53_remove_device_handle_locked(&s_default_dev);
-    xSemaphoreGive(g_i2c_mutex);
-}
-
-static void vl53_mark_sensor_missing(int idx)
-{
-    vl53_release_sensor_handle(idx);
-    s_sensors[idx].present = false;
-    s_sensors[idx].filter_ready = false;
-    s_sensors[idx].read_fail_count = 0;
-    s_sensors[idx].invalid_sample_count = 0;
-    s_sensors[idx].measurement_timing_budget_us = 0;
-    s_sensors[idx].filtered_mm = 0.0f;
-    tca9548a_disable_all(); // ปิด channel เมื่อ sensor หาย
-    pill_sensor_status_mark_present(idx, false);
-    s_retry_after_ticks[idx] = xTaskGetTickCount() + pdMS_TO_TICKS(VL53_MISSING_RETRY_MS);
-}
-
-static void vl53_mark_sensor_present(int idx)
-{
-    s_sensors[idx].present = true;
-    s_sensors[idx].read_fail_count = 0;
-    s_sensors[idx].invalid_sample_count = 0;
-    s_retry_after_ticks[idx] = 0;
-    pill_sensor_status_mark_present(idx, true);
-}
-
-static bool vl53_init_device(uint8_t addr, vl53_sensor_t *sensor)
-{
-    uint8_t model_id = 0;
-    if (vl53_read_reg(addr, VL53_REG_IDENTIFICATION_MODEL_ID, &model_id) != ESP_OK || model_id != VL53_MODEL_ID) {
-        ESP_LOGW(TAG, "VL53 model id mismatch at 0x%02X (read 0x%02X)", addr, model_id);
-        return false;
-    }
-
+    // Model ID was already verified by vl53_wait_for_model_id in the caller.
     uint8_t tmp = 0;
-    if (vl53_read_reg(addr, VL53_REG_VHV_CONFIG_PAD_SCL_SDA__EXTSUP_HV, &tmp) != ESP_OK ||
-        vl53_write_reg(addr, VL53_REG_VHV_CONFIG_PAD_SCL_SDA__EXTSUP_HV, tmp | 0x01U) != ESP_OK ||
-        vl53_write_reg(addr, 0x88, 0x00) != ESP_OK ||
-        vl53_write_reg(addr, 0x80, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, 0xFF, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, 0x00, 0x00) != ESP_OK) {
-        return false;
-    }
+    if (vl53_read_reg(ch, VL53_REG_VHV_CONFIG_PAD_SCL_SDA__EXTSUP_HV, &tmp) != ESP_OK) LOG_FAIL("read VHV_CFG");
+    if (vl53_write_reg(ch, VL53_REG_VHV_CONFIG_PAD_SCL_SDA__EXTSUP_HV, tmp | 0x01U) != ESP_OK) LOG_FAIL("write VHV_CFG");
+    if (vl53_write_reg(ch, 0x88, 0x00) != ESP_OK) LOG_FAIL("write 0x88");
+    if (vl53_write_reg(ch, 0x80, 0x01) != ESP_OK) LOG_FAIL("write 0x80 A");
+    if (vl53_write_reg(ch, 0xFF, 0x01) != ESP_OK) LOG_FAIL("write 0xFF A");
+    if (vl53_write_reg(ch, 0x00, 0x00) != ESP_OK) LOG_FAIL("write 0x00 A");
 
-    if (vl53_read_reg(addr, 0x91, &sensor->stop_variable) != ESP_OK ||
-        vl53_write_reg(addr, 0x00, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, 0xFF, 0x00) != ESP_OK ||
-        vl53_write_reg(addr, 0x80, 0x00) != ESP_OK ||
-        vl53_read_reg(addr, VL53_REG_MSRC_CONFIG_CONTROL, &tmp) != ESP_OK ||
-        vl53_write_reg(addr, VL53_REG_MSRC_CONFIG_CONTROL, tmp | 0x12U) != ESP_OK ||
-        !vl53_set_signal_rate_limit(addr, 0.25f) ||
-        vl53_write_reg(addr, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0xFF) != ESP_OK) {
-        return false;
-    }
+    if (vl53_read_reg(ch, 0x91, &sensor->stop_variable) != ESP_OK) LOG_FAIL("read 0x91 stop_var");
+    if (vl53_write_reg(ch, 0x00, 0x01) != ESP_OK) LOG_FAIL("write 0x00 B");
+    if (vl53_write_reg(ch, 0xFF, 0x00) != ESP_OK) LOG_FAIL("write 0xFF B");
+    if (vl53_write_reg(ch, 0x80, 0x00) != ESP_OK) LOG_FAIL("write 0x80 B");
+    if (vl53_read_reg(ch, VL53_REG_MSRC_CONFIG_CONTROL, &tmp) != ESP_OK) LOG_FAIL("read MSRC_CFG");
+    if (vl53_write_reg(ch, VL53_REG_MSRC_CONFIG_CONTROL, tmp | 0x12U) != ESP_OK) LOG_FAIL("write MSRC_CFG");
+    if (!vl53_set_signal_rate_limit(ch, 0.25f)) LOG_FAIL("set_signal_rate_limit");
+    if (vl53_write_reg(ch, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0xFF) != ESP_OK) LOG_FAIL("write SEQ_CFG 0xFF");
 
     uint8_t spad_count = 0;
     bool spad_type_is_aperture = false;
-    if (!vl53_get_spad_info(addr, &spad_count, &spad_type_is_aperture)) {
-        ESP_LOGW(TAG, "Failed to get SPAD info at 0x%02X", addr);
-        return false;
-    }
+    if (!vl53_get_spad_info(ch, &spad_count, &spad_type_is_aperture)) LOG_FAIL("SPAD info");
 
     uint8_t ref_spad_map[6] = {0};
-    if (vl53_read_multi(addr, VL53_REG_GLOBAL_CONFIG_SPAD_ENABLES_REF_0, ref_spad_map, sizeof(ref_spad_map)) != ESP_OK) {
-        return false;
-    }
+    if (vl53_read_multi(ch, VL53_REG_GLOBAL_CONFIG_SPAD_ENABLES_REF_0, ref_spad_map, sizeof(ref_spad_map)) != ESP_OK) LOG_FAIL("read SPAD map");
 
-    if (vl53_write_reg(addr, 0xFF, 0x01) != ESP_OK ||
-        vl53_write_reg(addr, VL53_REG_DYNAMIC_SPAD_REF_EN_START_OFFSET, 0x00) != ESP_OK ||
-        vl53_write_reg(addr, VL53_REG_DYNAMIC_SPAD_NUM_REQUESTED_REF_SPAD, 0x2C) != ESP_OK ||
-        vl53_write_reg(addr, 0xFF, 0x00) != ESP_OK ||
-        vl53_write_reg(addr, VL53_REG_GLOBAL_CONFIG_REF_EN_START_SELECT, 0xB4) != ESP_OK) {
-        return false;
-    }
+    if (vl53_write_reg(ch, 0xFF, 0x01) != ESP_OK) LOG_FAIL("write 0xFF C");
+    if (vl53_write_reg(ch, VL53_REG_DYNAMIC_SPAD_REF_EN_START_OFFSET, 0x00) != ESP_OK) LOG_FAIL("write SPAD_OFFSET");
+    if (vl53_write_reg(ch, VL53_REG_DYNAMIC_SPAD_NUM_REQUESTED_REF_SPAD, 0x2C) != ESP_OK) LOG_FAIL("write SPAD_NUM");
+    if (vl53_write_reg(ch, 0xFF, 0x00) != ESP_OK) LOG_FAIL("write 0xFF D");
+    if (vl53_write_reg(ch, VL53_REG_GLOBAL_CONFIG_REF_EN_START_SELECT, 0xB4) != ESP_OK) LOG_FAIL("write REF_EN");
 
     uint8_t first_spad_to_enable = spad_type_is_aperture ? 12U : 0U;
     uint8_t spads_enabled = 0;
@@ -879,11 +516,10 @@ static bool vl53_init_device(uint8_t addr, vl53_sensor_t *sensor)
             spads_enabled++;
         }
     }
-    if (vl53_write_multi(addr, VL53_REG_GLOBAL_CONFIG_SPAD_ENABLES_REF_0, ref_spad_map, sizeof(ref_spad_map)) != ESP_OK) {
-        return false;
-    }
+    if (vl53_write_multi(ch, VL53_REG_GLOBAL_CONFIG_SPAD_ENABLES_REF_0, ref_spad_map, sizeof(ref_spad_map)) != ESP_OK) LOG_FAIL("write SPAD enables");
 
-    const struct { uint8_t reg; uint8_t value; } tuning[] = {
+    // STMicro DefaultTuningSettings: opaque register sequence required by the datasheet.
+    static const struct { uint8_t reg; uint8_t value; } tuning[] = {
         {0xFF, 0x01}, {0x00, 0x00}, {0xFF, 0x00}, {0x09, 0x00}, {0x10, 0x00}, {0x11, 0x00},
         {0x24, 0x01}, {0x25, 0xFF}, {0x75, 0x00}, {0xFF, 0x01}, {0x4E, 0x2C}, {0x48, 0x00},
         {0x30, 0x20}, {0xFF, 0x00}, {0x30, 0x09}, {0x54, 0x00}, {0x31, 0x04}, {0x32, 0x03},
@@ -899,91 +535,83 @@ static bool vl53_init_device(uint8_t addr, vl53_sensor_t *sensor)
         {0xFF, 0x00}, {0x80, 0x01}, {0x01, 0xF8}, {0xFF, 0x01}, {0x8E, 0x01}, {0x00, 0x01},
         {0xFF, 0x00}, {0x80, 0x00},
     };
-
     for (size_t i = 0; i < sizeof(tuning) / sizeof(tuning[0]); ++i) {
-        if (vl53_write_reg(addr, tuning[i].reg, tuning[i].value) != ESP_OK) {
-            ESP_LOGW(TAG, "Tuning write failed at 0x%02X reg 0x%02X", addr, tuning[i].reg);
+        if (vl53_write_reg(ch, tuning[i].reg, tuning[i].value) != ESP_OK) {
+            ESP_LOGW(TAG, "Ch%d: tuning write failed at 0x%02X", ch, tuning[i].reg);
             return false;
         }
     }
 
-    if (vl53_write_reg(addr, VL53_REG_SYSTEM_INTERRUPT_CONFIG_GPIO, 0x04) != ESP_OK ||
-        vl53_read_reg(addr, VL53_REG_GPIO_HV_MUX_ACTIVE_HIGH, &tmp) != ESP_OK ||
-        vl53_write_reg(addr, VL53_REG_GPIO_HV_MUX_ACTIVE_HIGH, tmp & (uint8_t)~0x10U) != ESP_OK ||
-        vl53_write_reg(addr, VL53_REG_SYSTEM_INTERRUPT_CLEAR, 0x01) != ESP_OK) {
-        return false;
-    }
+    if (vl53_write_reg(ch, VL53_REG_SYSTEM_INTERRUPT_CONFIG_GPIO, 0x04) != ESP_OK) LOG_FAIL("write INTR_CFG");
+    if (vl53_read_reg(ch, VL53_REG_GPIO_HV_MUX_ACTIVE_HIGH, &tmp) != ESP_OK) LOG_FAIL("read HV_MUX");
+    if (vl53_write_reg(ch, VL53_REG_GPIO_HV_MUX_ACTIVE_HIGH, tmp & (uint8_t)~0x10U) != ESP_OK) LOG_FAIL("write HV_MUX");
+    if (vl53_write_reg(ch, VL53_REG_SYSTEM_INTERRUPT_CLEAR, 0x01) != ESP_OK) LOG_FAIL("write INTR_CLR");
 
-    if (!vl53_get_measurement_timing_budget(addr, sensor)) {
-        return false;
-    }
-
-    if (vl53_write_reg(addr, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0xE8) != ESP_OK ||
-        !vl53_set_measurement_timing_budget(addr, sensor, sensor->measurement_timing_budget_us) ||
-        vl53_write_reg(addr, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0x01) != ESP_OK ||
-        !vl53_perform_single_ref_calibration(addr, 0x40) ||
-        vl53_write_reg(addr, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0x02) != ESP_OK ||
-        !vl53_perform_single_ref_calibration(addr, 0x00) ||
-        vl53_write_reg(addr, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0xE8) != ESP_OK) {
-        return false;
-    }
-
+    if (!vl53_get_measurement_timing_budget(ch, sensor)) LOG_FAIL("get_timing_budget");
+    if (vl53_write_reg(ch, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0xE8) != ESP_OK) LOG_FAIL("write SEQ 0xE8 A");
+    if (!vl53_set_measurement_timing_budget(ch, sensor, sensor->measurement_timing_budget_us)) LOG_FAIL("set_timing_budget");
+    if (vl53_write_reg(ch, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0x01) != ESP_OK) LOG_FAIL("write SEQ 0x01");
+    if (!vl53_perform_single_ref_calibration(ch, 0x40)) LOG_FAIL("ref_cal 0x40");
+    if (vl53_write_reg(ch, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0x02) != ESP_OK) LOG_FAIL("write SEQ 0x02");
+    if (!vl53_perform_single_ref_calibration(ch, 0x00)) LOG_FAIL("ref_cal 0x00");
+    if (vl53_write_reg(ch, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0xE8) != ESP_OK) LOG_FAIL("write SEQ 0xE8 B");
     return true;
 }
 
-// ── TCA9548A version: เลือก channel → init sensor ที่ 0x29 ──
+// ─── Sensor lifecycle ───────────────────────────────────────────────────────
+
+static int vl53_apply_filter(int idx, uint16_t raw_mm)
+{
+    if (!s_sensors[idx].filter_ready) {
+        s_sensors[idx].filtered_mm = (float)raw_mm;
+        s_sensors[idx].filter_ready = true;
+    } else {
+        s_sensors[idx].filtered_mm =
+            (s_sensors[idx].filtered_mm * (1.0f - VL53_EMA_ALPHA)) +
+            ((float)raw_mm * VL53_EMA_ALPHA);
+    }
+    return (int)(s_sensors[idx].filtered_mm + 0.5f);
+}
+
+static void vl53_mark_sensor_missing(int idx)
+{
+    s_sensors[idx].present = false;
+    s_sensors[idx].filter_ready = false;
+    s_sensors[idx].read_fail_count = 0;
+    s_sensors[idx].invalid_sample_count = 0;
+    s_sensors[idx].measurement_timing_budget_us = 0;
+    s_sensors[idx].filtered_mm = 0.0f;
+    pill_sensor_status_mark_present(idx, false);
+    s_retry_after_ticks[idx] = xTaskGetTickCount() + pdMS_TO_TICKS(VL53_MISSING_RETRY_MS);
+}
+
+static void vl53_mark_sensor_present(int idx)
+{
+    s_sensors[idx].present = true;
+    s_sensors[idx].read_fail_count = 0;
+    s_sensors[idx].invalid_sample_count = 0;
+    s_retry_after_ticks[idx] = 0;
+    pill_sensor_status_mark_present(idx, true);
+}
+
 static bool vl53_init_on_channel(int idx)
 {
-    vl53_release_sensor_handle(idx);
-
-    // ── เลือก channel + probe ภายใน mutex เดียวกัน ──
-    // ── ตั้ง active channel index ให้ vl53_with_device re-select อัตโนมัติ ──
-    s_vl53_current_idx = idx;
-
-    // ป้องกัน task อื่นเปลี่ยน TCA9548A channel ระหว่าง select กับ read
-    {
-        i2c_master_bus_handle_t bus = i2c_manager_get_bus_handle();
-        uint8_t ch_mask = (uint8_t)(1u << s_sensors[idx].channel);
-        xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-        // select channel (ไม่ผ่าน mutex เพราะ lock แล้ว)
-        esp_err_t sel_ret = tca9548a_select_channel_nolock((uint8_t)s_sensors[idx].channel);
-        esp_err_t probe_ret = (sel_ret == ESP_OK) ? i2c_master_probe(bus, VL53L0X_DEFAULT_ADDR, 50) : ESP_FAIL;
-        xSemaphoreGive(g_i2c_mutex);
-
-        if (sel_ret != ESP_OK) {
-            ESP_LOGW(TAG, "Ch%d: TCA9548A select failed (0x%02X)", idx, ch_mask);
-            vl53_mark_sensor_missing(idx);
-            return false;
-        }
-        if (probe_ret != ESP_OK) {
-            ESP_LOGW(TAG, "Ch%d: VL53 not found at 0x%02X", idx, VL53L0X_DEFAULT_ADDR);
-            tca9548a_disable_all();
-            vl53_mark_sensor_missing(idx);
-            return false;
-        }
-        ESP_LOGI(TAG, "Ch%d: VL53 found at 0x%02X", idx, VL53L0X_DEFAULT_ADDR);
-    }
-    vTaskDelay(pdMS_TO_TICKS(5));
-
-    if (!vl53_wait_for_model_id(VL53L0X_DEFAULT_ADDR, VL53_MODEL_ID, VL53_BOOT_RETRIES, VL53_BOOT_RETRY_DELAY_MS)) {
-        ESP_LOGW(TAG, "Ch%d: VL53 model ID mismatch", idx);
-        tca9548a_disable_all();
+    if (!vl53_wait_for_model_id(idx)) {
+        ESP_LOGW(TAG, "Ch%d: VL53 not found at 0x%02X", idx, VL53L0X_DEFAULT_ADDR);
         vl53_mark_sensor_missing(idx);
         return false;
     }
 
-    if (!vl53_init_device(VL53L0X_DEFAULT_ADDR, &s_sensors[idx])) {
+    if (!vl53_init_device(idx, &s_sensors[idx])) {
         ESP_LOGW(TAG, "Ch%d: init failed", idx);
-        tca9548a_disable_all();
         vl53_mark_sensor_missing(idx);
         return false;
     }
 
     vl53_mark_sensor_present(idx);
 
-    if (!vl53_start_continuous(&s_sensors[idx], VL53_CONTINUOUS_PERIOD_MS)) {
+    if (!vl53_start_continuous(idx, s_sensors[idx].stop_variable, VL53_CONTINUOUS_PERIOD_MS)) {
         ESP_LOGW(TAG, "Ch%d: continuous ranging start failed", idx);
-        tca9548a_disable_all();
         vl53_mark_sensor_missing(idx);
         return false;
     }
@@ -991,34 +619,53 @@ static bool vl53_init_on_channel(int idx)
     vTaskDelay(pdMS_TO_TICKS(60));
 
     uint16_t raw_mm = 0;
-    if (!vl53_read_range_continuous_mm(VL53L0X_DEFAULT_ADDR, &raw_mm)) {
+    if (!vl53_read_range_continuous_mm(idx, &raw_mm)) {
         ESP_LOGW(TAG, "Ch%d: no first sample", idx);
         pill_sensor_status_set_reading(idx, -1, -1, false);
-        tca9548a_disable_all();
         return true;
     }
 
     pill_sensor_status_set_reading(idx, (int)raw_mm, vl53_apply_filter(idx, raw_mm), true);
     ESP_LOGI(TAG, "Ch%d: ready, first=%u mm", idx, raw_mm);
-    tca9548a_disable_all();
     return true;
 }
 
-void vl53l0x_multi_prepare_pins(void)
+static void vl53_release_xshut(void)
 {
-    // XSHUT ไม่ต่อ — โมดูล VL53 มี pull-up ภายในอยู่แล้ว
-    // disable all TCA9548A channels at start
-    tca9548a_disable_all();
+    // Drive XSHUT lines HIGH to bring every VL53L0X out of reset. Even though
+    // we use the TCA9548A to isolate the bus, XSHUT still needs to be high for
+    // the sensor to power its I2C front-end. Without this, all 6 channels NACK.
+    static const gpio_num_t xshut[PILL_SENSOR_COUNT] = {
+        VL53L0X_XSHUT_M1, VL53L0X_XSHUT_M2, VL53L0X_XSHUT_M3,
+        VL53L0X_XSHUT_M4, VL53L0X_XSHUT_M5, VL53L0X_XSHUT_M6,
+    };
+
+    uint64_t mask = 0;
+    for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
+        if (xshut[i] >= 0) mask |= 1ULL << (uint32_t)xshut[i];
+    }
+    if (mask == 0) return;
+
+    gpio_config_t cfg = {
+        .pin_bit_mask = mask,
+        .mode         = GPIO_MODE_OUTPUT,
+        .pull_up_en   = 0,
+        .pull_down_en = 0,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&cfg);
+
+    for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
+        if (xshut[i] >= 0) gpio_set_level(xshut[i], 1);
+    }
 }
 
 static void vl53_init_all(void)
 {
     pill_sensor_status_init_defaults();
+    vl53_release_xshut();
     tca9548a_disable_all();
-    vl53_release_default_handle();
-    for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
-        vl53_release_sensor_handle(i);
-    }
+    vl53_release_dev();
     vTaskDelay(pdMS_TO_TICKS(100));
 
     for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
@@ -1039,11 +686,8 @@ static void vl53_poll_all(void)
             continue;
         }
 
-        // ตั้ง active channel — vl53_with_device จะ re-select อัตโนมัติทุก I/O
-        s_vl53_current_idx = i;
-
         uint16_t raw_mm = 0;
-        if (!vl53_read_range_continuous_mm(VL53L0X_DEFAULT_ADDR, &raw_mm)) {
+        if (!vl53_read_range_continuous_mm(i, &raw_mm)) {
             s_sensors[i].read_fail_count++;
             if (!s_sensors[i].filter_ready || s_sensors[i].read_fail_count >= VL53_INVALID_GRACE_READS) {
                 pill_sensor_status_set_reading(i, -1, -1, false);
@@ -1052,7 +696,6 @@ static void vl53_poll_all(void)
                 ESP_LOGW(TAG, "Ch%d: dropped after %d fails", i, VL53_RESTART_AFTER_FAILS);
                 vl53_mark_sensor_missing(i);
             }
-            tca9548a_disable_all();
             continue;
         }
 
@@ -1062,13 +705,11 @@ static void vl53_poll_all(void)
             if (!s_sensors[i].filter_ready || s_sensors[i].invalid_sample_count >= VL53_INVALID_GRACE_READS) {
                 pill_sensor_status_set_reading(i, (int)raw_mm, -1, false);
             }
-            tca9548a_disable_all();
             continue;
         }
 
         s_sensors[i].invalid_sample_count = 0;
         pill_sensor_status_set_reading(i, (int)raw_mm, vl53_apply_filter(i, raw_mm), true);
-        tca9548a_disable_all();
     }
 }
 
@@ -1076,38 +717,41 @@ static void vl53_task(void *arg)
 {
     (void)arg;
 
-    static int s_last_reported_count[PILL_SENSOR_COUNT] = {-1, -1, -1, -1, -1, -1};
-    static int s_stable_count[PILL_SENSOR_COUNT] = {-1, -1, -1, -1, -1, -1};
-    static int s_stable_ticks[PILL_SENSOR_COUNT] = {0, 0, 0, 0, 0, 0};
+    // Pill count needs to remain stable for N polls before we push to shadow.
+    // With VL53_READ_INTERVAL_MS = 1000 and threshold 3, that's ~3 seconds of stability.
+    static int s_stable_count[PILL_SENSOR_COUNT];
+    static int s_stable_ticks[PILL_SENSOR_COUNT];
+    for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
+        s_stable_count[i] = -1;
+        s_stable_ticks[i] = 0;
+    }
 
     ESP_LOGI(TAG, "Starting VL53L0X poll task");
     while (1) {
         vl53_poll_all();
-        
-        // Sync sensor pill count to netpie shadow count
+
         const netpie_shadow_t *shadow = netpie_get_shadow();
         if (shadow && shadow->loaded) {
             for (int i = 0; i < PILL_SENSOR_COUNT; i++) {
                 const pill_sensor_status_t *s = pill_sensor_status_get(i);
-                if (s && s->valid && s->pill_count >= 0) {
-                    if (s->pill_count != s_stable_count[i]) {
-                        s_stable_count[i] = s->pill_count;
-                        s_stable_ticks[i] = 1;
-                    } else {
-                        s_stable_ticks[i]++;
-                    }
-                    
-                    // 3 ticks = ~6 seconds of stability
-                    if (s_stable_ticks[i] >= 3) {
-                        if (shadow->med[i].count != s_stable_count[i]) {
-                            ESP_LOGI(TAG, "Sensor %d sync: %d -> %d pills", i+1, shadow->med[i].count, s_stable_count[i]);
-                            netpie_shadow_update_count(i + 1, s_stable_count[i]);
-                        }
-                        s_last_reported_count[i] = s_stable_count[i];
-                    }
-                } else {
+                if (!s || !s->valid || s->pill_count < 0) {
                     s_stable_count[i] = -1;
                     s_stable_ticks[i] = 0;
+                    continue;
+                }
+
+                if (s->pill_count != s_stable_count[i]) {
+                    s_stable_count[i] = s->pill_count;
+                    s_stable_ticks[i] = 1;
+                } else {
+                    s_stable_ticks[i]++;
+                }
+
+                if (s_stable_ticks[i] >= VL53_STABLE_TICKS_BEFORE_SYNC &&
+                    shadow->med[i].count != s_stable_count[i]) {
+                    ESP_LOGI(TAG, "Sensor %d sync: %d -> %d pills",
+                             i + 1, shadow->med[i].count, s_stable_count[i]);
+                    netpie_shadow_update_count(i + 1, s_stable_count[i]);
                 }
             }
         }
@@ -1115,6 +759,8 @@ static void vl53_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(VL53_READ_INTERVAL_MS));
     }
 }
+
+// ─── Public API ─────────────────────────────────────────────────────────────
 
 void vl53l0x_multi_bootstrap(void)
 {
@@ -1125,9 +771,7 @@ void vl53l0x_multi_bootstrap(void)
 void vl53l0x_multi_start(void)
 {
     static bool started = false;
-    if (started) {
-        return;
-    }
+    if (started) return;
 
     started = true;
     if (xTaskCreate(vl53_task, "vl53_task", 6144, NULL, 5, NULL) != pdPASS) {
