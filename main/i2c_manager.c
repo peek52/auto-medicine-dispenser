@@ -130,6 +130,15 @@ esp_err_t i2c_manager_write(uint8_t addr, const uint8_t *data, size_t len)
     return ret;
 }
 
+esp_err_t i2c_manager_write_nolock(uint8_t addr, const uint8_t *data, size_t len)
+{
+    if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
+    // Caller holds g_i2c_mutex — do NOT take it again
+    i2c_master_dev_handle_t dev = get_or_add_device(addr);
+    if (!dev) return ESP_FAIL;
+    return i2c_master_transmit(dev, data, len, 50);
+}
+
 esp_err_t i2c_manager_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len)
 {
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;

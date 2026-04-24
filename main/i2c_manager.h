@@ -36,6 +36,10 @@ esp_err_t i2c_manager_ping(uint8_t addr);
  */
 esp_err_t i2c_manager_write(uint8_t addr, const uint8_t *data, size_t len);
 
+/** Same as i2c_manager_write but WITHOUT acquiring the mutex.
+ *  Caller MUST hold g_i2c_mutex before calling this. */
+esp_err_t i2c_manager_write_nolock(uint8_t addr, const uint8_t *data, size_t len);
+
 /**
  * Write register byte then read reply. Acquires mutex internally.
  * @param addr     7-bit device address

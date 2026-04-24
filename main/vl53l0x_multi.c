@@ -926,16 +926,34 @@ static bool vl53_init_on_channel(int idx)
 {
     vl53_release_sensor_handle(idx);
 
-    // เลือก channel บน TCA9548A
-    if (vl53_select_channel(idx) != ESP_OK) {
-        ESP_LOGW(TAG, "Ch%d: TCA9548A select failed", idx);
-        vl53_mark_sensor_missing(idx);
-        return false;
+    // ── เลือก channel + probe ภายใน mutex เดียวกัน ──
+    // ป้องกัน task อื่นเปลี่ยน TCA9548A channel ระหว่าง select กับ read
+    {
+        i2c_master_bus_handle_t bus = i2c_manager_get_bus_handle();
+        uint8_t ch_mask = (uint8_t)(1u << s_sensors[idx].channel);
+        xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+        // select channel (ไม่ผ่าน mutex เพราะ lock แล้ว)
+        esp_err_t sel_ret = tca9548a_select_channel_nolock((uint8_t)s_sensors[idx].channel);
+        esp_err_t probe_ret = (sel_ret == ESP_OK) ? i2c_master_probe(bus, VL53L0X_DEFAULT_ADDR, 50) : ESP_FAIL;
+        xSemaphoreGive(g_i2c_mutex);
+
+        if (sel_ret != ESP_OK) {
+            ESP_LOGW(TAG, "Ch%d: TCA9548A select failed (0x%02X)", idx, ch_mask);
+            vl53_mark_sensor_missing(idx);
+            return false;
+        }
+        if (probe_ret != ESP_OK) {
+            ESP_LOGW(TAG, "Ch%d: VL53 not found at 0x%02X", idx, VL53L0X_DEFAULT_ADDR);
+            tca9548a_disable_all();
+            vl53_mark_sensor_missing(idx);
+            return false;
+        }
+        ESP_LOGI(TAG, "Ch%d: VL53 found at 0x%02X", idx, VL53L0X_DEFAULT_ADDR);
     }
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(5));
 
     if (!vl53_wait_for_model_id(VL53L0X_DEFAULT_ADDR, VL53_MODEL_ID, VL53_BOOT_RETRIES, VL53_BOOT_RETRY_DELAY_MS)) {
-        ESP_LOGW(TAG, "Ch%d: VL53 not found at 0x%02X", idx, VL53L0X_DEFAULT_ADDR);
+        ESP_LOGW(TAG, "Ch%d: VL53 model ID mismatch", idx);
         tca9548a_disable_all();
         vl53_mark_sensor_missing(idx);
         return false;

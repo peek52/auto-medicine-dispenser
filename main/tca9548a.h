@@ -27,6 +27,9 @@ esp_err_t tca9548a_disable_all(void);
 // Ping TCA9548A to check if it's present on I2C bus
 bool tca9548a_is_present(void);
 
+// Select channel WITHOUT taking the i2c mutex (caller must hold it)
+esp_err_t tca9548a_select_channel_nolock(uint8_t ch);
+
 #ifdef __cplusplus
 }
 #endif
