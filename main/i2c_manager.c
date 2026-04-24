@@ -3,7 +3,6 @@
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
-#include <string.h>
 
 static const char *TAG = "i2c_mgr";
 static i2c_master_bus_handle_t s_bus_handle = NULL;
@@ -108,38 +107,12 @@ esp_err_t i2c_manager_ping(uint8_t addr)
 {
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+
+    // Probe must not create/cache device handles. The boot-time scan checks many
+    // empty addresses, and caching those dummy handles can fill the small device
+    // cache before real devices like FT6336U/PCA9685/PCF8574/DS3231 are reached.
     esp_err_t ret = i2c_master_probe(s_bus_handle, addr, 20);
     xSemaphoreGive(g_i2c_mutex);
-    return ret;
-}
-
-void i2c_manager_lock(void)   { xSemaphoreTake(g_i2c_mutex, portMAX_DELAY); }
-void i2c_manager_unlock(void) { xSemaphoreGive(g_i2c_mutex); }
-
-esp_err_t i2c_manager_write_nolock(uint8_t addr, const uint8_t *data, size_t len)
-{
-    i2c_master_dev_handle_t dev = get_or_add_device(addr);
-    if (!dev) return ESP_FAIL;
-    return i2c_master_transmit(dev, data, len, 50);
-}
-
-esp_err_t i2c_manager_write_reg_nolock(uint8_t addr, uint8_t reg, const uint8_t *data, size_t len)
-{
-    if (len > 32) return ESP_ERR_INVALID_ARG;
-    uint8_t buf[33];
-    buf[0] = reg;
-    if (data && len > 0) memcpy(&buf[1], data, len);
-    i2c_master_dev_handle_t dev = get_or_add_device(addr);
-    if (!dev) return ESP_FAIL;
-    return i2c_master_transmit(dev, buf, 1 + len, 50);
-}
-
-esp_err_t i2c_manager_read_reg_nolock(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len)
-{
-    i2c_master_dev_handle_t dev = get_or_add_device(addr);
-    if (!dev) return ESP_FAIL;
-    esp_err_t ret = i2c_master_transmit(dev, &reg, 1, 50);
-    if (ret == ESP_OK) ret = i2c_master_receive(dev, buf, len, 50);
     return ret;
 }
 
@@ -152,27 +125,6 @@ esp_err_t i2c_manager_write(uint8_t addr, const uint8_t *data, size_t len)
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
     if (dev) {
         ret = i2c_master_transmit(dev, data, len, 50);
-    }
-    xSemaphoreGive(g_i2c_mutex);
-    return ret;
-}
-
-esp_err_t i2c_manager_write_reg(uint8_t addr, uint8_t reg, const uint8_t *data, size_t len)
-{
-    if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
-    if (len > 32) return ESP_ERR_INVALID_ARG;  // guard against huge buffers
-
-    uint8_t buf[33];
-    buf[0] = reg;
-    if (data && len > 0) {
-        memcpy(&buf[1], data, len);
-    }
-
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-    esp_err_t ret = ESP_FAIL;
-    i2c_master_dev_handle_t dev = get_or_add_device(addr);
-    if (dev) {
-        ret = i2c_master_transmit(dev, buf, 1 + len, 50);
     }
     xSemaphoreGive(g_i2c_mutex);
     return ret;
