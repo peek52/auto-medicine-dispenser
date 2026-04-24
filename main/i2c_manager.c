@@ -2,6 +2,7 @@
 #include "config.h"
 #include "driver/i2c_master.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "driver/gpio.h"
 
 static const char *TAG = "i2c_mgr";
@@ -9,24 +10,10 @@ static i2c_master_bus_handle_t s_bus_handle = NULL;
 
 SemaphoreHandle_t g_i2c_mutex = NULL;
 
-esp_err_t i2c_manager_init(void)
+// Pulse SCL via direct GPIO to free a slave that is holding SDA low.
+// Returns true once SDA goes high (bus released), false if still stuck.
+static bool i2c_unstick_gpio(void)
 {
-    g_i2c_mutex = xSemaphoreCreateMutex();
-    if (!g_i2c_mutex) {
-        ESP_LOGE(TAG, "Failed to create I2C mutex");
-        return ESP_ERR_NO_MEM;
-    }
-
-    i2c_master_bus_config_t bus_cfg = {
-        .i2c_port        = I2C_NUM_0,
-        .sda_io_num      = I2C_SDA_PIN,
-        .scl_io_num      = I2C_SCL_PIN,
-        .clk_source      = I2C_CLK_SRC_DEFAULT,
-        .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = true,
-    };
-
-    // Explicitly configure pins to avoid stuck bus and ensure pull-ups.
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << I2C_SDA_PIN) | (1ULL << I2C_SCL_PIN),
         .mode = GPIO_MODE_INPUT_OUTPUT_OD,
@@ -36,49 +23,59 @@ esp_err_t i2c_manager_init(void)
     };
     gpio_config(&io_conf);
 
-    // Aggressive bus recovery for slaves stuck from a prior power cycle.
-    // Some VL53L0X modules need significant clocking before they release
-    // SDA, so we try up to 4 rounds of 32 SCL pulses with a STOP between.
-    // 50us half-period (~10 kHz) gives even very weak pull-ups time to
-    // charge the line back to VCC.
     gpio_set_level(I2C_SDA_PIN, 1);
     gpio_set_level(I2C_SCL_PIN, 1);
-    vTaskDelay(pdMS_TO_TICKS(10));  // Let all modules finish power-on reset
+    vTaskDelay(pdMS_TO_TICKS(10));
 
     bool released = false;
     for (int round = 0; round < 4 && !released; round++) {
         if (gpio_get_level(I2C_SDA_PIN) == 1) { released = true; break; }
-
-        // 32 clock pulses keeping SDA released high.
         for (int i = 0; i < 32; i++) {
             gpio_set_level(I2C_SCL_PIN, 0); esp_rom_delay_us(50);
             gpio_set_level(I2C_SCL_PIN, 1); esp_rom_delay_us(50);
             if (gpio_get_level(I2C_SDA_PIN) == 1) { released = true; break; }
         }
-
-        // STOP condition: SDA transitions low -> high while SCL is high.
+        // STOP: SDA low -> SCL high -> SDA high while SCL is high.
         gpio_set_level(I2C_SDA_PIN, 0); esp_rom_delay_us(50);
         gpio_set_level(I2C_SCL_PIN, 1); esp_rom_delay_us(50);
         gpio_set_level(I2C_SDA_PIN, 1); esp_rom_delay_us(50);
-
         if (gpio_get_level(I2C_SDA_PIN) == 1) { released = true; break; }
-        vTaskDelay(pdMS_TO_TICKS(20));  // settle before retrying
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 
     if (!released) {
-        // Do NOT esp_restart here — if the hardware is physically stuck
-        // (bad wiring, defective module) we would boot-loop forever.
-        // Continue boot so the user can still reach the web UI and see
-        // the diagnostic, and so the RTC/display keep working.
-        ESP_LOGE(TAG, "I2C bus still stuck after 4 recovery rounds (SDA=%d SCL=%d) — "
-                 "power-cycle the modules' VCC to recover",
+        ESP_LOGE(TAG, "Bus still stuck after 4 recovery rounds (SDA=%d SCL=%d)",
                  gpio_get_level(I2C_SDA_PIN), gpio_get_level(I2C_SCL_PIN));
     }
-
     gpio_reset_pin(I2C_SDA_PIN);
     gpio_reset_pin(I2C_SCL_PIN);
+    return released;
+}
 
-    esp_err_t ret = i2c_new_master_bus(&bus_cfg, &s_bus_handle);
+static esp_err_t i2c_create_bus(void)
+{
+    i2c_master_bus_config_t bus_cfg = {
+        .i2c_port        = I2C_NUM_0,
+        .sda_io_num      = I2C_SDA_PIN,
+        .scl_io_num      = I2C_SCL_PIN,
+        .clk_source      = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
+    };
+    return i2c_new_master_bus(&bus_cfg, &s_bus_handle);
+}
+
+esp_err_t i2c_manager_init(void)
+{
+    g_i2c_mutex = xSemaphoreCreateMutex();
+    if (!g_i2c_mutex) {
+        ESP_LOGE(TAG, "Failed to create I2C mutex");
+        return ESP_ERR_NO_MEM;
+    }
+
+    i2c_unstick_gpio();
+
+    esp_err_t ret = i2c_create_bus();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "i2c_new_master_bus failed: %s", esp_err_to_name(ret));
         return ret;
@@ -187,6 +184,47 @@ esp_err_t i2c_manager_read(uint8_t addr, uint8_t *buf, size_t len)
     if (dev) {
         ret = i2c_master_receive(dev, buf, len, 50);
     }
+    xSemaphoreGive(g_i2c_mutex);
+    return ret;
+}
+
+esp_err_t i2c_manager_recover_bus(void)
+{
+    if (!g_i2c_mutex) return ESP_ERR_INVALID_STATE;
+
+    // Use a timeout: if a task is hung holding the mutex (the very symptom
+    // we're trying to recover from), don't block the watchdog forever.
+    if (xSemaphoreTake(g_i2c_mutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+        ESP_LOGE(TAG, "recover_bus: cannot take mutex (deadlocked) — restarting");
+        vTaskDelay(pdMS_TO_TICKS(200));
+        esp_restart();
+        return ESP_ERR_TIMEOUT;
+    }
+
+    ESP_LOGW(TAG, "I2C runtime recovery: tearing down bus + unsticking SDA");
+
+    for (int i = 0; i < s_device_count; i++) {
+        if (s_device_cache[i].dev_handle) {
+            i2c_master_bus_rm_device(s_device_cache[i].dev_handle);
+            s_device_cache[i].dev_handle = NULL;
+        }
+    }
+    s_device_count = 0;
+
+    if (s_bus_handle) {
+        i2c_del_master_bus(s_bus_handle);
+        s_bus_handle = NULL;
+    }
+
+    bool released = i2c_unstick_gpio();
+
+    esp_err_t ret = i2c_create_bus();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "recover_bus: re-init failed: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "recover_bus: bus re-initialized (sda_released=%d)", (int)released);
+    }
+
     xSemaphoreGive(g_i2c_mutex);
     return ret;
 }

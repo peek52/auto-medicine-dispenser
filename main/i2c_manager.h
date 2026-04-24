@@ -58,6 +58,16 @@ esp_err_t i2c_manager_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t l
  */
 esp_err_t i2c_manager_read(uint8_t addr, uint8_t *buf, size_t len);
 
+/**
+ * Runtime bus recovery — for stuck-bus situations encountered AFTER boot.
+ * Tears down the i2c master bus, runs the SCL clock unstick sequence,
+ * and recreates the bus. Cached device handles are invalidated and
+ * will be re-added on next access.
+ *
+ * Acquires the mutex internally. Returns ESP_OK on successful re-init.
+ */
+esp_err_t i2c_manager_recover_bus(void);
+
 #ifdef __cplusplus
 }
 #endif

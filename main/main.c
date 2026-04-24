@@ -190,6 +190,42 @@ static void cli_task(void *arg) {
     }
 }
 
+/* I2C bus health watchdog: periodically probes TCA9548A. If it doesn't
+   answer for several rounds, it means a slave is holding SDA low and
+   the touch screen / sensors / RTC are all dead. Try a runtime
+   GPIO unstick first; if that doesn't help, restart cleanly so the
+   user doesn't have to physically pull power. */
+static void i2c_watchdog_task(void *arg)
+{
+    (void)arg;
+    const uint8_t probe_addr = ADDR_TCA9548A;
+    int consecutive_fails = 0;
+    int recoveries = 0;
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(15000));
+        if (i2c_manager_ping(probe_addr) == ESP_OK) {
+            consecutive_fails = 0;
+            continue;
+        }
+        consecutive_fails++;
+        if (consecutive_fails < 3) continue;
+
+        ESP_LOGW(TAG, "I2C watchdog: TCA9548A unreachable %d rounds — recovering",
+                 consecutive_fails);
+        if (i2c_manager_recover_bus() == ESP_OK &&
+            i2c_manager_ping(probe_addr) == ESP_OK) {
+            consecutive_fails = 0;
+            recoveries++;
+            ESP_LOGI(TAG, "I2C watchdog: recovered (total recoveries=%d)", recoveries);
+            continue;
+        }
+
+        ESP_LOGE(TAG, "I2C watchdog: recovery failed — restarting chip");
+        vTaskDelay(pdMS_TO_TICKS(500));
+        esp_restart();
+    }
+}
+
 /* â”€â”€ SNTP Sync Task â”€â”€ */
 static void sync_time_task(void *arg) {
     ESP_LOGI(TAG, "Initializing SNTP...");
@@ -356,6 +392,9 @@ void app_main(void)
         while (1) {
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
+    }
+    if (xTaskCreate(i2c_watchdog_task, "i2c_wdog", 4096, NULL, 2, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create i2c watchdog task");
     }
 
     // 11. Main loop — periodic heap/uptime log to catch leaks at a glance.
