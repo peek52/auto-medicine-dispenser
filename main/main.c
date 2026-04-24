@@ -257,6 +257,7 @@ static void deferred_init_task(void *arg)
 void app_main(void)
 {
     web_log_init();
+    esp_log_level_set("i2c.master", ESP_LOG_NONE);
     ESP_LOGI(TAG, "Starting Unified Cam & Modules (ESP32-P4 Nano)");
     if (s_boot_magic != BOOT_MAGIC) {
         s_boot_magic = BOOT_MAGIC;

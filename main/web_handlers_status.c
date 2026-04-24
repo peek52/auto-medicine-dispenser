@@ -350,6 +350,20 @@ static esp_err_t entry_send_login_page(httpd_req_t *req, bool show_error)
 
 esp_err_t web_entry_handler(httpd_req_t *req)
 {
+    // If user already has a valid session, keep them signed in and redirect
+    // to the appropriate dashboard instead of logging them out.
+    if (web_tech_cookie_valid(req)) {
+        httpd_resp_set_status(req, "303 See Other");
+        httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+        httpd_resp_set_hdr(req, "Location", "/tech");
+        return httpd_resp_send(req, NULL, 0);
+    }
+    if (cloud_auth_cookie_valid(req)) {
+        httpd_resp_set_status(req, "303 See Other");
+        httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+        httpd_resp_set_hdr(req, "Location", "/cloud");
+        return httpd_resp_send(req, NULL, 0);
+    }
     maintenance_auth_clear_session();
     cloud_auth_clear_session();
     httpd_resp_set_hdr(req, "Set-Cookie", "cloud_auth=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax");
@@ -646,7 +660,7 @@ esp_err_t cloud_login_handler(httpd_req_t *req)
         snprintf(cookie_maint, sizeof(cookie_maint), "maint_auth=%s; Path=/; HttpOnly; SameSite=Lax", s_maint_session_token);
 
         httpd_resp_set_status(req, "303 See Other");
-        httpd_resp_set_hdr(req, "Location", "/maint");
+        httpd_resp_set_hdr(req, "Location", "/tech");
         httpd_resp_set_hdr(req, "Set-Cookie", cookie_cloud);
         httpd_resp_set_hdr(req, "Set-Cookie", cookie_maint);
         return httpd_resp_send(req, NULL, 0);
@@ -740,10 +754,10 @@ esp_err_t cloud_setup_handler(httpd_req_t *req) {
     html_escape(chat_id, chat_html, sizeof(chat_html));
     html_escape(gs_url, url_html, sizeof(url_html));
 
-    char *html = (char *)malloc(12288);
+    char *html = (char *)malloc(7168);
     if (!html) return ESP_ERR_NO_MEM;
 
-    snprintf(html, 12288,
+    snprintf(html, 7168,
         "<!doctype html>"
         "<html lang='en'>"
         "<head>"

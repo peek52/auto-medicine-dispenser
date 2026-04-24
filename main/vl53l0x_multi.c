@@ -46,7 +46,8 @@
 #define VL53_MAX_VALID_MM                               2000
 #define VL53_EMA_ALPHA                                  0.20f
 #define VL53_I2C_SPEED_HZ                               I2C_FREQ_HZ
-#define VL53_MISSING_RETRY_MS                           3000
+#define VL53_MISSING_RETRY_MS                           30000
+#define VL53_MAX_MISSING_RETRIES                        5    // Stop retrying after N consecutive failures
 #define VL53_CONTINUOUS_PERIOD_MS                       50
 #define VL53_RESTART_AFTER_FAILS                        5
 #define VL53_INVALID_GRACE_READS                        3
@@ -82,9 +83,11 @@ typedef struct {
 typedef struct {
     bool     present;
     bool     filter_ready;
+    bool     permanently_missing;
     uint8_t  stop_variable;
     uint8_t  read_fail_count;
     uint8_t  invalid_sample_count;
+    uint8_t  missing_retry_count;
     uint32_t measurement_timing_budget_us;
     float    filtered_mm;
 } vl53_sensor_t;
@@ -678,10 +681,21 @@ static void vl53_poll_all(void)
 {
     for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
         if (!s_sensors[i].present) {
+            if (s_sensors[i].permanently_missing) continue;
             TickType_t now = xTaskGetTickCount();
             if (s_retry_after_ticks[i] == 0 || now >= s_retry_after_ticks[i]) {
-                ESP_LOGI(TAG, "Ch%d: retry probe", i);
-                (void)vl53_init_on_channel(i);
+                s_sensors[i].missing_retry_count++;
+                if (s_sensors[i].missing_retry_count > VL53_MAX_MISSING_RETRIES) {
+                    s_sensors[i].permanently_missing = true;
+                    ESP_LOGW(TAG, "Ch%d: permanently marked missing after %d retries",
+                             i, VL53_MAX_MISSING_RETRIES);
+                    continue;
+                }
+                ESP_LOGI(TAG, "Ch%d: retry probe (%d/%d)", i,
+                         s_sensors[i].missing_retry_count, VL53_MAX_MISSING_RETRIES);
+                if (vl53_init_on_channel(i)) {
+                    s_sensors[i].missing_retry_count = 0;
+                }
             }
             continue;
         }

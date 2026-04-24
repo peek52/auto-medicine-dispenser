@@ -16,6 +16,7 @@
 #include "web_handlers_servo.h"
 #include "web_handlers_status.h"
 #include "web_handlers_stream.h"
+#include "web_handlers_tech.h"
 #include "web_log.h"
 
 #include "esp_http_server.h"
@@ -53,7 +54,7 @@ static esp_err_t monitor_handler(httpd_req_t *req) {
 httpd_handle_t start_webserver(void) {
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers   = 33;
+    config.max_uri_handlers   = 36;
     config.max_open_sockets   = 12;  /* ป้องกัน socket เต็มตอน polling */
     config.lru_purge_enable   = true;
     config.recv_wait_timeout  = 3;   /* วินาที — ปิด stale connections เร็ว */
@@ -97,6 +98,8 @@ httpd_handle_t start_webserver(void) {
         { "/sensors",         HTTP_GET,  sensors_page_handler,   NULL },
         { "/sensors.json",    HTTP_GET,  sensors_json_handler,   NULL },
         { "/sensors/config",  HTTP_POST, sensors_config_handler, NULL },
+        { "/tech",            HTTP_GET,  tech_dashboard_handler, NULL },
+        { "/tech/reboot",     HTTP_POST, tech_reboot_handler,    NULL },
     };
 
     for (int i = 0; i < sizeof(routes)/sizeof(routes[0]); i++) {
