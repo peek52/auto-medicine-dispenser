@@ -109,6 +109,9 @@ static vl53_sensor_t s_sensors[PILL_SENSOR_COUNT] = {
 };
 static TickType_t s_retry_after_ticks[PILL_SENSOR_COUNT] = {0};
 static i2c_master_dev_handle_t s_default_dev = NULL;
+// Active sensor index — set before any vl53_read/write so vl53_with_device
+// can atomically re-select the correct TCA9548A channel inside the mutex.
+static int s_vl53_current_idx = 0;
 
 typedef struct {
     uint8_t reg;
@@ -203,6 +206,13 @@ static esp_err_t vl53_ensure_device_handle_locked(uint8_t addr, i2c_master_dev_h
 static esp_err_t vl53_with_device(uint8_t addr, esp_err_t (*fn)(i2c_master_dev_handle_t dev, void *ctx), void *ctx)
 {
     xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+
+    // ── Atomic channel-select ──
+    // Re-select the TCA9548A channel every time inside the mutex so no other
+    // task can switch channels between this select and the actual I2C transfer.
+    if (s_vl53_current_idx >= 0 && s_vl53_current_idx < PILL_SENSOR_COUNT) {
+        tca9548a_select_channel_nolock((uint8_t)s_sensors[s_vl53_current_idx].channel);
+    }
 
     i2c_master_dev_handle_t dev = NULL;
     esp_err_t ret = vl53_ensure_device_handle_locked(addr, &dev);
@@ -927,6 +937,9 @@ static bool vl53_init_on_channel(int idx)
     vl53_release_sensor_handle(idx);
 
     // ── เลือก channel + probe ภายใน mutex เดียวกัน ──
+    // ── ตั้ง active channel index ให้ vl53_with_device re-select อัตโนมัติ ──
+    s_vl53_current_idx = idx;
+
     // ป้องกัน task อื่นเปลี่ยน TCA9548A channel ระหว่าง select กับ read
     {
         i2c_master_bus_handle_t bus = i2c_manager_get_bus_handle();
@@ -1026,11 +1039,8 @@ static void vl53_poll_all(void)
             continue;
         }
 
-        // เลือก TCA9548A channel ก่อนอ่านค่า
-        if (vl53_select_channel(i) != ESP_OK) {
-            ESP_LOGW(TAG, "Ch%d: TCA select fail during poll", i);
-            continue;
-        }
+        // ตั้ง active channel — vl53_with_device จะ re-select อัตโนมัติทุก I/O
+        s_vl53_current_idx = i;
 
         uint16_t raw_mm = 0;
         if (!vl53_read_range_continuous_mm(VL53L0X_DEFAULT_ADDR, &raw_mm)) {
