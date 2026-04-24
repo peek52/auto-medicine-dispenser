@@ -1,4 +1,4 @@
-﻿#include <stdio.h>
+#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
@@ -248,12 +248,12 @@ static void deferred_init_task(void *arg)
     }
 
 #if ENABLE_VL53_PILL_SENSORS
-    if (tca9548a_is_present()) {
+    if (tca9548a_init() == ESP_OK) {
         vl53l0x_multi_bootstrap();
         vl53l0x_multi_start();
         ESP_LOGI(TAG, "VL53 pill sensors started");
     } else {
-        ESP_LOGW(TAG, "TCA9548A not found in deferred_init");
+        ESP_LOGW(TAG, "TCA9548A not found — VL53 skipped");
     }
 #endif
 
@@ -301,16 +301,6 @@ void app_main(void)
         i2c_ready = true;
     }
     if (i2c_ready) {
-
-#if ENABLE_VL53_PILL_SENSORS
-    // init TCA9548A multiplexer à¸à¹ˆà¸­à¸™ VL53 bootstrap
-    if (tca9548a_init() == ESP_OK) {
-        vl53l0x_multi_bootstrap();
-        vl53l0x_multi_start();
-    } else {
-        ESP_LOGW(TAG, "TCA9548A not found â€” VL53 skipped");
-    }
-#endif
 
     ESP_LOGI(TAG, "Scanning I2C bus...");
     for (uint8_t a = 3; a < 0x78; a++) {

@@ -975,8 +975,8 @@ static bool vl53_init_on_channel(int idx)
 
 void vl53l0x_multi_prepare_pins(void)
 {
-    // TCA9548A version: ไม่ต้องใช้ XSHUT pins
-    // disable all channels ตอน init
+    // XSHUT ไม่ต่อ — โมดูล VL53 มี pull-up ภายในอยู่แล้ว
+    // disable all TCA9548A channels at start
     tca9548a_disable_all();
 }
 
