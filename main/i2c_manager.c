@@ -36,32 +36,42 @@ esp_err_t i2c_manager_init(void)
     };
     gpio_config(&io_conf);
 
-    // Aggressive bus recovery for slaves stuck from a prior power cycle:
-    //   1. Idle the bus high and let pull-ups settle.
-    //   2. If SDA is still held low, run up to 16 SCL pulses while keeping
-    //      SDA released — each clock advances the stuck slave's state
-    //      machine by one bit until it eventually releases SDA.
-    //   3. Issue a STOP condition so any in-flight transaction terminates
-    //      cleanly.
-    // Slower 20us half-period (25 kHz effective) tolerates weak pull-ups and
-    // long wiring better than the previous 10us burst.
+    // Aggressive bus recovery for slaves stuck from a prior power cycle.
+    // Some VL53L0X modules need significant clocking before they release
+    // SDA, so we try up to 4 rounds of 32 SCL pulses with a STOP between.
+    // 50us half-period (~10 kHz) gives even very weak pull-ups time to
+    // charge the line back to VCC.
     gpio_set_level(I2C_SDA_PIN, 1);
     gpio_set_level(I2C_SCL_PIN, 1);
-    esp_rom_delay_us(50);
+    vTaskDelay(pdMS_TO_TICKS(10));  // Let all modules finish power-on reset
 
-    for (int i = 0; i < 16; i++) {
-        if (gpio_get_level(I2C_SDA_PIN) == 1) break;  // bus released
-        gpio_set_level(I2C_SCL_PIN, 0); esp_rom_delay_us(20);
-        gpio_set_level(I2C_SCL_PIN, 1); esp_rom_delay_us(20);
+    bool released = false;
+    for (int round = 0; round < 4 && !released; round++) {
+        if (gpio_get_level(I2C_SDA_PIN) == 1) { released = true; break; }
+
+        // 32 clock pulses keeping SDA released high.
+        for (int i = 0; i < 32; i++) {
+            gpio_set_level(I2C_SCL_PIN, 0); esp_rom_delay_us(50);
+            gpio_set_level(I2C_SCL_PIN, 1); esp_rom_delay_us(50);
+            if (gpio_get_level(I2C_SDA_PIN) == 1) { released = true; break; }
+        }
+
+        // STOP condition: SDA transitions low -> high while SCL is high.
+        gpio_set_level(I2C_SDA_PIN, 0); esp_rom_delay_us(50);
+        gpio_set_level(I2C_SCL_PIN, 1); esp_rom_delay_us(50);
+        gpio_set_level(I2C_SDA_PIN, 1); esp_rom_delay_us(50);
+
+        if (gpio_get_level(I2C_SDA_PIN) == 1) { released = true; break; }
+        vTaskDelay(pdMS_TO_TICKS(20));  // settle before retrying
     }
 
-    // STOP: SDA low -> SCL high -> SDA high while SCL is high.
-    gpio_set_level(I2C_SDA_PIN, 0); esp_rom_delay_us(20);
-    gpio_set_level(I2C_SCL_PIN, 1); esp_rom_delay_us(20);
-    gpio_set_level(I2C_SDA_PIN, 1); esp_rom_delay_us(20);
-
-    if (gpio_get_level(I2C_SDA_PIN) == 0 || gpio_get_level(I2C_SCL_PIN) == 0) {
-        ESP_LOGW(TAG, "I2C bus still stuck after recovery (SDA=%d SCL=%d)",
+    if (!released) {
+        // Do NOT esp_restart here — if the hardware is physically stuck
+        // (bad wiring, defective module) we would boot-loop forever.
+        // Continue boot so the user can still reach the web UI and see
+        // the diagnostic, and so the RTC/display keep working.
+        ESP_LOGE(TAG, "I2C bus still stuck after 4 recovery rounds (SDA=%d SCL=%d) — "
+                 "power-cycle the modules' VCC to recover",
                  gpio_get_level(I2C_SDA_PIN), gpio_get_level(I2C_SCL_PIN));
     }
 
