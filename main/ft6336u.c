@@ -36,12 +36,22 @@ esp_err_t ft6336u_init(void)
 
 esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
 {
+    static uint32_t s_last_fail_time = 0;
+    uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    if (s_last_fail_time != 0 && (now - s_last_fail_time) < 2000) {
+        *pressed = false;
+        return ESP_FAIL;
+    }
+
     uint8_t data[6];
     esp_err_t ret = i2c_manager_read_reg(ADDR_FT6336U, 0x02, data, 6);
     if (ret != ESP_OK) {
         *pressed = false;
+        s_last_fail_time = now;
+        if (s_last_fail_time == 0) s_last_fail_time = 1;
         return ret;
     }
+    s_last_fail_time = 0;
 
     uint8_t touches = data[0] & 0x0F;
     if (touches == 1 || touches == 2) {
