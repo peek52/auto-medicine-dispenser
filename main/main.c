@@ -357,9 +357,7 @@ void app_main(void)
         }
     }
 
-    // 11. Main loop — periodic heap/uptime log to catch leaks and long-lived
-    // memory pressure. First spontaneous reset will print boot reason; pair
-    // that with the last heap number to narrow down the cause.
+    // 11. Main loop — periodic heap/uptime log to catch leaks at a glance.
     TickType_t boot_ticks = xTaskGetTickCount();
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(60000));

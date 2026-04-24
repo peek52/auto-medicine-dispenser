@@ -930,7 +930,7 @@ static void clock_task(void *)
 
 extern "C" void display_clock_start_task(void)
 {
-    if (xTaskCreate(clock_task, "clk_task", 6144, nullptr, 3, nullptr) != pdPASS) {
+    if (xTaskCreate(clock_task, "clk_task", 10240, nullptr, 3, nullptr) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create clock task");
         return;
     }
