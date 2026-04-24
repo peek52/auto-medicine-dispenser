@@ -40,6 +40,8 @@ static void deferred_init_task(void *arg);
 static const uint32_t BOOT_MAGIC = 0xC0D62026u;
 RTC_NOINIT_ATTR static uint32_t s_boot_magic;
 RTC_NOINIT_ATTR static uint32_t s_boot_count;
+RTC_NOINIT_ATTR static uint32_t s_consec_sw_resets;
+static bool s_skip_i2c_restart = false;
 
 static const char *reset_reason_str(esp_reset_reason_t reason)
 {
@@ -220,6 +222,13 @@ static void i2c_watchdog_task(void *arg)
             continue;
         }
 
+        if (s_skip_i2c_restart) {
+            ESP_LOGE(TAG, "I2C watchdog: recovery failed and >=3 SW resets already — "
+                     "user must power-cycle modules; staying alive in degraded mode");
+            consecutive_fails = 0;  // back off, keep polling but don't restart
+            continue;
+        }
+
         ESP_LOGE(TAG, "I2C watchdog: recovery failed — restarting chip");
         vTaskDelay(pdMS_TO_TICKS(500));
         esp_restart();
@@ -298,8 +307,20 @@ void app_main(void)
     if (s_boot_magic != BOOT_MAGIC) {
         s_boot_magic = BOOT_MAGIC;
         s_boot_count = 0;
+        s_consec_sw_resets = 0;
     }
     s_boot_count++;
+    esp_reset_reason_t _early_reason = esp_reset_reason();
+    if (_early_reason == ESP_RST_SW) {
+        s_consec_sw_resets++;
+    } else {
+        s_consec_sw_resets = 0;
+    }
+    // Stop the I2C watchdog from looping if we've already done several
+    // self-restarts that didn't fix the bus — the user must power-cycle.
+    if (s_consec_sw_resets >= 3) {
+        s_skip_i2c_restart = true;
+    }
     esp_reset_reason_t reason = esp_reset_reason();
     ESP_LOGW(TAG, "Boot #%lu, reset reason: %s (%d)",
              (unsigned long)s_boot_count, reset_reason_str(reason), (int)reason);
