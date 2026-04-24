@@ -357,9 +357,16 @@ void app_main(void)
         }
     }
 
-    // 11. Main loop (idle, FreeRTOS handles everything else)
+    // 11. Main loop — periodic heap/uptime log to catch leaks and long-lived
+    // memory pressure. First spontaneous reset will print boot reason; pair
+    // that with the last heap number to narrow down the cause.
+    TickType_t boot_ticks = xTaskGetTickCount();
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(10000));
-        // Minimal idle logic (remove heavy logging)
+        vTaskDelay(pdMS_TO_TICKS(60000));
+        uint32_t uptime_s = (xTaskGetTickCount() - boot_ticks) / configTICK_RATE_HZ;
+        ESP_LOGI(TAG, "alive: uptime=%lus heap_free=%u min_free=%u",
+                 (unsigned long)uptime_s,
+                 (unsigned)esp_get_free_heap_size(),
+                 (unsigned)esp_get_minimum_free_heap_size());
     }
 }

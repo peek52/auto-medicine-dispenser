@@ -41,7 +41,7 @@
 #define VL53_MODEL_ID                                   0xEE
 #define VL53_BOOT_RETRIES                               3
 #define VL53_BOOT_RETRY_DELAY_MS                        50
-#define VL53_RANGING_TIMEOUT_MS                         1000
+#define VL53_RANGING_TIMEOUT_MS                         500
 #define VL53_READ_INTERVAL_MS                           1000
 #define VL53_MAX_VALID_MM                               2000
 #define VL53_EMA_ALPHA                                  0.20f
@@ -774,7 +774,7 @@ void vl53l0x_multi_start(void)
     if (started) return;
 
     started = true;
-    if (xTaskCreate(vl53_task, "vl53_task", 6144, NULL, 5, NULL) != pdPASS) {
+    if (xTaskCreate(vl53_task, "vl53_task", 8192, NULL, 5, NULL) != pdPASS) {
         started = false;
         ESP_LOGE(TAG, "Failed to create VL53 task");
     }
