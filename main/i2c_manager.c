@@ -26,7 +26,7 @@ esp_err_t i2c_manager_init(void)
         .flags.enable_internal_pullup = true,
     };
 
-    // Explicitly configure pins to avoid stuck bus and ensure pull-ups
+    // Explicitly configure pins to avoid stuck bus and ensure pull-ups.
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << I2C_SDA_PIN) | (1ULL << I2C_SCL_PIN),
         .mode = GPIO_MODE_INPUT_OUTPUT_OD,
@@ -35,24 +35,36 @@ esp_err_t i2c_manager_init(void)
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&io_conf);
-    
-    // Clear I2C bus (9 clocks + STOP condition) to recover stuck slaves
+
+    // Aggressive bus recovery for slaves stuck from a prior power cycle:
+    //   1. Idle the bus high and let pull-ups settle.
+    //   2. If SDA is still held low, run up to 16 SCL pulses while keeping
+    //      SDA released — each clock advances the stuck slave's state
+    //      machine by one bit until it eventually releases SDA.
+    //   3. Issue a STOP condition so any in-flight transaction terminates
+    //      cleanly.
+    // Slower 20us half-period (25 kHz effective) tolerates weak pull-ups and
+    // long wiring better than the previous 10us burst.
     gpio_set_level(I2C_SDA_PIN, 1);
     gpio_set_level(I2C_SCL_PIN, 1);
-    esp_rom_delay_us(10);
-    
-    // Send 9 clock pulses
-    for (int i = 0; i < 9; i++) {
-        gpio_set_level(I2C_SCL_PIN, 0); esp_rom_delay_us(10);
-        gpio_set_level(I2C_SCL_PIN, 1); esp_rom_delay_us(10);
+    esp_rom_delay_us(50);
+
+    for (int i = 0; i < 16; i++) {
+        if (gpio_get_level(I2C_SDA_PIN) == 1) break;  // bus released
+        gpio_set_level(I2C_SCL_PIN, 0); esp_rom_delay_us(20);
+        gpio_set_level(I2C_SCL_PIN, 1); esp_rom_delay_us(20);
     }
-    
-    // Generate STOP condition
-    gpio_set_level(I2C_SCL_PIN, 0); esp_rom_delay_us(10);
-    gpio_set_level(I2C_SDA_PIN, 0); esp_rom_delay_us(10);
-    gpio_set_level(I2C_SCL_PIN, 1); esp_rom_delay_us(10);
-    gpio_set_level(I2C_SDA_PIN, 1); esp_rom_delay_us(10);
-    
+
+    // STOP: SDA low -> SCL high -> SDA high while SCL is high.
+    gpio_set_level(I2C_SDA_PIN, 0); esp_rom_delay_us(20);
+    gpio_set_level(I2C_SCL_PIN, 1); esp_rom_delay_us(20);
+    gpio_set_level(I2C_SDA_PIN, 1); esp_rom_delay_us(20);
+
+    if (gpio_get_level(I2C_SDA_PIN) == 0 || gpio_get_level(I2C_SCL_PIN) == 0) {
+        ESP_LOGW(TAG, "I2C bus still stuck after recovery (SDA=%d SCL=%d)",
+                 gpio_get_level(I2C_SDA_PIN), gpio_get_level(I2C_SCL_PIN));
+    }
+
     gpio_reset_pin(I2C_SDA_PIN);
     gpio_reset_pin(I2C_SCL_PIN);
 
