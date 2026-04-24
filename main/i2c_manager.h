@@ -37,6 +37,12 @@ esp_err_t i2c_manager_ping(uint8_t addr);
 esp_err_t i2c_manager_write(uint8_t addr, const uint8_t *data, size_t len);
 
 /**
+ * Write a register byte followed by data bytes. Acquires mutex internally.
+ * Equivalent to: [reg, data[0], data[1], ... data[len-1]]
+ */
+esp_err_t i2c_manager_write_reg(uint8_t addr, uint8_t reg, const uint8_t *data, size_t len);
+
+/**
  * Write register byte then read reply. Acquires mutex internally.
  * @param addr     7-bit device address
  * @param reg      register byte to write first

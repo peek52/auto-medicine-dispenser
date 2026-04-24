@@ -108,7 +108,7 @@ static vl53_sensor_t s_sensors[PILL_SENSOR_COUNT] = {
     { 5, VL53L0X_DEFAULT_ADDR, false, false, 0, 0, 0, 0, 0.0f, NULL },
 };
 static TickType_t s_retry_after_ticks[PILL_SENSOR_COUNT] = {0};
-static i2c_master_dev_handle_t s_default_dev = NULL;
+
 
 typedef struct {
     uint8_t reg;
@@ -129,125 +129,15 @@ static esp_err_t vl53_select_channel(int idx)
     return tca9548a_select_channel((uint8_t)s_sensors[idx].channel);
 }
 
-static esp_err_t vl53_add_device_handle_locked(uint8_t addr, i2c_master_dev_handle_t *out_dev)
-{
-    i2c_master_bus_handle_t bus = i2c_manager_get_bus_handle();
-    if (!bus) {
-        return ESP_ERR_INVALID_STATE;
-    }
+// VL53 now uses i2c_manager for all I2C transactions (no private handles)
 
-    if (!out_dev) {
-        return ESP_ERR_INVALID_ARG;
-    }
 
-    i2c_device_config_t dev_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = addr,
-        .scl_speed_hz = VL53_I2C_SPEED_HZ,
-    };
-
-    return i2c_master_bus_add_device(bus, &dev_cfg, out_dev);
-}
-
-static void vl53_remove_device_handle_locked(i2c_master_dev_handle_t *dev)
-{
-    if (dev && *dev) {
-        i2c_master_bus_rm_device(*dev);
-        *dev = NULL;
-    }
-}
-
-static vl53_sensor_t *vl53_find_sensor_by_addr(uint8_t addr)
-{
-    for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
-        if (s_sensors[i].address == addr) {
-            return &s_sensors[i];
-        }
-    }
-    return NULL;
-}
-
-static esp_err_t vl53_ensure_device_handle_locked(uint8_t addr, i2c_master_dev_handle_t *out_dev)
-{
-    if (!out_dev) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    if (addr == VL53L0X_DEFAULT_ADDR) {
-        if (!s_default_dev) {
-            esp_err_t ret = vl53_add_device_handle_locked(addr, &s_default_dev);
-            if (ret != ESP_OK) {
-                return ret;
-            }
-        }
-        *out_dev = s_default_dev;
-        return ESP_OK;
-    }
-
-    vl53_sensor_t *sensor = vl53_find_sensor_by_addr(addr);
-    if (!sensor) {
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    if (!sensor->dev) {
-        esp_err_t ret = vl53_add_device_handle_locked(addr, &sensor->dev);
-        if (ret != ESP_OK) {
-            return ret;
-        }
-    }
-
-    *out_dev = sensor->dev;
-    return ESP_OK;
-}
-
-static esp_err_t vl53_with_device(uint8_t addr, esp_err_t (*fn)(i2c_master_dev_handle_t dev, void *ctx), void *ctx)
-{
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-
-    i2c_master_dev_handle_t dev = NULL;
-    esp_err_t ret = vl53_ensure_device_handle_locked(addr, &dev);
-    if (ret == ESP_OK) {
-        ret = fn(dev, ctx);
-    }
-
-    xSemaphoreGive(g_i2c_mutex);
-    return ret;
-}
-
-static esp_err_t vl53_write_impl(i2c_master_dev_handle_t dev, void *ctx)
-{
-    vl53_write_ctx_t *write_ctx = (vl53_write_ctx_t *)ctx;
-    return i2c_master_transmit(dev, write_ctx->buf, write_ctx->len, 100);
-}
-
-static esp_err_t vl53_read_impl(i2c_master_dev_handle_t dev, void *ctx)
-{
-    vl53_read_ctx_t *read_ctx = (vl53_read_ctx_t *)ctx;
-    esp_err_t ret = i2c_master_transmit(dev, &read_ctx->reg, 1, 100);
-    if (ret != ESP_OK) {
-        return ret;
-    }
-    return i2c_master_receive(dev, read_ctx->buf, read_ctx->len, 100);
-}
-
-static esp_err_t vl53_probe(uint8_t addr)
-{
-    i2c_master_bus_handle_t bus = i2c_manager_get_bus_handle();
-    if (!bus) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-    esp_err_t ret = i2c_master_probe(bus, addr, 100);
-    xSemaphoreGive(g_i2c_mutex);
-    return ret;
-}
 
 static bool vl53_wait_for_model_id(uint8_t addr, uint8_t expected_model_id, int retries, int retry_delay_ms)
 {
     uint8_t model_id = 0;
     for (int attempt = 0; attempt < retries; ++attempt) {
-        if (vl53_read_reg(addr, VL53_REG_IDENTIFICATION_MODEL_ID, &model_id) == ESP_OK &&
+        if (i2c_manager_read_reg(addr, VL53_REG_IDENTIFICATION_MODEL_ID, &model_id, 1) == ESP_OK &&
             model_id == expected_model_id) {
             return true;
         }
@@ -258,111 +148,48 @@ static bool vl53_wait_for_model_id(uint8_t addr, uint8_t expected_model_id, int 
 
 static esp_err_t vl53_write_reg(uint8_t addr, uint8_t reg, uint8_t value)
 {
-    uint8_t buf[2] = { reg, value };
-    vl53_write_ctx_t ctx = {
-        .buf = buf,
-        .len = sizeof(buf),
-    };
-    return vl53_with_device(addr, vl53_write_impl, &ctx);
+    return i2c_manager_write_reg(addr, reg, &value, 1);
 }
 
 static esp_err_t vl53_write_reg16(uint8_t addr, uint8_t reg, uint16_t value)
 {
-    uint8_t buf[3] = {
-        reg,
-        (uint8_t)(value >> 8),
-        (uint8_t)value,
-    };
-    vl53_write_ctx_t ctx = {
-        .buf = buf,
-        .len = sizeof(buf),
-    };
-    return vl53_with_device(addr, vl53_write_impl, &ctx);
+    uint8_t buf[2] = { (uint8_t)(value >> 8), (uint8_t)value };
+    return i2c_manager_write_reg(addr, reg, buf, 2);
 }
 
 static esp_err_t vl53_write_reg32(uint8_t addr, uint8_t reg, uint32_t value)
 {
-    uint8_t buf[5] = {
-        reg,
-        (uint8_t)(value >> 24),
-        (uint8_t)(value >> 16),
-        (uint8_t)(value >> 8),
-        (uint8_t)value,
-    };
-    vl53_write_ctx_t ctx = {
-        .buf = buf,
-        .len = sizeof(buf),
-    };
-    return vl53_with_device(addr, vl53_write_impl, &ctx);
+    uint8_t buf[4] = { (uint8_t)(value >> 24), (uint8_t)(value >> 16), (uint8_t)(value >> 8), (uint8_t)value };
+    return i2c_manager_write_reg(addr, reg, buf, 4);
 }
 
 static esp_err_t vl53_write_multi(uint8_t addr, uint8_t reg, const uint8_t *src, size_t count)
 {
-    uint8_t buf[1 + 6];
-    if (count > 6) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    buf[0] = reg;
-    memcpy(&buf[1], src, count);
-    vl53_write_ctx_t ctx = {
-        .buf = buf,
-        .len = 1 + count,
-    };
-    return vl53_with_device(addr, vl53_write_impl, &ctx);
+    return i2c_manager_write_reg(addr, reg, src, count);
 }
 
 static esp_err_t vl53_read_reg(uint8_t addr, uint8_t reg, uint8_t *value)
 {
-    vl53_read_ctx_t ctx = {
-        .reg = reg,
-        .buf = value,
-        .len = 1,
-    };
-    return vl53_with_device(addr, vl53_read_impl, &ctx);
+    return i2c_manager_read_reg(addr, reg, value, 1);
 }
+
+
 
 static esp_err_t vl53_read_reg16(uint8_t addr, uint8_t reg, uint16_t *value)
 {
     uint8_t buf[2] = {0};
-    vl53_read_ctx_t ctx = {
-        .reg = reg,
-        .buf = buf,
-        .len = sizeof(buf),
-    };
-    esp_err_t ret = vl53_with_device(addr, vl53_read_impl, &ctx);
+    esp_err_t ret = i2c_manager_read_reg(addr, reg, buf, 2);
     if (ret == ESP_OK) {
         *value = (uint16_t)(((uint16_t)buf[0] << 8) | buf[1]);
     }
     return ret;
 }
 
-static esp_err_t vl53_read_reg32(uint8_t addr, uint8_t reg, uint32_t *value)
-{
-    uint8_t buf[4] = {0};
-    vl53_read_ctx_t ctx = {
-        .reg = reg,
-        .buf = buf,
-        .len = sizeof(buf),
-    };
-    esp_err_t ret = vl53_with_device(addr, vl53_read_impl, &ctx);
-    if (ret == ESP_OK) {
-        *value = ((uint32_t)buf[0] << 24) |
-                 ((uint32_t)buf[1] << 16) |
-                 ((uint32_t)buf[2] << 8) |
-                 (uint32_t)buf[3];
-    }
-    return ret;
-}
+
 
 static esp_err_t vl53_read_multi(uint8_t addr, uint8_t reg, uint8_t *dst, size_t count)
 {
-    vl53_read_ctx_t ctx = {
-        .reg = reg,
-        .buf = dst,
-        .len = count,
-    };
-    return vl53_with_device(addr, vl53_read_impl, &ctx);
+    return i2c_manager_read_reg(addr, reg, dst, count);
 }
 
 static uint16_t vl53_decode_timeout(uint16_t reg_val)
@@ -768,24 +595,12 @@ static int vl53_apply_filter(int idx, uint16_t raw_mm)
 
 static void vl53_release_sensor_handle(int idx)
 {
-    if (idx < 0 || idx >= PILL_SENSOR_COUNT || !g_i2c_mutex) {
-        return;
-    }
-
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-    vl53_remove_device_handle_locked(&s_sensors[idx].dev);
-    xSemaphoreGive(g_i2c_mutex);
+    (void)idx;  // No private handles anymore, i2c_manager owns them
 }
 
 static void vl53_release_default_handle(void)
 {
-    if (!g_i2c_mutex) {
-        return;
-    }
-
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-    vl53_remove_device_handle_locked(&s_default_dev);
-    xSemaphoreGive(g_i2c_mutex);
+    // No-op: i2c_manager owns the 0x29 handle
 }
 
 static void vl53_mark_sensor_missing(int idx)

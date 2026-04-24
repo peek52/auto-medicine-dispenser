@@ -3,6 +3,7 @@
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
+#include <string.h>
 
 static const char *TAG = "i2c_mgr";
 static i2c_master_bus_handle_t s_bus_handle = NULL;
@@ -125,6 +126,27 @@ esp_err_t i2c_manager_write(uint8_t addr, const uint8_t *data, size_t len)
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
     if (dev) {
         ret = i2c_master_transmit(dev, data, len, 50);
+    }
+    xSemaphoreGive(g_i2c_mutex);
+    return ret;
+}
+
+esp_err_t i2c_manager_write_reg(uint8_t addr, uint8_t reg, const uint8_t *data, size_t len)
+{
+    if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
+    if (len > 32) return ESP_ERR_INVALID_ARG;  // guard against huge buffers
+
+    uint8_t buf[33];
+    buf[0] = reg;
+    if (data && len > 0) {
+        memcpy(&buf[1], data, len);
+    }
+
+    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+    esp_err_t ret = ESP_FAIL;
+    i2c_master_dev_handle_t dev = get_or_add_device(addr);
+    if (dev) {
+        ret = i2c_master_transmit(dev, buf, 1 + len, 50);
     }
     xSemaphoreGive(g_i2c_mutex);
     return ret;
