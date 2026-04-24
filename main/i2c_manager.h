@@ -29,6 +29,22 @@ i2c_master_bus_handle_t i2c_manager_get_bus_handle(void);
 esp_err_t i2c_manager_ping(uint8_t addr);
 
 /**
+ * Manually acquire/release the I2C mutex.
+ * Use these when you need to hold the mutex across multiple transactions
+ * (e.g. TCA9548A channel select + VL53 read in one atomic sequence).
+ */
+void i2c_manager_lock(void);
+void i2c_manager_unlock(void);
+
+/**
+ * Write/read variants that do NOT acquire the mutex.
+ * Caller MUST hold the mutex via i2c_manager_lock() first.
+ */
+esp_err_t i2c_manager_write_nolock(uint8_t addr, const uint8_t *data, size_t len);
+esp_err_t i2c_manager_write_reg_nolock(uint8_t addr, uint8_t reg, const uint8_t *data, size_t len);
+esp_err_t i2c_manager_read_reg_nolock(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len);
+
+/**
  * Write bytes to device. Acquires mutex internally.
  * @param addr     7-bit device address
  * @param data     bytes to send (includes register if needed)

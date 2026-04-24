@@ -124,20 +124,25 @@ typedef struct {
 static esp_err_t vl53_read_reg(uint8_t addr, uint8_t reg, uint8_t *value);
 
 // ── TCA9548A: เลือก channel ก่อนทุกครั้งที่สื่อสารกับ sensor ──
-static esp_err_t vl53_select_channel(int idx)
+// MUST be called while holding i2c_manager_lock()
+static int s_vl53_current_idx = 0;  // set before any vl53_* I/O call
+static esp_err_t vl53_select_channel_nolock(int idx)
 {
-    return tca9548a_select_channel((uint8_t)s_sensors[idx].channel);
+    uint8_t val = (uint8_t)(1u << (uint8_t)s_sensors[idx].channel);
+    return i2c_manager_write_nolock(ADDR_TCA9548A, &val, 1);
 }
 
 // VL53 now uses i2c_manager for all I2C transactions (no private handles)
 
 
 
+// All VL53 writes/reads hold the i2c mutex for the full channel-select + data sequence
+// Before calling, set s_vl53_current_idx to the sensor index
 static bool vl53_wait_for_model_id(uint8_t addr, uint8_t expected_model_id, int retries, int retry_delay_ms)
 {
     uint8_t model_id = 0;
     for (int attempt = 0; attempt < retries; ++attempt) {
-        if (i2c_manager_read_reg(addr, VL53_REG_IDENTIFICATION_MODEL_ID, &model_id, 1) == ESP_OK &&
+        if (vl53_read_reg(addr, VL53_REG_IDENTIFICATION_MODEL_ID, &model_id) == ESP_OK &&
             model_id == expected_model_id) {
             return true;
         }
@@ -148,48 +153,69 @@ static bool vl53_wait_for_model_id(uint8_t addr, uint8_t expected_model_id, int 
 
 static esp_err_t vl53_write_reg(uint8_t addr, uint8_t reg, uint8_t value)
 {
-    return i2c_manager_write_reg(addr, reg, &value, 1);
+    i2c_manager_lock();
+    vl53_select_channel_nolock(s_vl53_current_idx);
+    esp_err_t ret = i2c_manager_write_reg_nolock(addr, reg, &value, 1);
+    i2c_manager_unlock();
+    return ret;
 }
 
 static esp_err_t vl53_write_reg16(uint8_t addr, uint8_t reg, uint16_t value)
 {
     uint8_t buf[2] = { (uint8_t)(value >> 8), (uint8_t)value };
-    return i2c_manager_write_reg(addr, reg, buf, 2);
+    i2c_manager_lock();
+    vl53_select_channel_nolock(s_vl53_current_idx);
+    esp_err_t ret = i2c_manager_write_reg_nolock(addr, reg, buf, 2);
+    i2c_manager_unlock();
+    return ret;
+}
+
+static esp_err_t vl53_write_multi(uint8_t addr, uint8_t reg, const uint8_t *src, size_t count)
+{
+    i2c_manager_lock();
+    vl53_select_channel_nolock(s_vl53_current_idx);
+    esp_err_t ret = i2c_manager_write_reg_nolock(addr, reg, src, count);
+    i2c_manager_unlock();
+    return ret;
+}
+
+static esp_err_t vl53_read_reg(uint8_t addr, uint8_t reg, uint8_t *value)
+{
+    i2c_manager_lock();
+    vl53_select_channel_nolock(s_vl53_current_idx);
+    esp_err_t ret = i2c_manager_read_reg_nolock(addr, reg, value, 1);
+    i2c_manager_unlock();
+    return ret;
+}
+
+static esp_err_t vl53_read_reg16(uint8_t addr, uint8_t reg, uint16_t *value)
+{
+    uint8_t buf[2] = {0};
+    i2c_manager_lock();
+    vl53_select_channel_nolock(s_vl53_current_idx);
+    esp_err_t ret = i2c_manager_read_reg_nolock(addr, reg, buf, 2);
+    i2c_manager_unlock();
+    if (ret == ESP_OK) *value = (uint16_t)(((uint16_t)buf[0] << 8) | buf[1]);
+    return ret;
+}
+
+static esp_err_t vl53_read_multi(uint8_t addr, uint8_t reg, uint8_t *dst, size_t count)
+{
+    i2c_manager_lock();
+    vl53_select_channel_nolock(s_vl53_current_idx);
+    esp_err_t ret = i2c_manager_read_reg_nolock(addr, reg, dst, count);
+    i2c_manager_unlock();
+    return ret;
 }
 
 static esp_err_t vl53_write_reg32(uint8_t addr, uint8_t reg, uint32_t value)
 {
     uint8_t buf[4] = { (uint8_t)(value >> 24), (uint8_t)(value >> 16), (uint8_t)(value >> 8), (uint8_t)value };
-    return i2c_manager_write_reg(addr, reg, buf, 4);
-}
-
-static esp_err_t vl53_write_multi(uint8_t addr, uint8_t reg, const uint8_t *src, size_t count)
-{
-    return i2c_manager_write_reg(addr, reg, src, count);
-}
-
-static esp_err_t vl53_read_reg(uint8_t addr, uint8_t reg, uint8_t *value)
-{
-    return i2c_manager_read_reg(addr, reg, value, 1);
-}
-
-
-
-static esp_err_t vl53_read_reg16(uint8_t addr, uint8_t reg, uint16_t *value)
-{
-    uint8_t buf[2] = {0};
-    esp_err_t ret = i2c_manager_read_reg(addr, reg, buf, 2);
-    if (ret == ESP_OK) {
-        *value = (uint16_t)(((uint16_t)buf[0] << 8) | buf[1]);
-    }
+    i2c_manager_lock();
+    vl53_select_channel_nolock(s_vl53_current_idx);
+    esp_err_t ret = i2c_manager_write_reg_nolock(addr, reg, buf, 4);
+    i2c_manager_unlock();
     return ret;
-}
-
-
-
-static esp_err_t vl53_read_multi(uint8_t addr, uint8_t reg, uint8_t *dst, size_t count)
-{
-    return i2c_manager_read_reg(addr, reg, dst, count);
 }
 
 static uint16_t vl53_decode_timeout(uint16_t reg_val)
@@ -739,10 +765,12 @@ static bool vl53_init_device(uint8_t addr, vl53_sensor_t *sensor)
 // ── TCA9548A version: เลือก channel → init sensor ที่ 0x29 ──
 static bool vl53_init_on_channel(int idx)
 {
+    s_vl53_current_idx = idx;  // All vl53_* I/O will select this channel atomically
     vl53_release_sensor_handle(idx);
 
-    // เลือก channel บน TCA9548A
-    if (vl53_select_channel(idx) != ESP_OK) {
+    // Verify TCA9548A channel is reachable via a test write
+    uint8_t ch_mask = (uint8_t)(1u << s_sensors[idx].channel);
+    if (i2c_manager_write(ADDR_TCA9548A, &ch_mask, 1) != ESP_OK) {
         ESP_LOGW(TAG, "Ch%d: TCA9548A select failed", idx);
         vl53_mark_sensor_missing(idx);
         return false;
@@ -823,12 +851,7 @@ static void vl53_poll_all(void)
             continue;
         }
 
-        // เลือก TCA9548A channel ก่อนอ่านค่า
-        if (vl53_select_channel(i) != ESP_OK) {
-            ESP_LOGW(TAG, "Ch%d: TCA select fail during poll", i);
-            continue;
-        }
-
+        s_vl53_current_idx = i;  // channel selected atomically inside each vl53_* call
         uint16_t raw_mm = 0;
         if (!vl53_read_range_continuous_mm(VL53L0X_DEFAULT_ADDR, &raw_mm)) {
             s_sensors[i].read_fail_count++;
