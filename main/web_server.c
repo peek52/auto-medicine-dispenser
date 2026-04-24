@@ -26,7 +26,7 @@ static const char *TAG = "web_server";
 
 /* ── GET / — ส่งหน้า Dashboard HTML ── */
 static esp_err_t index_handler(httpd_req_t *req) {
-    return web_redirect_to_cloud_login(req, true);
+    return web_entry_handler(req);
 }
 
 static esp_err_t maint_handler(httpd_req_t *req) {

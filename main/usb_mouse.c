@@ -185,13 +185,28 @@ static void usb_class_task(void *arg)
 /* ── Public API ──────────────────────────────────────────────*/
 void usb_mouse_start(void)
 {
+    if (s_mutex != NULL) {
+        ESP_LOGW(TAG, "USB mouse host already started");
+        return;
+    }
+
     s_mutex = xSemaphoreCreateMutex();
+    if (s_mutex == NULL) {
+        ESP_LOGE(TAG, "Failed to create USB mouse mutex");
+        return;
+    }
 
     usb_host_config_t host_cfg = {
         .skip_phy_setup = false,
         .intr_flags     = ESP_INTR_FLAG_LEVEL1,
     };
-    ESP_ERROR_CHECK(usb_host_install(&host_cfg));
+    esp_err_t err = usb_host_install(&host_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "USB host not started: %s", esp_err_to_name(err));
+        vSemaphoreDelete(s_mutex);
+        s_mutex = NULL;
+        return;
+    }
     if (xTaskCreate(usb_lib_task, "usb_lib", 4096, NULL, 2, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create usb_lib task");
         return;

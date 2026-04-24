@@ -1,4 +1,4 @@
-#include <stdio.h>
+﻿#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
@@ -59,7 +59,7 @@ static const char *reset_reason_str(esp_reset_reason_t reason)
     }
 }
 
-/* ── Interactive CLI Task ── */
+/* â”€â”€ Interactive CLI Task â”€â”€ */
 static void cli_task(void *arg) {
     char line[128];
     int pos = 0;
@@ -190,7 +190,7 @@ static void cli_task(void *arg) {
     }
 }
 
-/* ── SNTP Sync Task ── */
+/* â”€â”€ SNTP Sync Task â”€â”€ */
 static void sync_time_task(void *arg) {
     ESP_LOGI(TAG, "Initializing SNTP...");
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
@@ -233,7 +233,6 @@ static void deferred_init_task(void *arg)
     dfplayer_init();
     settings_load_nvs();
     wifi_sta_init();
-    // VL53 pill sensors removed per user request to fix pin conflict with DFPlayer
     if (xTaskCreate(sync_time_task, "sync_time", 4096, NULL, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create sync_time task");
     }
@@ -248,6 +247,18 @@ static void deferred_init_task(void *arg)
         ESP_LOGE(TAG, "Failed to create cli_task");
     }
 
+#if ENABLE_VL53_PILL_SENSORS
+    if (tca9548a_is_present()) {
+        vl53l0x_multi_bootstrap();
+        vl53l0x_multi_start();
+        ESP_LOGI(TAG, "VL53 pill sensors started");
+    } else {
+        ESP_LOGW(TAG, "TCA9548A not found in deferred_init");
+    }
+#endif
+
+    extern bool g_system_ready;
+    g_system_ready = true;
     vTaskDelete(NULL);
 }
 
@@ -292,12 +303,12 @@ void app_main(void)
     if (i2c_ready) {
 
 #if ENABLE_VL53_PILL_SENSORS
-    // init TCA9548A multiplexer ก่อน VL53 bootstrap
+    // init TCA9548A multiplexer à¸à¹ˆà¸­à¸™ VL53 bootstrap
     if (tca9548a_init() == ESP_OK) {
         vl53l0x_multi_bootstrap();
         vl53l0x_multi_start();
     } else {
-        ESP_LOGW(TAG, "TCA9548A not found — VL53 skipped");
+        ESP_LOGW(TAG, "TCA9548A not found â€” VL53 skipped");
     }
 #endif
 
@@ -317,10 +328,10 @@ void app_main(void)
         ESP_LOGW(TAG, "PCA9685 not found at 0x%02X", ADDR_PCA9685);
     }
 
-    // PCF8574 (IR) — set all pins HIGH (input mode) immediately at boot
+    // PCF8574 (IR) â€” set all pins HIGH (input mode) immediately at boot
     if (i2c_manager_ping(ADDR_PCF8574) == ESP_OK) {
         pcf8574_set_all_input();
-        ESP_LOGI(TAG, "PCF8574 initialized — all pins set to INPUT (0xFF)");
+        ESP_LOGI(TAG, "PCF8574 initialized â€” all pins set to INPUT (0xFF)");
     } else {
         ESP_LOGW(TAG, "PCF8574 not found at 0x%02X", ADDR_PCF8574);
     }

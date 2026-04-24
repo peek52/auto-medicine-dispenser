@@ -549,6 +549,8 @@ static int count_selected_slots(uint8_t slots)
 
 
 
+bool g_system_ready = false;
+
 static void clock_task(void *)
 {
     static uint32_t last_render_ticks = 0;
@@ -561,6 +563,19 @@ static void clock_task(void *)
     while (true) {
         if (!s_spi) {
             vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+
+        if (!g_system_ready) {
+            static bool boot_screen_drawn = false;
+            if (!boot_screen_drawn) {
+                fill_screen(THEME_BG);
+                draw_utf8_centered_line_scaled(240, 148, "\xe0\xb9\x80\xe0\xb8\x84\xe0\xb8\xa3\xe0\xb8\xb7\xe0\xb9\x88\xe0\xb8\xad\xe0\xb8\x87\xe0\xb8\x88\xe0\xb9\x88\xe0\xb8\xb2\xe0\xb8\xa2\xe0\xb8\xa2\xe0\xb8\xb2", 0xFFFF, THEME_BG, 40);
+                draw_utf8_centered_line_scaled(240, 198, "\xe0\xb8\xad\xe0\xb8\xb1\xe0\xb8\x95\xe0\xb9\x82\xe0\xb8\x99\xe0\xb8\xa1\xe0\xb8\xb1\xe0\xb8\x95\xe0\xb8\xb4", 0xAD55, THEME_BG, 36);
+                boot_screen_drawn = true;
+            }
+            vTaskDelay(pdMS_TO_TICKS(100));
+            force_redraw = true;
             continue;
         }
 

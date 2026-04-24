@@ -36,13 +36,23 @@ esp_err_t i2c_manager_init(void)
     };
     gpio_config(&io_conf);
     
-    // Clear I2C bus (9 clocks)
+    // Clear I2C bus (9 clocks + STOP condition) to recover stuck slaves
     gpio_set_level(I2C_SDA_PIN, 1);
     gpio_set_level(I2C_SCL_PIN, 1);
+    esp_rom_delay_us(10);
+    
+    // Send 9 clock pulses
     for (int i = 0; i < 9; i++) {
-        gpio_set_level(I2C_SCL_PIN, 0); vTaskDelay(1);
-        gpio_set_level(I2C_SCL_PIN, 1); vTaskDelay(1);
+        gpio_set_level(I2C_SCL_PIN, 0); esp_rom_delay_us(10);
+        gpio_set_level(I2C_SCL_PIN, 1); esp_rom_delay_us(10);
     }
+    
+    // Generate STOP condition
+    gpio_set_level(I2C_SCL_PIN, 0); esp_rom_delay_us(10);
+    gpio_set_level(I2C_SDA_PIN, 0); esp_rom_delay_us(10);
+    gpio_set_level(I2C_SCL_PIN, 1); esp_rom_delay_us(10);
+    gpio_set_level(I2C_SDA_PIN, 1); esp_rom_delay_us(10);
+    
     gpio_reset_pin(I2C_SDA_PIN);
     gpio_reset_pin(I2C_SCL_PIN);
 
@@ -98,11 +108,10 @@ esp_err_t i2c_manager_ping(uint8_t addr)
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
 
-    esp_err_t ret = ESP_FAIL;
-    i2c_master_dev_handle_t dev = get_or_add_device(addr);
-    if (dev) {
-        ret = i2c_master_probe(s_bus_handle, addr, 20);
-    }
+    // Probe must not create/cache device handles. The boot-time scan checks many
+    // empty addresses, and caching those dummy handles can fill the small device
+    // cache before real devices like FT6336U/PCA9685/PCF8574/DS3231 are reached.
+    esp_err_t ret = i2c_master_probe(s_bus_handle, addr, 20);
     xSemaphoreGive(g_i2c_mutex);
     return ret;
 }

@@ -9,6 +9,7 @@
 #include <stdbool.h>
 
 esp_err_t status_json_handler(httpd_req_t *req);
+esp_err_t web_entry_handler(httpd_req_t *req);
 esp_err_t wifi_setup_handler(httpd_req_t *req);
 
 /* ── POST /wifi/save — บันทึก SSID/Pass แล้ว restart ── */
