@@ -360,12 +360,22 @@ void app_main(void)
 
     // 11. Main loop — periodic heap/uptime log to catch leaks at a glance.
     TickType_t boot_ticks = xTaskGetTickCount();
+    uint32_t tick = 0;
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(60000));
         uint32_t uptime_s = (xTaskGetTickCount() - boot_ticks) / configTICK_RATE_HZ;
-        ESP_LOGI(TAG, "alive: uptime=%lus heap_free=%u min_free=%u",
+        unsigned heap_free = (unsigned)esp_get_free_heap_size();
+        unsigned heap_min  = (unsigned)esp_get_minimum_free_heap_size();
+        ESP_LOGI(TAG, "alive #%lu: uptime=%lus heap_free=%u min_free=%u reset_reason=%s",
+                 (unsigned long)(++tick),
                  (unsigned long)uptime_s,
-                 (unsigned)esp_get_free_heap_size(),
-                 (unsigned)esp_get_minimum_free_heap_size());
+                 heap_free, heap_min, reset_reason_str(reason));
+        // Preemptive reboot if heap critically low — cleaner than random crash later.
+        if (heap_free < 16384) {
+            ESP_LOGE(TAG, "Heap critically low (%u bytes) — restarting to recover",
+                     heap_free);
+            vTaskDelay(pdMS_TO_TICKS(500));
+            esp_restart();
+        }
     }
 }
