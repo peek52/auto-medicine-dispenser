@@ -917,12 +917,15 @@ static void clock_task(void *)
             prev_lbtn = ms.btn_left;
         }
 
-        TickType_t ui_sleep = pdMS_TO_TICKS(16);
+        // Lower the loop rate from ~60-100Hz to ~20-30Hz so the FT6336U
+        // touch read (i2c_manager_read_reg) doesn't pummel the I2C bus
+        // and trigger the ESP-IDF v5.3 i2c_master ISR race more often.
+        TickType_t ui_sleep = pdMS_TO_TICKS(50);
         if (current_page == PAGE_KEYBOARD || current_page == PAGE_TIME_PICKER) {
-            ui_sleep = pdMS_TO_TICKS(12);
+            ui_sleep = pdMS_TO_TICKS(33);
         }
         if (touched) {
-            ui_sleep = pdMS_TO_TICKS(10);
+            ui_sleep = pdMS_TO_TICKS(25);
         }
         vTaskDelay(ui_sleep);
     }
