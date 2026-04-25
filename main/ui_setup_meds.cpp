@@ -574,20 +574,12 @@ void ui_setup_meds_detail_render(void)
         }
     }
 
-    // ── Blink update (400 ms): only redraw button colors in-place, no full clear ──
-    uint32_t now_tick = xTaskGetTickCount();
-    if ((now_tick - s_blink_tick) >= pdMS_TO_TICKS(400)) {
-        s_blink_phase = !s_blink_phase;
-        s_blink_tick  = now_tick;
-        if (!show_return_confirm && !s_validation_popup) {
-            const netpie_shadow_t *sh_b = netpie_get_shadow();
-            uint8_t slots = sh_b->med[selected_med_idx].slots;
-            if (slots != 0) {
-                // Redraw only the slot buttons in-place (no full area clear)
-                draw_slot_selector_panel(slots);
-            }
-        }
-    }
+    // Blink redraw removed — repainting the slot panel every 400ms caused
+    // a perceptible whole-area flash whenever any value (count, name) was
+    // changing concurrently, since the partial redraws layered. Slots are
+    // already drawn with their selected-state colors at force_redraw and on
+    // each slot/count/name change above; no animation is needed.
+    (void)s_blink_phase; (void)s_blink_tick;
 
     // ── Validation popup overlay (REMOVED per user request) ──
 }
