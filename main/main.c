@@ -311,7 +311,11 @@ void app_main(void)
     }
     s_boot_count++;
     esp_reset_reason_t _early_reason = esp_reset_reason();
-    if (_early_reason == ESP_RST_SW) {
+    // Count both clean SW restarts (esp_restart from watchdog) and panics
+    // — both leave the I2C bus in the same hung state and need a real
+    // power-cycle, so neither benefits from another auto-restart.
+    if (_early_reason == ESP_RST_SW || _early_reason == ESP_RST_PANIC ||
+        _early_reason == ESP_RST_TASK_WDT || _early_reason == ESP_RST_INT_WDT) {
         s_consec_sw_resets++;
     } else {
         s_consec_sw_resets = 0;
