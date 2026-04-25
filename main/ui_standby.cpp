@@ -1010,11 +1010,13 @@ static void ui_standby_render_modal(uint32_t now)
             row_y += 28;
         }
 
-        if (g_ui_language == UI_LANG_TH) {
-            draw_standby_label((LCD_W - kThCheckI2c.width) / 2, 198, &kThCheckI2c);
-        } else {
-            draw_schedule_text_line(76, 194, 288, "Check I2C wiring: SDA=1, SCL=2", 0xFFFF, THEME_BAD, 18);
-        }
+        // Bus is stuck: only a full power-cycle of the modules' VCC fixes
+        // it (chip reset alone leaves slaves in their hung state). Tell
+        // the user that directly — the previous "check wiring" hint just
+        // wasted time when the wiring is actually fine.
+        draw_schedule_text_line(58, 194, 320,
+                                "Unplug USB power for 5 sec to recover",
+                                0xFFFF, THEME_BAD, 16);
 
         s_hw_alert_drawn = true;
         s_hw_alert_mask = hw_mask;
