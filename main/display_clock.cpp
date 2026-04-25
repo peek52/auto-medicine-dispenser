@@ -753,10 +753,12 @@ static void clock_task(void *)
              if (shadow_changed) {
                  uint32_t now_ms = now * portTICK_PERIOD_MS;
                  uint32_t local_touch_age = now_ms - s_last_local_touch_ms;
-                 // Off-standby gets full force_redraw. On standby, only force
-                 // redraw if name/slots changed (rare); count-only changes use
-                 // a periodic_render at 1Hz to update without the whole-screen
-                 // flicker users complained about.
+                 // Only force_redraw on structural shadow changes (schedule
+                 // toggle, slot times, med name, slot mask). Count drift from
+                 // the VL53 → shadow sync triggered fill_screen on every page
+                 // (menu, setup-meds list, etc.) — visible flicker the user
+                 // complained about. Pages that show counts (standby,
+                 // setup-meds list) have their own partial redraw.
                  bool structural_change = (curr_sh_ptr->enabled != s_last_sh_for_popup.enabled);
                  if (!structural_change) {
                      for (int i = 0; i < 7; i++) {
@@ -773,9 +775,7 @@ static void clock_task(void *)
                          }
                      }
                  }
-                 if (current_page != PAGE_STANDBY) {
-                     force_redraw = true;
-                 } else if (structural_change && local_touch_age > 2500) {
+                 if (structural_change && local_touch_age > 2500) {
                      force_redraw = true;
                  }
                  s_netpie_sync_popup_until = 0;
