@@ -19,13 +19,12 @@ static bool     s_med_snapshot_saved = false;
 
 extern volatile int ui_manual_disp_status;
 
-// Suppress VL53 sensor → shadow auto-sync while the user is editing a med
-// row. Without this the sensor sync overwrites every +/- tap before the
-// user can confirm, so the count value can never be set manually.
+// Suppress VL53 sensor → shadow auto-sync only while the user is on the
+// detail page (the +/- count screen) or typing the name. The meds list
+// page itself shows live counts so we allow sync there.
 extern "C" bool ui_meds_edit_in_progress(void)
 {
     return current_page == PAGE_SETUP_MEDS_DETAIL ||
-           current_page == PAGE_SETUP_MEDS ||
            current_page == PAGE_KEYBOARD;
 }
 
@@ -360,6 +359,30 @@ void ui_setup_meds_render(void)
             draw_string_centered(x + 177, y + 50, count_str, THEME_TXT_MAIN, THEME_BG, &FreeSansBold18pt7b);
         }
         force_redraw = false;
+    } else {
+        // Partial redraw: refresh just the per-module count number when the
+        // VL53 sensor sync has updated the shadow value.
+        static int s_prev_med_count[6] = { -1, -1, -1, -1, -1, -1 };
+        const netpie_shadow_t *sh = netpie_get_shadow();
+        const int card_w = 214;
+        const int left_x = 16;
+        const int right_x = 250;
+        const int start_y = 54;
+        const int gap_y = 82;
+        for (int i = 0; i < 6; i++) {
+            if (sh->med[i].count == s_prev_med_count[i]) continue;
+            int col = i % 2;
+            int row = i / 2;
+            int x = (col == 0) ? left_x : right_x;
+            int y = start_y + row * gap_y;
+            // Re-paint just the count box (fill bg, redraw number) — no fill_screen.
+            fill_round_rect(x + 154 + 2, y + 10 + 2, 46 - 4, 56 - 4, 6, THEME_BG);
+            char count_str[8];
+            snprintf(count_str, sizeof(count_str), "%d", sh->med[i].count);
+            draw_string_centered(x + 177, y + 50, count_str, THEME_TXT_MAIN, THEME_BG, &FreeSansBold18pt7b);
+            s_prev_med_count[i] = sh->med[i].count;
+            (void)card_w;
+        }
     }
 }
 

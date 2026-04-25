@@ -716,7 +716,8 @@ static void clock_task(void *)
 
         uint32_t now = xTaskGetTickCount();
         bool page_needs_live_tick =
-            (current_page == PAGE_STANDBY || current_page == PAGE_CONFIRM_MEDS);
+            (current_page == PAGE_STANDBY || current_page == PAGE_CONFIRM_MEDS ||
+             current_page == PAGE_SETUP_MEDS || current_page == PAGE_SETUP_MEDS_DETAIL);
         bool page_needs_service_loop =
             (current_page == PAGE_TIME_PICKER || current_page == PAGE_WIFI_SCAN);
         bool periodic_render =
