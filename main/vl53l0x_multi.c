@@ -46,7 +46,7 @@
 #define VL53_RANGING_TIMEOUT_MS                         500
 #define VL53_READ_INTERVAL_MS                           1000
 #define VL53_MAX_VALID_MM                               2000
-#define VL53_EMA_ALPHA                                  0.20f
+#define VL53_EMA_ALPHA                                  0.60f
 #define VL53_I2C_SPEED_HZ                               I2C_FREQ_HZ
 #define VL53_MISSING_RETRY_MS                           30000
 #define VL53_MAX_MISSING_RETRIES                        5    // Stop retrying after N consecutive failures
