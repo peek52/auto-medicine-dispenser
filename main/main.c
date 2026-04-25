@@ -303,6 +303,24 @@ static void deferred_init_task(void *arg)
     vTaskDelete(NULL);
 }
 
+// In safe mode we skip the heavy WiFi/camera/web stack (those are the
+// suspected crash source after a panic). Bring up the minimum that lets
+// the dispenser still serve scheduled meds: NVS settings, the dispenser
+// scheduler (RTC + servo only, no WiFi), and USB. Display exits its
+// boot screen via g_system_ready=true so the user sees the home page.
+static void safe_mode_init_task(void *arg)
+{
+    (void)arg;
+    settings_load_nvs();
+    dispenser_scheduler_start();
+    usb_mouse_start();
+    extern bool g_system_ready;
+    g_system_ready = true;
+    ESP_LOGW(TAG, "Safe mode ready: scheduler+USB+display only "
+                  "(WiFi/camera/web/MQTT disabled until power-cycle)");
+    vTaskDelete(NULL);
+}
+
 void app_main(void)
 {
     web_log_init();
@@ -436,8 +454,9 @@ void app_main(void)
     }
 
     if (g_safe_mode) {
-        ESP_LOGW(TAG, "Safe mode: skipping deferred_init_task "
-                      "(no WiFi/camera/MQTT/scheduler this boot)");
+        if (xTaskCreate(safe_mode_init_task, "safe_init", 4096, NULL, 5, NULL) != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create safe_mode_init task");
+        }
     } else {
         if (xTaskCreate(deferred_init_task, "deferred_init", 8192, NULL, 5, NULL) != pdPASS) {
             ESP_LOGE(TAG, "Failed to create deferred_init task");
