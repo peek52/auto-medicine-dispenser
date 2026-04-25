@@ -165,11 +165,14 @@ esp_err_t i2c_manager_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t l
     esp_err_t ret = ESP_FAIL;
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
     if (dev) {
-        // Atomic combined op — the ESP-IDF v5.3 i2c_master driver races
-        // at the ISR level when split into separate transmit + receive
-        // calls (i2c_isr_receive_handler ptr=NULL). The single-call
-        // form is the supported way to do a write-then-read.
-        ret = i2c_master_transmit_receive(dev, &reg, 1, buf, len, 100);
+        // Original two-call form. The combined transmit_receive variant
+        // turned out to crash with Illegal-instruction at boot (PC
+        // pointing into garbage memory) on top of not fixing the
+        // i2c_isr_receive_handler race.
+        ret = i2c_master_transmit(dev, &reg, 1, 50);
+        if (ret == ESP_OK) {
+            ret = i2c_master_receive(dev, buf, len, 50);
+        }
     }
     xSemaphoreGive(g_i2c_mutex);
     return ret;
