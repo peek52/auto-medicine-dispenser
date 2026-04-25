@@ -251,6 +251,20 @@ static void send_low_stock_alert(int med_idx, int current_count, const char *rea
     const netpie_shadow_t *sh = netpie_get_shadow();
     if (!sh || med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return;
 
+    // Skip the alert if none of this med's assigned meal slots have a real
+    // time set — silent slots never dispense, so warning the user about
+    // their stock just adds noise.
+    {
+        uint8_t mask = sh->med[med_idx].slots;
+        bool any_active = false;
+        for (int s = 0; s < 7 && !any_active; s++) {
+            if (!((mask >> s) & 0x01)) continue;
+            int hh, mm;
+            if (parse_hhmm(sh->slot_time[s], &hh, &mm)) any_active = true;
+        }
+        if (!any_active) return;
+    }
+
     if (!force) {
         if (current_count > 2) {
             s_low_stock_alert_sent[med_idx] = false;
