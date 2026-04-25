@@ -165,11 +165,15 @@ esp_err_t i2c_manager_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t l
     esp_err_t ret = ESP_FAIL;
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
     if (dev) {
-        // Atomic write-then-read: avoids the ESP-IDF v5.3 i2c_master race
-        // where a timed-out transmit's ISR fires after the receive has
-        // been re-armed, panicking inside i2c_isr_receive_handler with
-        // ptr=0x0.
-        ret = i2c_master_transmit_receive(dev, &reg, 1, buf, len, 100);
+        ret = i2c_master_transmit(dev, &reg, 1, 100);
+        if (ret == ESP_OK) {
+            // Small inter-op gap so the transmit's ISR retires before we
+            // re-arm the rx buffer. ESP-IDF v5.3 i2c_master otherwise
+            // panics in i2c_isr_receive_handler with ptr=NULL when the
+            // back-to-back ISR fires faster than the rx setup.
+            esp_rom_delay_us(200);
+            ret = i2c_master_receive(dev, buf, len, 100);
+        }
     }
     xSemaphoreGive(g_i2c_mutex);
     return ret;
