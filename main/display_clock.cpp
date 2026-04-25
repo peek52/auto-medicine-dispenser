@@ -752,11 +752,29 @@ static void clock_task(void *)
              if (shadow_changed) {
                  uint32_t now_ms = now * portTICK_PERIOD_MS;
                  uint32_t local_touch_age = now_ms - s_last_local_touch_ms;
-                 // Always refresh on shadow change as long as the user isn't
-                 // mid-tap. Earlier this only fired off-standby, which meant
-                 // the live VL53 count sync never showed up on the standby
-                 // screen until the user navigated away and back.
-                 if (local_touch_age > 2500 || current_page != PAGE_STANDBY) {
+                 // Off-standby gets full force_redraw. On standby, only force
+                 // redraw if name/slots changed (rare); count-only changes use
+                 // a periodic_render at 1Hz to update without the whole-screen
+                 // flicker users complained about.
+                 bool structural_change = (curr_sh_ptr->enabled != s_last_sh_for_popup.enabled);
+                 if (!structural_change) {
+                     for (int i = 0; i < 7; i++) {
+                         if (strcmp(curr_sh_ptr->slot_time[i], s_last_sh_for_popup.slot_time[i]) != 0) {
+                             structural_change = true; break;
+                         }
+                     }
+                 }
+                 if (!structural_change) {
+                     for (int i = 0; i < DISPENSER_MED_COUNT; i++) {
+                         if (curr_sh_ptr->med[i].slots != s_last_sh_for_popup.med[i].slots ||
+                             strcmp(curr_sh_ptr->med[i].name, s_last_sh_for_popup.med[i].name) != 0) {
+                             structural_change = true; break;
+                         }
+                     }
+                 }
+                 if (current_page != PAGE_STANDBY) {
+                     force_redraw = true;
+                 } else if (structural_change && local_touch_age > 2500) {
                      force_redraw = true;
                  }
                  s_netpie_sync_popup_until = 0;
