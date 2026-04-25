@@ -161,9 +161,12 @@ static esp_err_t vl53_write_impl(i2c_master_dev_handle_t dev, void *ctx)
 static esp_err_t vl53_read_impl(i2c_master_dev_handle_t dev, void *ctx)
 {
     vl53_read_ctx_t *r = (vl53_read_ctx_t *)ctx;
-    esp_err_t ret = i2c_master_transmit(dev, &r->reg, 1, 100);
-    if (ret != ESP_OK) return ret;
-    return i2c_master_receive(dev, r->buf, r->len, 100);
+    // Combined atomic write-then-read avoids the ESP-IDF v5.3 i2c_master
+    // race where a timed-out transmit's pending ISR fires after the
+    // following receive has set up its buffer, dereferencing a stale
+    // NULL ptr in i2c_isr_receive_handler. Coredump pinpointed this
+    // bug as the cause of every ~30s-15min panic.
+    return i2c_master_transmit_receive(dev, &r->reg, 1, r->buf, r->len, 100);
 }
 
 static esp_err_t vl53_write_reg(int ch, uint8_t reg, uint8_t value)
