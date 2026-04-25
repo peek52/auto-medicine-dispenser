@@ -14,6 +14,8 @@
 #include "pill_sensor_status.h"
 #include "tca9548a.h"
 #include "netpie_mqtt.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 
 #define VL53_REG_SYSRANGE_START                         0x00
 #define VL53_REG_SYSTEM_SEQUENCE_CONFIG                 0x01
@@ -806,7 +808,54 @@ void vl53l0x_multi_start(void)
     }
 }
 
+// Persist per-channel calibration so it survives reboots. Key format:
+//   namespace "vl53_cal", key "ch0".."ch5", blob = 3 × int16_t = full_dist_mm,
+//   pill_height_mm, max_pills. Old defaults are restored if no blob exists.
+typedef struct {
+    int16_t full_dist_mm;
+    int16_t pill_height_mm;
+    int16_t max_pills;
+} vl53_cal_blob_t;
+
+static const char *VL53_NVS_NS = "vl53_cal";
+
+static void vl53_cal_save_nvs(int ch, int full_dist_mm, int pill_height_mm, int max_pills)
+{
+    nvs_handle_t h;
+    if (nvs_open(VL53_NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    char key[8];
+    snprintf(key, sizeof(key), "ch%d", ch);
+    vl53_cal_blob_t blob = {
+        .full_dist_mm   = (int16_t)full_dist_mm,
+        .pill_height_mm = (int16_t)pill_height_mm,
+        .max_pills      = (int16_t)max_pills,
+    };
+    nvs_set_blob(h, key, &blob, sizeof(blob));
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+void vl53l0x_load_calibration_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(VL53_NVS_NS, NVS_READONLY, &h) != ESP_OK) return;
+    for (int ch = 0; ch < PILL_SENSOR_COUNT; ++ch) {
+        char key[8];
+        snprintf(key, sizeof(key), "ch%d", ch);
+        vl53_cal_blob_t blob;
+        size_t sz = sizeof(blob);
+        if (nvs_get_blob(h, key, &blob, &sz) == ESP_OK && sz == sizeof(blob) &&
+            blob.full_dist_mm > 0 && blob.pill_height_mm > 0 && blob.max_pills > 0) {
+            pill_sensor_status_set_config(ch, blob.full_dist_mm, blob.pill_height_mm, blob.max_pills);
+            ESP_LOGI(TAG, "Ch%d cal loaded from NVS: full=%dmm height=%dmm max=%d",
+                     ch, blob.full_dist_mm, blob.pill_height_mm, blob.max_pills);
+        }
+    }
+    nvs_close(h);
+}
+
 void vl53l0x_set_channel_config(int ch, int full_dist_mm, int pill_height_mm, int max_pills)
 {
     pill_sensor_status_set_config(ch, full_dist_mm, pill_height_mm, max_pills);
+    vl53_cal_save_nvs(ch, full_dist_mm, pill_height_mm, max_pills);
 }

@@ -751,19 +751,15 @@ static void clock_task(void *)
              
              if (shadow_changed) {
                  uint32_t now_ms = now * portTICK_PERIOD_MS;
-                 uint32_t rx_age = now_ms - (netpie_mqtt_get_last_rx_time() * portTICK_PERIOD_MS);
                  uint32_t local_touch_age = now_ms - s_last_local_touch_ms;
-                 
-                 // Keep standby calm: the page already refreshes once per second,
-                 // so a remote shadow sync does not need a full-screen popup/redraw.
-                 // Outside standby we still allow a normal refresh to pick up changes.
-                 if (rx_age <= 1500 && local_touch_age > 2500) {
-                     if (current_page != PAGE_STANDBY) {
-                         force_redraw = true;
-                     } else {
-                         s_netpie_sync_popup_until = 0;
-                     }
+                 // Always refresh on shadow change as long as the user isn't
+                 // mid-tap. Earlier this only fired off-standby, which meant
+                 // the live VL53 count sync never showed up on the standby
+                 // screen until the user navigated away and back.
+                 if (local_touch_age > 2500 || current_page != PAGE_STANDBY) {
+                     force_redraw = true;
                  }
+                 s_netpie_sync_popup_until = 0;
                  s_last_sh_for_popup = *curr_sh_ptr;
              }
         }

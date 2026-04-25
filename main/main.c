@@ -392,6 +392,7 @@ void app_main(void)
     // wifi_sta_init() which blocks waiting for the ESP-Hosted slave chip.
     // Sensors only need I2C + TCA, both ready here.
     if (tca9548a_is_present()) {
+        vl53l0x_load_calibration_from_nvs();
         vl53l0x_multi_bootstrap();
         vl53l0x_multi_start();
     }
