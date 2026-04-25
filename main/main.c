@@ -222,16 +222,14 @@ static void i2c_watchdog_task(void *arg)
             continue;
         }
 
-        if (s_skip_i2c_restart) {
-            ESP_LOGE(TAG, "I2C watchdog: recovery failed and >=3 SW resets already — "
-                     "user must power-cycle modules; staying alive in degraded mode");
-            consecutive_fails = 0;  // back off, keep polling but don't restart
-            continue;
-        }
-
-        ESP_LOGE(TAG, "I2C watchdog: recovery failed — restarting chip");
-        vTaskDelay(pdMS_TO_TICKS(500));
-        esp_restart();
+        // Do NOT esp_restart on recovery failure: chip reset doesn't power
+        // cycle the modules either, so we just bounce right back into the
+        // same hung-bus state and the watchdog fires again. The reset
+        // loop made things worse — at least staying alive lets the user
+        // reach /tech over WiFi.
+        ESP_LOGE(TAG, "I2C watchdog: recovery failed — staying alive in degraded mode "
+                 "(user must power-cycle modules' VCC)");
+        consecutive_fails = 0;
     }
 }
 
