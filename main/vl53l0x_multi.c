@@ -766,6 +766,13 @@ static void vl53_task(void *arg)
                     s_stable_ticks[i]++;
                 }
 
+                // While the user is on the meds-setup detail screen (or editing
+                // any med field), don't auto-sync sensor → shadow count, otherwise
+                // the +/- buttons "snap back" to the sensor reading and the user
+                // can never enter a value. Sync resumes after they save / leave.
+                extern bool ui_meds_edit_in_progress(void);
+                if (ui_meds_edit_in_progress()) continue;
+
                 if (s_stable_ticks[i] >= VL53_STABLE_TICKS_BEFORE_SYNC &&
                     shadow->med[i].count != s_stable_count[i]) {
                     ESP_LOGI(TAG, "Sensor %d sync: %d -> %d pills",

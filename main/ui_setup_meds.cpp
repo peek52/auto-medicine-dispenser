@@ -19,6 +19,16 @@ static bool     s_med_snapshot_saved = false;
 
 extern volatile int ui_manual_disp_status;
 
+// Suppress VL53 sensor → shadow auto-sync while the user is editing a med
+// row. Without this the sensor sync overwrites every +/- tap before the
+// user can confirm, so the count value can never be set manually.
+extern "C" bool ui_meds_edit_in_progress(void)
+{
+    return current_page == PAGE_SETUP_MEDS_DETAIL ||
+           current_page == PAGE_SETUP_MEDS ||
+           current_page == PAGE_KEYBOARD;
+}
+
 // â”€â”€ File-scope modal timers (file-local only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static uint32_t s_disp_done_tick = 0;
 static uint32_t s_disp_fail_tick = 0;
