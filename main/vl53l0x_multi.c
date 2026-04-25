@@ -139,6 +139,13 @@ static esp_err_t vl53_io(int ch, esp_err_t (*fn)(i2c_master_dev_handle_t dev, vo
         }
     }
 
+    // Drain any pending ISR before releasing the mutex so the next task
+    // entering i2c_manager_* doesn't get blindsided by a stray VL53
+    // transmit-completion ISR firing into its rx setup
+    // (i2c_isr_receive_handler ptr=NULL panic).
+    i2c_master_bus_handle_t bus = i2c_manager_get_bus_handle();
+    if (bus) i2c_master_bus_wait_all_done(bus, 500);
+
     xSemaphoreGive(g_i2c_mutex);
     return ret;
 }
@@ -157,20 +164,17 @@ typedef struct {
 static esp_err_t vl53_write_impl(i2c_master_dev_handle_t dev, void *ctx)
 {
     vl53_write_ctx_t *w = (vl53_write_ctx_t *)ctx;
-    return i2c_master_transmit(dev, w->buf, w->len, 100);
+    return i2c_master_transmit(dev, w->buf, w->len, 500);
 }
 
 static esp_err_t vl53_read_impl(i2c_master_dev_handle_t dev, void *ctx)
 {
     vl53_read_ctx_t *r = (vl53_read_ctx_t *)ctx;
-    esp_err_t ret = i2c_master_transmit(dev, &r->reg, 1, 100);
+    esp_err_t ret = i2c_master_transmit(dev, &r->reg, 1, 500);
     if (ret != ESP_OK) return ret;
-    // Wait for the transmit ISR to fully retire — this barrier is the
-    // documented way to synchronize before issuing the next operation
-    // and avoids the i2c_isr_receive_handler ptr=NULL race.
     i2c_master_bus_handle_t bus = i2c_manager_get_bus_handle();
-    if (bus) i2c_master_bus_wait_all_done(bus, 100);
-    return i2c_master_receive(dev, r->buf, r->len, 100);
+    if (bus) i2c_master_bus_wait_all_done(bus, 500);
+    return i2c_master_receive(dev, r->buf, r->len, 500);
 }
 
 static esp_err_t vl53_write_reg(int ch, uint8_t reg, uint8_t value)
