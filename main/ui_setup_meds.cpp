@@ -171,6 +171,28 @@ static void redraw_med_count_value_only(int count)
     draw_string_centered(MED_COUNT_BOX_CX, MED_COUNT_BOX_TEXT_Y, cnt_str, SB_COLOR_TXT_MAIN, SB_COLOR_CARD, &FreeSans12pt7b);
 }
 
+// Live VL53 sensor reading shown right below the +/- count box. Uses the
+// THEME_BG strip from y=89 to y=99 (just before the slot selector at y=100).
+#define MED_LIVE_X      MED_COUNT_BOX_X
+#define MED_LIVE_Y      89
+#define MED_LIVE_W      MED_COUNT_BOX_W
+#define MED_LIVE_H      11
+
+static void draw_med_live_sensor(int med_idx)
+{
+    char buf[24];
+    const pill_sensor_status_t *s = pill_sensor_status_get(med_idx);
+    if (s && s->present && s->valid && s->pill_count >= 0) {
+        snprintf(buf, sizeof(buf), "live %d", s->pill_count);
+    } else if (s && s->present) {
+        snprintf(buf, sizeof(buf), "live --");
+    } else {
+        snprintf(buf, sizeof(buf), "no sensor");
+    }
+    fill_rect(MED_LIVE_X, MED_LIVE_Y, MED_LIVE_W, MED_LIVE_H, THEME_BG);
+    draw_string_centered(MED_COUNT_BOX_CX, MED_LIVE_Y, buf, SB_COLOR_TXT_MUTED, THEME_BG, &FreeSans9pt7b);
+}
+
 static void draw_return_qty_value(int return_qty, int current_stock)
 {
     char ret_str[16];
@@ -455,6 +477,7 @@ void ui_setup_meds_detail_render(void)
         draw_string_centered(280, 70, "-", 0xFFFF, THEME_BAD, &FreeSans18pt7b);
         
         draw_med_count_value(sh->med[med_idx].count);
+        draw_med_live_sensor(med_idx);
 
         fill_round_rect_frame(380, 52, 40, 36, 6, THEME_OK, SB_COLOR_BORDER);
         draw_string_centered(400, 70, "+", 0xFFFF, THEME_OK, &FreeSans18pt7b);
@@ -529,6 +552,18 @@ void ui_setup_meds_detail_render(void)
             if (sh->med[med_idx].count != tp_prev_sh.med[med_idx].count) {
                 redraw_med_count_value_only(sh->med[med_idx].count);
                 tp_prev_sh.med[med_idx].count = sh->med[med_idx].count;
+            }
+
+            // Live VL53 sensor reading — partial redraw when sensor count drifts
+            static int s_prev_live_count = -999;
+            static bool s_prev_live_present = false;
+            const pill_sensor_status_t *live = pill_sensor_status_get(med_idx);
+            int live_count = (live && live->valid) ? live->pill_count : -1;
+            bool live_present = live && live->present;
+            if (live_count != s_prev_live_count || live_present != s_prev_live_present) {
+                draw_med_live_sensor(med_idx);
+                s_prev_live_count = live_count;
+                s_prev_live_present = live_present;
             }
 
             if (strcmp(sh->med[med_idx].name, tp_prev_sh.med[med_idx].name) != 0) {
