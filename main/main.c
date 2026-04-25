@@ -354,13 +354,11 @@ void app_main(void)
 
 // VL53 bootstrap moved to deferred_init_task to avoid double-init
 
-    ESP_LOGI(TAG, "Scanning I2C bus...");
-    for (uint8_t a = 3; a < 0x78; a++) {
-        if (i2c_manager_ping(a) == ESP_OK) {
-            ESP_LOGI(TAG, " -> Found device at 0x%02X", a);
-        }
-    }
-    ESP_LOGI(TAG, "Scan complete.");
+    // Bus scan removed: probing 117 addresses leaves stale state in the
+    // ESP-IDF v5.3 i2c_master driver that races with the first VL53
+    // transactions and panics i2c_isr_receive_handler at ptr=NULL.
+    // Per-device pings below are enough to know what's connected.
+    ESP_LOGI(TAG, "Skipping bus scan (per-device pings only)");
 
 #if ENABLE_VL53_PILL_SENSORS
     if (tca9548a_init() != ESP_OK) {
