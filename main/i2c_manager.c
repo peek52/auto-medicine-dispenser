@@ -165,13 +165,15 @@ esp_err_t i2c_manager_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t l
     esp_err_t ret = ESP_FAIL;
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
     if (dev) {
-        // Original two-call form. The combined transmit_receive variant
-        // turned out to crash with Illegal-instruction at boot (PC
-        // pointing into garbage memory) on top of not fixing the
-        // i2c_isr_receive_handler race.
-        ret = i2c_master_transmit(dev, &reg, 1, 50);
+        ret = i2c_master_transmit(dev, &reg, 1, 100);
         if (ret == ESP_OK) {
-            ret = i2c_master_receive(dev, buf, len, 50);
+            // Block until the transmit's ISR has fully retired before we
+            // arm the rx buffer, otherwise the ESP-IDF v5.3 i2c_master
+            // driver can fire a stray transmit-completion ISR after the
+            // rx buffer pointer has been cleared, dereferencing NULL in
+            // i2c_isr_receive_handler.
+            i2c_master_bus_wait_all_done(s_bus_handle, 100);
+            ret = i2c_master_receive(dev, buf, len, 100);
         }
     }
     xSemaphoreGive(g_i2c_mutex);

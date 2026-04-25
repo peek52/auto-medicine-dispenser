@@ -7,9 +7,7 @@
 #define WIFI_PASS_DEFAULT   "pajaroen"
 
 // Optional peripherals.
-// Temporarily disabled to confirm whether the i2c_isr_receive_handler
-// PANIC originates in the VL53 polling path.
-#define ENABLE_VL53_PILL_SENSORS 0
+#define ENABLE_VL53_PILL_SENSORS 1
 
 // I2C bus: shared by camera SCCB, PCF8574, PCA9685, DS3231, FT6336U, and TCA9548A.
 #define I2C_SDA_PIN         7

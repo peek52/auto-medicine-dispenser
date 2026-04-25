@@ -161,12 +161,14 @@ static esp_err_t vl53_write_impl(i2c_master_dev_handle_t dev, void *ctx)
 static esp_err_t vl53_read_impl(i2c_master_dev_handle_t dev, void *ctx)
 {
     vl53_read_ctx_t *r = (vl53_read_ctx_t *)ctx;
-    // Use the atomic combined op — the ESP-IDF v5.3 i2c_master driver
-    // races at the ISR level when transmit and receive are issued as
-    // separate calls (i2c_isr_receive_handler dereferences ptr=NULL).
-    // The single-call form keeps the rx buffer pointer set up before
-    // any ISR can fire.
-    return i2c_master_transmit_receive(dev, &r->reg, 1, r->buf, r->len, 100);
+    esp_err_t ret = i2c_master_transmit(dev, &r->reg, 1, 100);
+    if (ret != ESP_OK) return ret;
+    // Wait for the transmit ISR to fully retire — this barrier is the
+    // documented way to synchronize before issuing the next operation
+    // and avoids the i2c_isr_receive_handler ptr=NULL race.
+    i2c_master_bus_handle_t bus = i2c_manager_get_bus_handle();
+    if (bus) i2c_master_bus_wait_all_done(bus, 100);
+    return i2c_master_receive(dev, r->buf, r->len, 100);
 }
 
 static esp_err_t vl53_write_reg(int ch, uint8_t reg, uint8_t value)
