@@ -163,12 +163,12 @@ static esp_err_t vl53_read_impl(i2c_master_dev_handle_t dev, void *ctx)
     vl53_read_ctx_t *r = (vl53_read_ctx_t *)ctx;
     esp_err_t ret = i2c_master_transmit(dev, &r->reg, 1, 100);
     if (ret != ESP_OK) return ret;
-    // Tiny yield gives the previous transmit's ISR time to fully retire
-    // before we set up the receive's rx buffer pointer. Without this,
-    // ESP-IDF v5.3 i2c_master can fire a stray transmit-completion ISR
-    // mid-receive-setup, dereferencing a stale ptr in
-    // i2c_isr_receive_handler (panicked at i2c_ll_read_rxfifo ptr=NULL).
-    esp_rom_delay_us(200);
+    // Full scheduler yield (>=1 tick) so the transmit's ISR fully retires
+    // and any pending FIFO state is cleaned up before we re-arm the rx
+    // buffer pointer. esp_rom_delay_us busy-wait was not enough — the
+    // ISR-handler race (i2c_ll_read_rxfifo ptr=NULL) reproduced both
+    // with the combined transmit_receive API and with a 200us spin.
+    vTaskDelay(1);
     return i2c_master_receive(dev, r->buf, r->len, 100);
 }
 

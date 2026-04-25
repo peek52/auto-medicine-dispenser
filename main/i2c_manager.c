@@ -167,11 +167,11 @@ esp_err_t i2c_manager_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t l
     if (dev) {
         ret = i2c_master_transmit(dev, &reg, 1, 100);
         if (ret == ESP_OK) {
-            // Small inter-op gap so the transmit's ISR retires before we
-            // re-arm the rx buffer. ESP-IDF v5.3 i2c_master otherwise
-            // panics in i2c_isr_receive_handler with ptr=NULL when the
-            // back-to-back ISR fires faster than the rx setup.
-            esp_rom_delay_us(200);
+            // Yield a tick so the transmit's ISR fully retires before
+            // arming the rx buffer. Spin (esp_rom_delay_us 200) was not
+            // long enough — the i2c_isr_receive_handler ptr=NULL race
+            // still hit during VL53 init.
+            vTaskDelay(1);
             ret = i2c_master_receive(dev, buf, len, 100);
         }
     }
