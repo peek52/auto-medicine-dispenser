@@ -53,7 +53,7 @@
 #define VL53_CONTINUOUS_PERIOD_MS                       50
 #define VL53_RESTART_AFTER_FAILS                        5
 #define VL53_INVALID_GRACE_READS                        3
-#define VL53_STABLE_TICKS_BEFORE_SYNC                   3
+#define VL53_STABLE_TICKS_BEFORE_SYNC                   1
 
 #define decodeVcselPeriod(reg_val)      (((reg_val) + 1U) << 1U)
 #define calcMacroPeriod(vcsel_period_pclks) ((((uint32_t)2304U * (vcsel_period_pclks) * 1655U) + 500U) / 1000U)
