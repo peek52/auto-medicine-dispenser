@@ -42,6 +42,11 @@ RTC_NOINIT_ATTR static uint32_t s_boot_magic;
 RTC_NOINIT_ATTR static uint32_t s_boot_count;
 RTC_NOINIT_ATTR static uint32_t s_consec_sw_resets;
 static bool s_skip_i2c_restart = false;
+// Safe mode skips heavy I2C peripherals (VL53 sensors) when the previous
+// boot ended in a panic. The first VL53 read after a panicked boot tends
+// to re-trigger the same i2c_master ISR race and put the board in a death
+// loop. Skipping VL53 lets the UI come up so the user can recover.
+bool g_safe_mode = false;
 
 static const char *reset_reason_str(esp_reset_reason_t reason)
 {
@@ -323,9 +328,13 @@ void app_main(void)
     if (s_consec_sw_resets >= 3) {
         s_skip_i2c_restart = true;
     }
+    if (s_consec_sw_resets >= 1 && _early_reason == ESP_RST_PANIC) {
+        g_safe_mode = true;
+    }
     esp_reset_reason_t reason = esp_reset_reason();
-    ESP_LOGW(TAG, "Boot #%lu, reset reason: %s (%d)",
-             (unsigned long)s_boot_count, reset_reason_str(reason), (int)reason);
+    ESP_LOGW(TAG, "Boot #%lu, reset reason: %s (%d)%s",
+             (unsigned long)s_boot_count, reset_reason_str(reason), (int)reason,
+             g_safe_mode ? "  [SAFE MODE — VL53 disabled]" : "");
 
     // 1. Initialize NVS
     esp_err_t ret = nvs_flash_init();
@@ -391,7 +400,10 @@ void app_main(void)
     // VL53 init must not sit in deferred_init_task — that path is gated on
     // wifi_sta_init() which blocks waiting for the ESP-Hosted slave chip.
     // Sensors only need I2C + TCA, both ready here.
-    if (tca9548a_is_present()) {
+    if (g_safe_mode) {
+        ESP_LOGW(TAG, "Safe mode: skipping VL53 sensor init "
+                      "(previous boot ended in PANIC)");
+    } else if (tca9548a_is_present()) {
         vl53l0x_load_calibration_from_nvs();
         vl53l0x_multi_bootstrap();
         vl53l0x_multi_start();
@@ -427,10 +439,19 @@ void app_main(void)
         uint32_t uptime_s = (xTaskGetTickCount() - boot_ticks) / configTICK_RATE_HZ;
         unsigned heap_free = (unsigned)esp_get_free_heap_size();
         unsigned heap_min  = (unsigned)esp_get_minimum_free_heap_size();
-        ESP_LOGI(TAG, "alive #%lu: uptime=%lus heap_free=%u min_free=%u reset_reason=%s",
+        ESP_LOGI(TAG, "alive #%lu: uptime=%lus heap_free=%u min_free=%u reset_reason=%s%s",
                  (unsigned long)(++tick),
                  (unsigned long)uptime_s,
-                 heap_free, heap_min, reset_reason_str(reason));
+                 heap_free, heap_min, reset_reason_str(reason),
+                 g_safe_mode ? " [SAFE]" : "");
+        // After 2 minutes of stable runtime, clear the consecutive-panic
+        // counter so the next reboot tries full mode again. Without this,
+        // a single panic would force safe mode forever (until power loss).
+        if (uptime_s >= 120 && s_consec_sw_resets != 0) {
+            ESP_LOGI(TAG, "Stable for %lus — clearing consec_sw_resets",
+                     (unsigned long)uptime_s);
+            s_consec_sw_resets = 0;
+        }
         // Preemptive reboot if heap critically low — cleaner than random crash later.
         if (heap_free < 16384) {
             ESP_LOGE(TAG, "Heap critically low (%u bytes) — restarting to recover",
