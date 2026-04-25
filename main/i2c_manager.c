@@ -127,10 +127,8 @@ esp_err_t i2c_manager_ping(uint8_t addr)
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
 
-    // Probe must not create/cache device handles. The boot-time scan checks many
-    // empty addresses, and caching those dummy handles can fill the small device
-    // cache before real devices like FT6336U/PCA9685/PCF8574/DS3231 are reached.
     esp_err_t ret = i2c_master_probe(s_bus_handle, addr, 100);
+    i2c_master_bus_wait_all_done(s_bus_handle, 100);
     xSemaphoreGive(g_i2c_mutex);
     return ret;
 }
@@ -143,7 +141,8 @@ esp_err_t i2c_manager_write(uint8_t addr, const uint8_t *data, size_t len)
     esp_err_t ret = ESP_FAIL;
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
     if (dev) {
-        ret = i2c_master_transmit(dev, data, len, 50);
+        ret = i2c_master_transmit(dev, data, len, 100);
+        i2c_master_bus_wait_all_done(s_bus_handle, 100);
     }
     xSemaphoreGive(g_i2c_mutex);
     return ret;
@@ -154,7 +153,9 @@ esp_err_t i2c_manager_write_locked(uint8_t addr, const uint8_t *data, size_t len
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
     if (!dev) return ESP_FAIL;
-    return i2c_master_transmit(dev, data, len, 50);
+    esp_err_t ret = i2c_master_transmit(dev, data, len, 100);
+    i2c_master_bus_wait_all_done(s_bus_handle, 100);
+    return ret;
 }
 
 esp_err_t i2c_manager_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len)
@@ -167,14 +168,10 @@ esp_err_t i2c_manager_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t l
     if (dev) {
         ret = i2c_master_transmit(dev, &reg, 1, 100);
         if (ret == ESP_OK) {
-            // Block until the transmit's ISR has fully retired before we
-            // arm the rx buffer, otherwise the ESP-IDF v5.3 i2c_master
-            // driver can fire a stray transmit-completion ISR after the
-            // rx buffer pointer has been cleared, dereferencing NULL in
-            // i2c_isr_receive_handler.
             i2c_master_bus_wait_all_done(s_bus_handle, 100);
             ret = i2c_master_receive(dev, buf, len, 100);
         }
+        i2c_master_bus_wait_all_done(s_bus_handle, 100);
     }
     xSemaphoreGive(g_i2c_mutex);
     return ret;
@@ -188,7 +185,8 @@ esp_err_t i2c_manager_read(uint8_t addr, uint8_t *buf, size_t len)
     esp_err_t ret = ESP_FAIL;
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
     if (dev) {
-        ret = i2c_master_receive(dev, buf, len, 50);
+        ret = i2c_master_receive(dev, buf, len, 100);
+        i2c_master_bus_wait_all_done(s_bus_handle, 100);
     }
     xSemaphoreGive(g_i2c_mutex);
     return ret;
