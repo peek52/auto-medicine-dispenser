@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_attr.h"
+#include "esp_partition.h"
 
 #include "config.h"
 #include "i2c_manager.h"
@@ -421,10 +422,28 @@ void app_main(void)
 #else
     ESP_LOGI(TAG, "SD card init disabled");
 #endif
-    if (xTaskCreate(deferred_init_task, "deferred_init", 8192, NULL, 5, NULL) != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create deferred_init task");
-        while (1) {
-            vTaskDelay(pdMS_TO_TICKS(1000));
+    // Erase coredump partition every boot we see one — repeatedly
+    // re-reading the same dump on each boot consumes flash IO and may
+    // be contributing to the bootloop. We've already grabbed what we
+    // need from the boot logs.
+    {
+        const esp_partition_t *cd = esp_partition_find_first(
+            ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, NULL);
+        if (cd) {
+            esp_partition_erase_range(cd, 0, cd->size);
+            ESP_LOGW(TAG, "Coredump partition erased (post-panic cleanup)");
+        }
+    }
+
+    if (g_safe_mode) {
+        ESP_LOGW(TAG, "Safe mode: skipping deferred_init_task "
+                      "(no WiFi/camera/MQTT/scheduler this boot)");
+    } else {
+        if (xTaskCreate(deferred_init_task, "deferred_init", 8192, NULL, 5, NULL) != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create deferred_init task");
+            while (1) {
+                vTaskDelay(pdMS_TO_TICKS(1000));
+            }
         }
     }
     if (xTaskCreate(i2c_watchdog_task, "i2c_wdog", 4096, NULL, 2, NULL) != pdPASS) {
