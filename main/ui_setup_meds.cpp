@@ -569,7 +569,9 @@ void ui_setup_meds_detail_render(void)
             }
 
             if (sh->med[med_idx].slots != tp_prev_sh.med[med_idx].slots) {
-                fill_rect(10, 96, 458, 122, THEME_BG);
+                // Skip the 458x122 fill — draw_slot_selector_panel repaints
+                // every row's own background, so wiping the whole area first
+                // just produced a perceptible black flash on every tap.
                 draw_slot_selector_panel(sh->med[med_idx].slots);
                 tp_prev_sh.med[med_idx].slots = sh->med[med_idx].slots;
             }
