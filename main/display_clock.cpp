@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_task_wdt.h"
 #include <ctype.h>
 #include <math.h>
 #include "esp_log.h"
@@ -560,11 +561,18 @@ static void clock_task(void *)
     static uint16_t last_tx = 0, last_ty = 0;
     static uint32_t last_repeat_ms = 0;
 
+    // Subscribe this task to the FreeRTOS task watchdog so if a touch I2C
+    // read or display SPI op deadlocks for >TASK_WDT_TIMEOUT_S (45s) the
+    // panic handler kicks in and reboots — far better than a frozen UI.
+    esp_task_wdt_add(NULL);
+
     while (true) {
         if (!s_spi) {
+            esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
+        esp_task_wdt_reset();
 
         if (!g_system_ready) {
             static bool boot_screen_drawn = false;

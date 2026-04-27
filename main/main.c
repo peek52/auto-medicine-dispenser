@@ -332,13 +332,18 @@ void app_main(void)
     web_log_init();
     esp_log_level_set("i2c.master", ESP_LOG_NONE);
     ESP_LOGI(TAG, "Starting Unified Cam & Modules (ESP32-P4 Nano)");
-    if (s_boot_magic != BOOT_MAGIC) {
+    esp_reset_reason_t _early_reason = esp_reset_reason();
+    // POWERON definitively means the chip lost power — wipe all RTC-NOINIT
+    // state regardless of whatever bytes happen to be in s_boot_magic
+    // (RTC RAM doesn't reliably zero on power-loss, so the magic check
+    // alone is unreliable). Otherwise honour the magic so SW resets keep
+    // boot_count + consec_sw_resets across the reboot.
+    if (_early_reason == ESP_RST_POWERON || s_boot_magic != BOOT_MAGIC) {
         s_boot_magic = BOOT_MAGIC;
         s_boot_count = 0;
         s_consec_sw_resets = 0;
     }
     s_boot_count++;
-    esp_reset_reason_t _early_reason = esp_reset_reason();
     // Count both clean SW restarts (esp_restart from watchdog) and panics
     // — both leave the I2C bus in the same hung state and need a real
     // power-cycle, so neither benefits from another auto-restart.

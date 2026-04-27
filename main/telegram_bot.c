@@ -839,7 +839,12 @@ static void telegram_enqueue_text(const char *msg, bool with_keyboard)
     args->with_keyboard = with_keyboard;
 
     if (xQueueSend(s_tg_text_queue, &args, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "Telegram text queue full — dropping message");
+        // Queue full — instead of silently dropping, persist the message
+        // through offline_sync so the next time the worker drains it can
+        // get sent. Caller doesn't lose a low-stock alert just because
+        // 16 other messages stacked up at the same moment.
+        ESP_LOGW(TAG, "Telegram text queue full — falling back to offline_sync");
+        offline_sync_queue_telegram_text(args->message);
         telegram_free_text_args(args);
     }
 }
