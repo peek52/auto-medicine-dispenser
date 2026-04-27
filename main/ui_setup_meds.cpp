@@ -652,18 +652,19 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
         force_redraw = true;
         return;
     } else if (ty_n >= 6 && ty_n <= 40 && tx_n >= 330 && tx_n <= 470) {
-        // SAVE button: only require name + slots. Count=0 is allowed because
-        // VL53 sensor will measure and update the actual fill count
-        // automatically once the user finishes editing this med (the
-        // ui_meds_edit_in_progress() gate releases when leaving this page).
+        // SAVE button: name is the only hard requirement. Count=0 and
+        // slots=0 are both allowed:
+        //  - count=0 → VL53 sensor will fill in the real value once the
+        //    user leaves this page (ui_meds_edit_in_progress releases).
+        //  - slots=0 → user explicitly unchecked every meal slot to cancel
+        //    automatic dispensing for this med (still keeps the entry so
+        //    they can re-enable later without re-typing the name).
         const netpie_shadow_t *sh_check = netpie_get_shadow();
-        bool has_name  = (sh_check->med[med_idx].name[0] != '\0');
-        bool has_slots = (sh_check->med[med_idx].slots != 0);
+        bool has_name = (sh_check->med[med_idx].name[0] != '\0');
         if (!has_name) {
+            // No name → wipe the row entirely so the list shows it as blank.
             netpie_shadow_update_count(med_idx + 1, 0);
             netpie_shadow_update_med_slots(med_idx + 1, 0);
-        } else if (!has_slots) {
-            return;  // Need at least one meal slot picked
         }
         dfplayer_play_track(14);
         s_validation_popup = false;

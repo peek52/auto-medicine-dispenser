@@ -178,13 +178,13 @@ static void keyboard_submit(void)
 
 static void draw_keyboard_input_box(void)
 {
+    // Always use the UTF-8 renderer so the font/size never changes mid-type
+    // (the previous code switched to FreeSans12pt for ASCII-only input,
+    // which caused the visible "first character looks different" glitch
+    // when the keyboard later flipped into Thai mode).
     fill_round_rect_frame(8, 38, 380, 30, 6, 0xFFFF, 0xFFFF);
-    if (kb_can_use_th() || ui_utf8_has_non_ascii(kb_input_buf)) {
-        fill_rect(16, 42, 364, 22, 0xFFFF);
-        ui_utf8_draw_text(16, 41, kb_input_buf, 0x0000);
-    } else {
-        draw_string_gfx(16, 60, kb_input_buf, 0x0000, 0xFFFF, &FreeSans12pt7b);
-    }
+    fill_rect(16, 42, 364, 22, 0xFFFF);
+    ui_utf8_draw_text(16, 41, kb_input_buf, 0x0000);
 }
 
 static void draw_th_key_label(const char *label, int16_t x, int16_t y, int16_t w, int16_t h, uint16_t fg, uint16_t bg)

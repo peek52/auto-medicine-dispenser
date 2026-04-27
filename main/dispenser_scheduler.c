@@ -48,7 +48,7 @@ static const char *SLOT_LABELS[7] = {
 static char s_last_triggered[6] = "";   // "HH:MM" ที่ trigger ล่าสุด
 
 // cache next dose string สำหรับ display
-static char s_next_dose[32] = "No schedule";
+static char s_next_dose[64] = "No schedule";
 
 // track missed slots for today
 static uint8_t g_missed_slots_mask = 0;
@@ -137,7 +137,14 @@ static void update_next_dose_str(int cur_h, int cur_m)
     if (best_slot < 0) {
         snprintf(s_next_dose, sizeof(s_next_dose), "No schedule");
     } else {
-        snprintf(s_next_dose, sizeof(s_next_dose), "%s  %s",
+        // If the best matching slot is past today's midnight (i.e., all of
+        // today's doses are done), prefix the label with "พรุ่งนี้" so the
+        // standby screen makes it obvious the next round isn't today.
+        int minutes_to_midnight = (24 * 60) - (cur_h * 60 + cur_m);
+        bool is_tomorrow = (best_min > minutes_to_midnight);
+        const char *prefix = is_tomorrow ? "พรุ่งนี้ " : "";
+        snprintf(s_next_dose, sizeof(s_next_dose), "%s%s  %s",
+                 prefix,
                  SLOT_LABELS[best_slot],
                  netpie_get_shadow()->slot_time[best_slot]);
     }
