@@ -1150,15 +1150,19 @@ esp_err_t access_save_handler(httpd_req_t *req)
     return httpd_resp_send(req, ok ? "{\"ok\":true}" : "{\"ok\":false}", HTTPD_RESP_USE_STRLEN);
 }
 
-static uint8_t s_web_sound_volume = 20;
-static int s_web_alarm_track = 1;
-static int s_web_disp_th_track = 83;
-static int s_web_ret_th_track = 84;
-static int s_web_nomeds_th_track = 85;
-static int s_web_disp_en_track = 86;
-static int s_web_ret_en_track = 87;
-static int s_web_nomeds_en_track = 88;
-static int s_web_button_track = 10;
+// Sound config now reads/writes the live g_snd_* globals (used by every
+// dispenser_scheduler / ui_* play call) and persists via settings_save_nvs,
+// so changes from the web survive reboots and immediately affect playback.
+extern int g_snd_alarm;
+extern int g_snd_disp_th;
+extern int g_snd_return_th;
+extern int g_snd_nomeds_th;
+extern int g_snd_disp_en;
+extern int g_snd_return_en;
+extern int g_snd_nomeds_en;
+extern int g_snd_button;
+extern int g_alert_volume;
+extern void settings_save_nvs(void);
 
 static int read_form_int_or_keep(const char *body, const char *key, int current, int min_v, int max_v)
 {
@@ -1180,12 +1184,12 @@ esp_err_t sound_state_handler(httpd_req_t *req)
 
     char json[256];
     snprintf(json, sizeof(json),
-             "{\"ok\":true,\"volume\":%u,\"alarm\":%d,\"disp_th\":%d,\"ret_th\":%d,"
+             "{\"ok\":true,\"volume\":%d,\"alarm\":%d,\"disp_th\":%d,\"ret_th\":%d,"
              "\"nomeds_th\":%d,\"disp_en\":%d,\"ret_en\":%d,\"nomeds_en\":%d,\"button\":%d}",
-             (unsigned)s_web_sound_volume,
-             s_web_alarm_track, s_web_disp_th_track, s_web_ret_th_track,
-             s_web_nomeds_th_track, s_web_disp_en_track, s_web_ret_en_track,
-             s_web_nomeds_en_track, s_web_button_track);
+             g_alert_volume,
+             g_snd_alarm, g_snd_disp_th, g_snd_return_th,
+             g_snd_nomeds_th, g_snd_disp_en, g_snd_return_en,
+             g_snd_nomeds_en, g_snd_button);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
     return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
@@ -1206,18 +1210,21 @@ esp_err_t sound_save_handler(httpd_req_t *req)
         int v = atoi(volume);
         if (v < 0) v = 0;
         if (v > 30) v = 30;
-        s_web_sound_volume = (uint8_t)v;
-        dfplayer_set_volume(s_web_sound_volume);
+        g_alert_volume = v;
+        dfplayer_set_volume((uint8_t)v);
     }
 
-    s_web_alarm_track = read_form_int_or_keep(body, "alarm", s_web_alarm_track, 1, 999);
-    s_web_disp_th_track = read_form_int_or_keep(body, "disp_th", s_web_disp_th_track, 1, 999);
-    s_web_ret_th_track = read_form_int_or_keep(body, "ret_th", s_web_ret_th_track, 1, 999);
-    s_web_nomeds_th_track = read_form_int_or_keep(body, "nomeds_th", s_web_nomeds_th_track, 1, 999);
-    s_web_disp_en_track = read_form_int_or_keep(body, "disp_en", s_web_disp_en_track, 1, 999);
-    s_web_ret_en_track = read_form_int_or_keep(body, "ret_en", s_web_ret_en_track, 1, 999);
-    s_web_nomeds_en_track = read_form_int_or_keep(body, "nomeds_en", s_web_nomeds_en_track, 1, 999);
-    s_web_button_track = read_form_int_or_keep(body, "button", s_web_button_track, 1, 999);
+    g_snd_alarm     = read_form_int_or_keep(body, "alarm",     g_snd_alarm,     1, 999);
+    g_snd_disp_th   = read_form_int_or_keep(body, "disp_th",   g_snd_disp_th,   1, 999);
+    g_snd_return_th = read_form_int_or_keep(body, "ret_th",    g_snd_return_th, 1, 999);
+    g_snd_nomeds_th = read_form_int_or_keep(body, "nomeds_th", g_snd_nomeds_th, 1, 999);
+    g_snd_disp_en   = read_form_int_or_keep(body, "disp_en",   g_snd_disp_en,   1, 999);
+    g_snd_return_en = read_form_int_or_keep(body, "ret_en",    g_snd_return_en, 1, 999);
+    g_snd_nomeds_en = read_form_int_or_keep(body, "nomeds_en", g_snd_nomeds_en, 1, 999);
+    g_snd_button    = read_form_int_or_keep(body, "button",    g_snd_button,    1, 999);
+
+    // Persist to NVS so the choice survives reboots.
+    settings_save_nvs();
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
@@ -1230,7 +1237,7 @@ esp_err_t sound_play_handler(httpd_req_t *req)
 
     char query[64] = {0};
     char track_s[16] = {0};
-    int track = s_web_alarm_track;
+    int track = g_snd_alarm;
     if (httpd_req_get_url_query_len(req) > 0 &&
         httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
         httpd_query_key_value(query, "track", track_s, sizeof(track_s)) == ESP_OK) {
@@ -1242,7 +1249,7 @@ esp_err_t sound_play_handler(httpd_req_t *req)
         return httpd_resp_send(req, "{\"ok\":false,\"error\":\"invalid_track\"}", HTTPD_RESP_USE_STRLEN);
     }
 
-    dfplayer_play_track_force_vol((uint16_t)track, s_web_sound_volume);
+    dfplayer_play_track_force_vol((uint16_t)track, (uint8_t)g_alert_volume);
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
 }
