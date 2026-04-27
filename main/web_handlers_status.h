@@ -46,5 +46,8 @@ esp_err_t sensors_json_handler(httpd_req_t *req);
 /* ── POST /sensors/config — ตั้งค่า tray config ต่อ channel ── */
 esp_err_t sensors_config_handler(httpd_req_t *req);
 
+/* ── POST /sensors/cal_capture — บันทึกระยะปัจจุบัน (full/empty) ── */
+esp_err_t sensors_capture_handler(httpd_req_t *req);
+
 /* ── GET /sensors — หน้าเว็บ real-time sensor ── */
 esp_err_t sensors_page_handler(httpd_req_t *req);

@@ -1324,6 +1324,85 @@ esp_err_t sensors_config_handler(httpd_req_t *req)
     return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
 }
 
+/* POST /sensors/cal_capture — capture the current sensor reading as either
+ * the "full" distance (cartridge loaded) or the "empty" distance (cartridge
+ * empty). When mode=empty, pill_height_mm is derived from the gap between
+ * the empty reading and the saved full distance, divided by max_pills.
+ *
+ * body: ch=N&mode=full   → full_dist_mm = current filtered_mm
+ *       ch=N&mode=empty  → pill_height_mm = (current - full_dist) / max_pills
+ */
+esp_err_t sensors_capture_handler(httpd_req_t *req)
+{
+    esp_err_t auth = web_require_tech_api_auth(req);
+    if (auth != ESP_OK) return auth;
+
+    char body[96] = {0};
+    int len = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (len < 0) return ESP_FAIL;
+    body[len] = '\0';
+
+    char ch_s[8] = {0};
+    char mode[16] = {0};
+    extract_form_value(body, "ch", ch_s, sizeof(ch_s));
+    extract_form_value(body, "mode", mode, sizeof(mode));
+    int ch = atoi(ch_s);
+
+    if (ch < 0 || ch >= PILL_SENSOR_COUNT) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"ok\":false,\"error\":\"invalid_ch\"}", HTTPD_RESP_USE_STRLEN);
+    }
+
+    const pill_sensor_status_t *all = pill_sensor_status_get_all();
+    const pill_sensor_status_t *s = &all[ch];
+    if (!s->present || !s->valid || s->filtered_mm <= 0) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"ok\":false,\"error\":\"no_live_reading\"}", HTTPD_RESP_USE_STRLEN);
+    }
+
+    int captured = s->filtered_mm;
+    int full_dist = s->full_dist_mm;
+    int pill_h    = s->pill_height_mm;
+    int max_pills = s->max_pills > 0 ? s->max_pills : 30;
+    char resp[160];
+
+    if (strcmp(mode, "full") == 0) {
+        full_dist = captured;
+        if (pill_h <= 0) pill_h = 1;
+        vl53l0x_set_channel_config(ch, full_dist, pill_h, max_pills);
+        snprintf(resp, sizeof(resp),
+                 "{\"ok\":true,\"mode\":\"full\",\"captured_mm\":%d,"
+                 "\"full_dist_mm\":%d,\"pill_height_mm\":%d,\"max_pills\":%d}",
+                 captured, full_dist, pill_h, max_pills);
+    } else if (strcmp(mode, "empty") == 0) {
+        if (full_dist <= 0 || captured <= full_dist || max_pills <= 0) {
+            httpd_resp_set_status(req, "409 Conflict");
+            httpd_resp_set_type(req, "application/json");
+            return httpd_resp_send(req,
+                "{\"ok\":false,\"error\":\"need_full_first_or_invalid_geometry\"}",
+                HTTPD_RESP_USE_STRLEN);
+        }
+        int derived = (captured - full_dist) / max_pills;
+        if (derived <= 0) derived = 1;
+        pill_h = derived;
+        vl53l0x_set_channel_config(ch, full_dist, pill_h, max_pills);
+        snprintf(resp, sizeof(resp),
+                 "{\"ok\":true,\"mode\":\"empty\",\"captured_mm\":%d,"
+                 "\"full_dist_mm\":%d,\"pill_height_mm\":%d,\"max_pills\":%d}",
+                 captured, full_dist, pill_h, max_pills);
+    } else {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"ok\":false,\"error\":\"mode_must_be_full_or_empty\"}",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+}
+
 esp_err_t sensors_page_handler(httpd_req_t *req)
 {
     esp_err_t auth = web_require_maintenance_auth(req);
