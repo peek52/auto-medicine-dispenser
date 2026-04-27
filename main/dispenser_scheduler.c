@@ -107,6 +107,9 @@ static int minutes_until(int cur_h, int cur_m, int tgt_h, int tgt_m)
     return tgt - cur;
 }
 
+/* Forward decl — definition is below in this file. */
+static bool telegram_lang_is_th(void);
+
 /* ── อัปเดต next dose string ── */
 static void update_next_dose_str(int cur_h, int cur_m)
 {
@@ -137,16 +140,21 @@ static void update_next_dose_str(int cur_h, int cur_m)
     if (best_slot < 0) {
         snprintf(s_next_dose, sizeof(s_next_dose), "No schedule");
     } else {
-        // If the best matching slot is past today's midnight (i.e., all of
-        // today's doses are done), prefix the label with "พรุ่งนี้" so the
-        // standby screen makes it obvious the next round isn't today.
         int minutes_to_midnight = (24 * 60) - (cur_h * 60 + cur_m);
         bool is_tomorrow = (best_min > minutes_to_midnight);
-        const char *prefix = is_tomorrow ? "พรุ่งนี้ " : "";
-        snprintf(s_next_dose, sizeof(s_next_dose), "%s%s  %s",
-                 prefix,
-                 SLOT_LABELS[best_slot],
-                 netpie_get_shadow()->slot_time[best_slot]);
+
+        if (is_tomorrow) {
+            // All of today's doses are done — show only a short language-
+            // matched label. Mixing the English SLOT_LABELS into a Thai-
+            // rendered line caused garbled output in EN mode and a clunky
+            // "พรุ่งนี้ Bedtime" mix in TH mode.
+            snprintf(s_next_dose, sizeof(s_next_dose), "%s",
+                     telegram_lang_is_th() ? "รอพรุ่งนี้" : "Tomorrow");
+        } else {
+            snprintf(s_next_dose, sizeof(s_next_dose), "%s  %s",
+                     SLOT_LABELS[best_slot],
+                     netpie_get_shadow()->slot_time[best_slot]);
+        }
     }
 }
 
