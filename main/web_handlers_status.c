@@ -21,6 +21,10 @@
 #include "esp_random.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_wifi.h"
+#include "esp_idf_version.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
@@ -551,6 +555,31 @@ esp_err_t status_json_handler(httpd_req_t *req) {
     cJSON_AddBoolToObject(root, "wifi_connected", is_online);
     cJSON_AddStringToObject(root, "ip", ip ? ip : "0.0.0.0");
     cJSON_AddStringToObject(root, "ssid", wifi_sta_get_ssid());
+
+    /* Runtime stats consumed by the /tech dashboard cards. */
+    extern uint32_t s_boot_count;
+    extern const char *reset_reason_str(esp_reset_reason_t reason);
+    cJSON_AddNumberToObject(root, "uptime_s",
+        (double)(xTaskGetTickCount() / configTICK_RATE_HZ));
+    cJSON_AddNumberToObject(root, "heap_free", (double)esp_get_free_heap_size());
+    cJSON_AddNumberToObject(root, "heap_min",
+        (double)esp_get_minimum_free_heap_size());
+    cJSON_AddNumberToObject(root, "boot_count", (double)s_boot_count);
+    cJSON_AddStringToObject(root, "reset_reason",
+        reset_reason_str(esp_reset_reason()));
+    cJSON_AddStringToObject(root, "idf_version", esp_get_idf_version());
+
+    int rssi_dbm = 0;
+    {
+        wifi_ap_record_t ap;
+        if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+            rssi_dbm = (int)ap.rssi;
+            cJSON_AddNumberToObject(root, "rssi", (double)rssi_dbm);
+        } else {
+            cJSON_AddNullToObject(root, "rssi");
+        }
+    }
+    cJSON_AddStringToObject(root, "time", t_str);  /* alias for tech dashboard */
     cJSON_AddBoolToObject(root, "pcf_present", pcf);
     cJSON_AddBoolToObject(root, "pca_present", pca);
     cJSON_AddBoolToObject(root, "rtc_present", rtc);

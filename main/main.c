@@ -40,7 +40,7 @@ static const char *TAG = "unified_cam";
 static void deferred_init_task(void *arg);
 static const uint32_t BOOT_MAGIC = 0xC0D62026u;
 RTC_NOINIT_ATTR static uint32_t s_boot_magic;
-RTC_NOINIT_ATTR static uint32_t s_boot_count;
+RTC_NOINIT_ATTR uint32_t s_boot_count;
 RTC_NOINIT_ATTR static uint32_t s_consec_sw_resets;
 static bool s_skip_i2c_restart = false;
 // Safe mode skips heavy I2C peripherals (VL53 sensors) when the previous
@@ -53,7 +53,7 @@ bool g_safe_mode = false;
 // screen so the user knows to power-cycle / apply the IDF patch.
 bool g_ultra_safe_mode = false;
 
-static const char *reset_reason_str(esp_reset_reason_t reason)
+const char *reset_reason_str(esp_reset_reason_t reason)
 {
     switch (reason) {
         case ESP_RST_UNKNOWN: return "UNKNOWN";
