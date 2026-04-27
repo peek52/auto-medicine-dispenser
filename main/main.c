@@ -530,7 +530,11 @@ void app_main(void)
         // After 2 minutes of stable runtime, clear the consecutive-panic
         // counter so the next reboot tries full mode again. Without this,
         // a single panic would force safe mode forever (until power loss).
-        if (uptime_s >= 120 && s_consec_sw_resets != 0) {
+        // Wait 5 min instead of 2 before declaring stability — the I2C
+        // race typically fires within the first 1–2 minutes if it's
+        // going to fire at all, but a 2 min window was sometimes
+        // clearing the counter just before a delayed crash.
+        if (uptime_s >= 300 && s_consec_sw_resets != 0) {
             ESP_LOGI(TAG, "Stable for %lus — clearing consec_sw_resets",
                      (unsigned long)uptime_s);
             s_consec_sw_resets = 0;

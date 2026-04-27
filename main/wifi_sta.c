@@ -125,8 +125,16 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
             s_retry_num++;
             ESP_LOGI(TAG, "Retry %d/%d...", s_retry_num, MAX_RETRY);
         } else {
+            // Don't give up forever — if the router rebooted or the
+            // signal blipped, the board would otherwise stay offline
+            // until the user power-cycles. Reset the counter and try
+            // again so reconnect happens on the next disconnect event.
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
             display_clock_set_ip("0.0.0.0");
+            s_retry_num = 0;
+            ESP_LOGW(TAG, "Wi-Fi reconnect attempts exhausted — "
+                          "resetting counter for next try");
+            esp_wifi_connect();
         }
     } else if (base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *ev = (ip_event_got_ip_t *)event_data;
