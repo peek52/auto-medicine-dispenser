@@ -18,10 +18,11 @@ static size_t s_jpeg_len[JPEG_BUFS] = {0, 0, 0};
 static volatile int s_write_idx = 0;
 static volatile int s_read_idx = -1;
 static volatile int s_active_read_idx = -1;
-// Default tuned for "smooth stream" — lower than the libjpeg default but
-// still readable. The Tech dashboard's slider can raise/lower it live
-// (clamped to 20..90 in clamp_jpeg_quality below).
-static int s_jpeg_quality = 35;
+// Default tuned for "smooth stream" over the ESP-Hosted SDIO link. At
+// quality > ~50 the link runs out of headroom and frames tear (visible
+// as a horizontal split in the rendered image). The Tech dashboard's
+// slider caps user input at 60 for the same reason.
+static int s_jpeg_quality = 30;
 
 static SemaphoreHandle_t s_swap_mutex = NULL;
 static SemaphoreHandle_t s_frame_ready = NULL;
@@ -29,7 +30,7 @@ static SemaphoreHandle_t s_read_mutex = NULL;
 
 static int clamp_jpeg_quality(int quality) {
     if (quality < 20) return 20;
-    if (quality > 90) return 90;
+    if (quality > 60) return 60;  // hard cap — see comment on s_jpeg_quality
     return quality;
 }
 
