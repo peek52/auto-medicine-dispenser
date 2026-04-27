@@ -954,3 +954,20 @@ extern "C" void display_clock_start_task(void)
     }
     ESP_LOGI(TAG, "Clock task started");
 }
+
+extern "C" void display_clock_show_ultra_safe(void)
+{
+    // Static message screen for ultra-safe mode (no I2C, no clock_task,
+    // no touch polling). Shown when the board has crashed >=3 times in
+    // a row — the I2C driver race won't recover without applying the
+    // NULL-guard patch + reflashing.
+    if (!s_spi) return;
+    fill_screen(0x0000);
+    // "ULTRA SAFE MODE" — ascii so we don't depend on UTF-8 helpers
+    draw_string_centered(LCD_W / 2, 90, "ULTRA SAFE MODE", 0xFFE0, 0x0000, &FreeSans18pt7b);
+    draw_string_centered(LCD_W / 2, 140, "I2C bus wedged", 0xFFFF, 0x0000, &FreeSans12pt7b);
+    draw_string_centered(LCD_W / 2, 170, "Apply IDF NULL-guard patch", 0xFFFF, 0x0000, &FreeSans9pt7b);
+    draw_string_centered(LCD_W / 2, 195, "and reflash to recover", 0xFFFF, 0x0000, &FreeSans9pt7b);
+    draw_string_centered(LCD_W / 2, 240, "or unplug USB for 10 sec", 0xAD55, 0x0000, &FreeSans9pt7b);
+    draw_string_centered(LCD_W / 2, 265, "to power-cycle the bus", 0xAD55, 0x0000, &FreeSans9pt7b);
+}

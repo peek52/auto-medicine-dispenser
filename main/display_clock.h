@@ -18,6 +18,9 @@ void display_clock_start_task(void);
 /** Update the IP address shown at the bottom of the screen. */
 void display_clock_set_ip(const char *ip);
 
+/** Draw the ultra-safe-mode static message (no clock_task running). */
+void display_clock_show_ultra_safe(void);
+
 #ifdef __cplusplus
 }
 #endif

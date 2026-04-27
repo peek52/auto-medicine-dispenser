@@ -48,6 +48,10 @@ static bool s_skip_i2c_restart = false;
 // to re-trigger the same i2c_master ISR race and put the board in a death
 // loop. Skipping VL53 lets the UI come up so the user can recover.
 bool g_safe_mode = false;
+// Ultra safe mode (≥3 consecutive panics) skips ALL I2C peripherals and
+// the touch-polling clock_task. The board boots to a static message
+// screen so the user knows to power-cycle / apply the IDF patch.
+bool g_ultra_safe_mode = false;
 
 static const char *reset_reason_str(esp_reset_reason_t reason)
 {
@@ -348,6 +352,7 @@ void app_main(void)
     // self-restarts that didn't fix the bus — the user must power-cycle.
     if (s_consec_sw_resets >= 3) {
         s_skip_i2c_restart = true;
+        g_ultra_safe_mode = true;
     }
     if (s_consec_sw_resets >= 1 && _early_reason == ESP_RST_PANIC) {
         g_safe_mode = true;
@@ -355,7 +360,8 @@ void app_main(void)
     esp_reset_reason_t reason = esp_reset_reason();
     ESP_LOGW(TAG, "Boot #%lu, reset reason: %s (%d)%s",
              (unsigned long)s_boot_count, reset_reason_str(reason), (int)reason,
-             g_safe_mode ? "  [SAFE MODE — VL53 disabled]" : "");
+             g_ultra_safe_mode ? "  [ULTRA SAFE — all I2C off]"
+             : g_safe_mode ? "  [SAFE MODE — VL53 disabled]" : "");
 
     // 1. Initialize NVS
     esp_err_t ret = nvs_flash_init();
@@ -375,12 +381,18 @@ void app_main(void)
 
     // 2. Initialize Shared I2C Bus (GPIO7/8, 50kHz)
     bool i2c_ready = false;
-    ret = i2c_manager_init();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "I2C bus init failed: %s", esp_err_to_name(ret));
-        ESP_LOGW(TAG, "Continuing without I2C peripherals");
+    if (g_ultra_safe_mode) {
+        ESP_LOGW(TAG, "Ultra safe mode: skipping I2C bus init entirely "
+                      "(>=3 consecutive panics — please apply i2c_master "
+                      "NULL guard patch and rebuild)");
     } else {
-        i2c_ready = true;
+        ret = i2c_manager_init();
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "I2C bus init failed: %s", esp_err_to_name(ret));
+            ESP_LOGW(TAG, "Continuing without I2C peripherals");
+        } else {
+            i2c_ready = true;
+        }
     }
     if (i2c_ready) {
 
@@ -434,7 +446,13 @@ void app_main(void)
     }
     // Display hardware init first, then start the periodic UI task immediately.
     display_clock_init();
-    display_clock_start_task();
+    if (g_ultra_safe_mode) {
+        display_clock_show_ultra_safe();
+        ESP_LOGW(TAG, "Ultra safe mode: clock_task NOT started — "
+                      "static message on screen, no touch polling");
+    } else {
+        display_clock_start_task();
+    }
 #if ENABLE_SD_CARD
     if (sd_card_init() != ESP_OK) {
         ESP_LOGW(TAG, "SD card not available");
@@ -455,7 +473,9 @@ void app_main(void)
         }
     }
 
-    if (g_safe_mode) {
+    if (g_ultra_safe_mode) {
+        ESP_LOGW(TAG, "Ultra safe mode: skipping all init tasks");
+    } else if (g_safe_mode) {
         if (xTaskCreate(safe_mode_init_task, "safe_init", 4096, NULL, 5, NULL) != pdPASS) {
             ESP_LOGE(TAG, "Failed to create safe_mode_init task");
         }
