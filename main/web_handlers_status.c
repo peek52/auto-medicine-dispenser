@@ -1161,6 +1161,10 @@ extern int g_snd_disp_en;
 extern int g_snd_return_en;
 extern int g_snd_nomeds_en;
 extern int g_snd_button;
+extern int g_snd_volup_th;
+extern int g_snd_volup_en;
+extern int g_snd_voldn_th;
+extern int g_snd_voldn_en;
 extern int g_alert_volume;
 extern void settings_save_nvs(void);
 
@@ -1182,14 +1186,16 @@ esp_err_t sound_state_handler(httpd_req_t *req)
     esp_err_t auth = web_require_maintenance_api_auth(req);
     if (auth != ESP_OK) return auth;
 
-    char json[256];
+    char json[384];
     snprintf(json, sizeof(json),
              "{\"ok\":true,\"volume\":%d,\"alarm\":%d,\"disp_th\":%d,\"ret_th\":%d,"
-             "\"nomeds_th\":%d,\"disp_en\":%d,\"ret_en\":%d,\"nomeds_en\":%d,\"button\":%d}",
+             "\"nomeds_th\":%d,\"disp_en\":%d,\"ret_en\":%d,\"nomeds_en\":%d,\"button\":%d,"
+             "\"volup_th\":%d,\"volup_en\":%d,\"voldn_th\":%d,\"voldn_en\":%d}",
              g_alert_volume,
              g_snd_alarm, g_snd_disp_th, g_snd_return_th,
              g_snd_nomeds_th, g_snd_disp_en, g_snd_return_en,
-             g_snd_nomeds_en, g_snd_button);
+             g_snd_nomeds_en, g_snd_button,
+             g_snd_volup_th, g_snd_volup_en, g_snd_voldn_th, g_snd_voldn_en);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
     return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
@@ -1222,6 +1228,10 @@ esp_err_t sound_save_handler(httpd_req_t *req)
     g_snd_return_en = read_form_int_or_keep(body, "ret_en",    g_snd_return_en, 1, 999);
     g_snd_nomeds_en = read_form_int_or_keep(body, "nomeds_en", g_snd_nomeds_en, 1, 999);
     g_snd_button    = read_form_int_or_keep(body, "button",    g_snd_button,    1, 999);
+    g_snd_volup_th  = read_form_int_or_keep(body, "volup_th",  g_snd_volup_th,  1, 999);
+    g_snd_volup_en  = read_form_int_or_keep(body, "volup_en",  g_snd_volup_en,  1, 999);
+    g_snd_voldn_th  = read_form_int_or_keep(body, "voldn_th",  g_snd_voldn_th,  1, 999);
+    g_snd_voldn_en  = read_form_int_or_keep(body, "voldn_en",  g_snd_voldn_en,  1, 999);
 
     // Persist to NVS so the choice survives reboots.
     settings_save_nvs();

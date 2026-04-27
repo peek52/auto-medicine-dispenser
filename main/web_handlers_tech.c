@@ -298,9 +298,9 @@ static const char TECH_PAGE[] =
 "(new MutationObserver(()=>{const p=document.querySelector('[data-panel=calibrate]');if(p&&p.classList.contains('active'))calRender();})).observe(document.querySelector('[data-panel=calibrate]'),{attributes:true,attributeFilter:['class']});"
 
 /* Sound config panel */
-"const SOUND_FIELDS=[{k:'alarm',label:'เสียงเตือนหลัก'},{k:'button',label:'เสียงปุ่ม'},{k:'disp_th',label:'จ่ายยาสำเร็จ (TH)'},{k:'ret_th',label:'คืนยาสำเร็จ (TH)'},{k:'nomeds_th',label:'ไม่พบยา (TH)'},{k:'disp_en',label:'Dispensed (EN)'},{k:'ret_en',label:'Returned (EN)'},{k:'nomeds_en',label:'No medication (EN)'}];"
+"const SOUND_FIELDS=[{k:'alarm',label:'เสียงเตือนหลัก'},{k:'button',label:'เสียงปุ่ม'},{k:'volup_th',label:'เพิ่มเสียง (TH)'},{k:'voldn_th',label:'ลดเสียง (TH)'},{k:'volup_en',label:'Increase (EN)'},{k:'voldn_en',label:'Decrease (EN)'},{k:'disp_th',label:'จ่ายยาสำเร็จ (TH)'},{k:'ret_th',label:'คืนยาสำเร็จ (TH)'},{k:'nomeds_th',label:'ไม่พบยา (TH)'},{k:'disp_en',label:'Dispensed (EN)'},{k:'ret_en',label:'Returned (EN)'},{k:'nomeds_en',label:'No medication (EN)'}];"
 "async function sndRender(){"
-"  let cfg={alarm:1,button:10,disp_th:83,ret_th:84,nomeds_th:85,disp_en:86,ret_en:87,nomeds_en:88,volume:25};"
+"  let cfg={alarm:1,button:10,disp_th:83,ret_th:84,nomeds_th:85,disp_en:86,ret_en:87,nomeds_en:88,volup_th:95,volup_en:97,voldn_th:96,voldn_en:98,volume:25};"
 "  try{const r=await fetch('/sound/config',{cache:'no-store'});if(r.ok){const j=await r.json();if(j.ok)Object.assign(cfg,j);}}catch(e){}"
 "  const wrap=document.getElementById('sound-cards');let h='';"
 "  h+=\"<div class='card'><div class='k'>ระดับเสียงทดสอบ (0-30)</div><input id='snd_volume' type='number' min='0' max='30' value='\"+cfg.volume+\"' style='width:100%;margin-top:8px;padding:8px;border-radius:8px;border:1px solid #35567f;background:#06101e;color:#f4f8ff'></div>\";"

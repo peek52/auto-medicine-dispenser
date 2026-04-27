@@ -26,6 +26,10 @@ int g_snd_disp_en   = 86;  // EN: Dispensed successfully
 int g_snd_return_en = 87;  // EN: Returned successfully
 int g_snd_nomeds_en = 88;  // EN: No medication detected
 int g_snd_button    = 10;  // Button click sound
+int g_snd_volup_th  = 95;  // TH: เพิ่ม
+int g_snd_volup_en  = 97;  // EN: increase
+int g_snd_voldn_th  = 96;  // TH: ลด
+int g_snd_voldn_en  = 98;  // EN: decrease
 
 #define CARD_X          12
 #define CARD_W          (LCD_W - 24)
@@ -105,6 +109,10 @@ void settings_save_nvs(void)
         nvs_set_i16(h, "snd_ren",    (int16_t)g_snd_return_en);
         nvs_set_i16(h, "snd_nen",    (int16_t)g_snd_nomeds_en);
         nvs_set_i16(h, "snd_btn",    (int16_t)g_snd_button);
+        nvs_set_i16(h, "snd_vupth",  (int16_t)g_snd_volup_th);
+        nvs_set_i16(h, "snd_vupen",  (int16_t)g_snd_volup_en);
+        nvs_set_i16(h, "snd_vdnth",  (int16_t)g_snd_voldn_th);
+        nvs_set_i16(h, "snd_vden",   (int16_t)g_snd_voldn_en);
         nvs_commit(h);
         nvs_close(h);
         ESP_LOGI(TAG, "Settings saved: alt=%d nav=%d en=%d lang=%d",
@@ -151,6 +159,17 @@ void settings_load_nvs(void)
         int16_t sbtn = 10;
         nvs_get_i16(h, "snd_btn", &sbtn);
         if (sbtn > 0 && sbtn < 200) g_snd_button = sbtn;
+
+        int16_t vupth = g_snd_volup_th, vupen = g_snd_volup_en;
+        int16_t vdnth = g_snd_voldn_th, vden  = g_snd_voldn_en;
+        nvs_get_i16(h, "snd_vupth", &vupth);
+        nvs_get_i16(h, "snd_vupen", &vupen);
+        nvs_get_i16(h, "snd_vdnth", &vdnth);
+        nvs_get_i16(h, "snd_vden",  &vden);
+        if (vupth > 0 && vupth < 200) g_snd_volup_th = vupth;
+        if (vupen > 0 && vupen < 200) g_snd_volup_en = vupen;
+        if (vdnth > 0 && vdnth < 200) g_snd_voldn_th = vdnth;
+        if (vden  > 0 && vden  < 200) g_snd_voldn_en = vden;
         ESP_LOGI(TAG, "Settings loaded: alt=%d nav=%d en=%d lang=%d",
                  g_alert_volume, g_nav_volume, g_nav_sound_enabled, g_ui_language);
     }
@@ -462,16 +481,42 @@ void ui_settings_handle_touch(uint16_t tx_n, uint16_t ty_n)
         }
     }
 
+    // Voice feedback for +/- presses: เพิ่ม / ลด (TH) or increase / decrease
+    // (EN). Uses the dedicated track numbers stored in NVS so the technician
+    // can swap them from the web panel.
+    int feedback_track = 0;
+    if (changed_alert || changed_nav) {
+        bool is_th = (g_ui_language == UI_LANG_TH);
+        // alert volume + : we know it changed if g_alert_volume just went up
+        // We can't know direction from the changed_* flags above so derive
+        // from which button rect was hit. Easier: check the input coords.
+        bool plus_hit = (tx_n >= settings_plus_x(changed_alert) &&
+                         tx_n <= settings_plus_x(changed_alert) + BTN_W);
+        if (plus_hit) {
+            feedback_track = is_th ? g_snd_volup_th : g_snd_volup_en;
+        } else {
+            feedback_track = is_th ? g_snd_voldn_th : g_snd_voldn_en;
+        }
+    }
+
     if (changed_alert) {
         settings_save_nvs();
         dfplayer_stop();
         vTaskDelay(pdMS_TO_TICKS(50));
-        dfplayer_play_track_force_vol(g_snd_alarm, g_alert_volume);
+        if (feedback_track > 0) {
+            dfplayer_play_track_force_vol((uint16_t)feedback_track, g_alert_volume);
+        } else {
+            dfplayer_play_track_force_vol(g_snd_alarm, g_alert_volume);
+        }
     } else if (changed_nav) {
         settings_save_nvs();
         dfplayer_stop();
         vTaskDelay(pdMS_TO_TICKS(50));
-        dfplayer_play_track_force_vol(g_snd_button, g_nav_volume);
+        if (feedback_track > 0) {
+            dfplayer_play_track_force_vol((uint16_t)feedback_track, g_nav_volume);
+        } else {
+            dfplayer_play_track_force_vol(g_snd_button, g_nav_volume);
+        }
     } else if (changed) {
         settings_save_nvs();
     }
