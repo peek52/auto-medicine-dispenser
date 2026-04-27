@@ -714,18 +714,18 @@ static void telegram_send_snapshot_reply(const char *caption)
     }
 }
 
-static void telegram_send_task(void *pvParameters)
+// Perform the actual HTTPS POST for a queued text item. Caller transfers
+// ownership of *args; this helper frees them before returning.
+static void telegram_do_send_text(tg_task_args_t *args)
 {
-    tg_task_args_t *args = (tg_task_args_t *)pvParameters;
     if (!args || !args->message) {
-        vTaskDelete(NULL);
+        telegram_free_text_args(args);
         return;
     }
 
     const char *bot_token = cloud_secrets_get_telegram_token();
     if (!bot_token || !bot_token[0]) {
         telegram_free_text_args(args);
-        vTaskDelete(NULL);
         return;
     }
 
@@ -736,13 +736,12 @@ static void telegram_send_task(void *pvParameters)
     if (!post_data) {
         ESP_LOGE(TAG, "Failed to build Telegram JSON payload");
         telegram_free_text_args(args);
-        vTaskDelete(NULL);
         return;
     }
 
     esp_http_client_config_t config = {
         .url = url,
-        .crt_bundle_attach = esp_crt_bundle_attach, // Attach root certificates locally!
+        .crt_bundle_attach = esp_crt_bundle_attach,
         .timeout_ms = 15000,
     };
 
@@ -751,7 +750,6 @@ static void telegram_send_task(void *pvParameters)
         ESP_LOGE(TAG, "Failed to initialize HTTP client");
         free(post_data);
         telegram_free_text_args(args);
-        vTaskDelete(NULL);
         return;
     }
 
@@ -760,7 +758,6 @@ static void telegram_send_task(void *pvParameters)
         esp_http_client_cleanup(client);
         free(post_data);
         telegram_free_text_args(args);
-        vTaskDelete(NULL);
         return;
     }
 
@@ -787,48 +784,74 @@ static void telegram_send_task(void *pvParameters)
     telegram_http_unlock();
     free(post_data);
     telegram_free_text_args(args);
-    vTaskDelete(NULL);
+}
+
+// Single dispatcher task — every telegram_send_text/_with_keyboard caller
+// just enqueues a tg_task_args_t* here and returns immediately. Replaces
+// the old "spawn 10KB task per call" pattern that could pile up dozens
+// of tasks during a busy minute (5 pre-alerts × N modules + bot replies)
+// and exhaust heap.
+#define TG_TEXT_QUEUE_DEPTH 16
+static QueueHandle_t s_tg_text_queue = NULL;
+static TaskHandle_t  s_tg_text_worker = NULL;
+
+static void telegram_text_worker(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        tg_task_args_t *item = NULL;
+        if (xQueueReceive(s_tg_text_queue, &item, portMAX_DELAY) == pdTRUE && item) {
+            telegram_do_send_text(item);
+        }
+    }
+}
+
+static bool telegram_text_dispatcher_ready(void)
+{
+    if (s_tg_text_queue && s_tg_text_worker) return true;
+    if (!s_tg_text_queue) {
+        s_tg_text_queue = xQueueCreate(TG_TEXT_QUEUE_DEPTH, sizeof(tg_task_args_t *));
+        if (!s_tg_text_queue) {
+            ESP_LOGE(TAG, "Failed to create Telegram text queue");
+            return false;
+        }
+    }
+    if (!s_tg_text_worker) {
+        if (xTaskCreate(telegram_text_worker, "tg_text_wrk", 10240,
+                        NULL, 5, &s_tg_text_worker) != pdPASS) {
+            s_tg_text_worker = NULL;
+            ESP_LOGE(TAG, "Failed to create Telegram text worker");
+            return false;
+        }
+    }
+    return true;
+}
+
+static void telegram_enqueue_text(const char *msg, bool with_keyboard)
+{
+    if (!msg || !cloud_secrets_has_telegram()) return;
+    if (!telegram_text_dispatcher_ready()) return;
+
+    tg_task_args_t *args = malloc(sizeof(tg_task_args_t));
+    if (!args) return;
+    args->message = strdup(msg);
+    if (!args->message) { free(args); return; }
+    args->with_keyboard = with_keyboard;
+
+    if (xQueueSend(s_tg_text_queue, &args, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "Telegram text queue full — dropping message");
+        telegram_free_text_args(args);
+    }
 }
 
 void telegram_send_text(const char *msg)
 {
-    if (!msg || !cloud_secrets_has_telegram()) return;
-
-    tg_task_args_t *args = malloc(sizeof(tg_task_args_t));
-    if (!args) return;
-
-    args->message = strdup(msg);
-    if (!args->message) {
-        free(args);
-        return;
-    }
-    args->with_keyboard = false;
-
-    // Fire and forget via a background task so it doesn't block the UI or Scheduler threads.
-    if (xTaskCreate(telegram_send_task, "tg_send_task", 10240, args, 5, NULL) != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create Telegram send task");
-        telegram_free_text_args(args);
-    }
+    telegram_enqueue_text(msg, false);
 }
 
 static void telegram_send_text_with_keyboard(const char *msg)
 {
-    if (!msg || !cloud_secrets_has_telegram()) return;
-
-    tg_task_args_t *args = malloc(sizeof(tg_task_args_t));
-    if (!args) return;
-
-    args->message = strdup(msg);
-    if (!args->message) {
-        free(args);
-        return;
-    }
-    args->with_keyboard = true;
-
-    if (xTaskCreate(telegram_send_task, "tg_send_task", 10240, args, 5, NULL) != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create Telegram send task with keyboard");
-        telegram_free_text_args(args);
-    }
+    telegram_enqueue_text(msg, true);
 }
 
 typedef struct {

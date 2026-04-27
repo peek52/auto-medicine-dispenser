@@ -7,10 +7,25 @@
 #include "telegram_bot.h"
 #include "ui_settings_thai_labels.h"
 #include "ui_utf8_text.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include <stdio.h>
 #include <string.h>
 
 static const char *TAG = "ui_settings";
+
+// Serialize NVS writes to the "settings" namespace. The web tech panel
+// (/sound/save) and the on-device +/- volume handlers can both call
+// settings_save_nvs concurrently; NVS itself is thread-safe per-handle
+// but rapid open/commit/close races can corrupt the in-flight log.
+static SemaphoreHandle_t s_settings_nvs_mutex = NULL;
+
+static void settings_nvs_lock_init(void)
+{
+    if (!s_settings_nvs_mutex) {
+        s_settings_nvs_mutex = xSemaphoreCreateMutex();
+    }
+}
 
 int g_alert_volume       = 25;
 int g_nav_volume         = 15;
@@ -95,6 +110,9 @@ static int16_t draw_utf8_text_line(int16_t x, int16_t y, const char *text, uint1
 
 void settings_save_nvs(void)
 {
+    settings_nvs_lock_init();
+    if (s_settings_nvs_mutex) xSemaphoreTake(s_settings_nvs_mutex, portMAX_DELAY);
+
     nvs_handle_t h;
     if (nvs_open("settings", NVS_READWRITE, &h) == ESP_OK) {
         nvs_set_i16(h, "vol_alt", (int16_t)g_alert_volume);
@@ -120,6 +138,8 @@ void settings_save_nvs(void)
     }
 
     telegram_set_language((g_ui_language == UI_LANG_TH) ? TELEGRAM_LANG_TH : TELEGRAM_LANG_EN);
+
+    if (s_settings_nvs_mutex) xSemaphoreGive(s_settings_nvs_mutex);
 }
 
 void settings_load_nvs(void)
