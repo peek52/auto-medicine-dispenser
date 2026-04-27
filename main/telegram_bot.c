@@ -696,9 +696,17 @@ static void telegram_report_task(void *pvParameters)
 
 static void telegram_send_snapshot_reply(const char *caption)
 {
+    // Tell the encoder a "client" is waiting so camera_task wakes up and
+    // produces a fresh JPEG (camera_task otherwise skips work when
+    // jpeg_enc_has_clients()==false). The 3 s timeout is long enough
+    // for the camera to capture + JPEG-encode one frame even with the
+    // 2-buffer pipeline.
+    jpeg_enc_client_added();
     uint8_t *jpg_buf = NULL;
     size_t jpg_len = 0;
-    if (jpeg_enc_get_frame(&jpg_buf, &jpg_len, 2000) == ESP_OK) {
+    esp_err_t got = jpeg_enc_get_frame(&jpg_buf, &jpg_len, 3000);
+    jpeg_enc_client_removed();
+    if (got == ESP_OK) {
         uint8_t *copy_buf = (uint8_t *)malloc(jpg_len);
         if (copy_buf) {
             memcpy(copy_buf, jpg_buf, jpg_len);
