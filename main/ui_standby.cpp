@@ -136,7 +136,8 @@ static bool standby_build_next_dose_th_single_line(const char *dose, char *line,
     char slot[40] = "";
     char time[16] = "";
     if (!standby_build_next_dose_th(dose, slot, sizeof(slot), time, sizeof(time))) return false;
-    snprintf(line, line_len, "%s %s \xE0\xB8\x99.", slot, time);
+    // Thai: drop the "น." suffix — looks cluttered after the slot label.
+    snprintf(line, line_len, "%s %s", slot, time);
     return true;
 }
 
@@ -230,7 +231,8 @@ static void draw_standby_next_dose_en_line(int16_t content_left, int16_t content
     if (!meal || !meal[0]) return;
 
     if (time && time[0]) {
-        snprintf(meal_time, sizeof(meal_time), "%s %s", meal, time);
+        // English: append " hrs" so the line reads "Breakfast 08:00 hrs".
+        snprintf(meal_time, sizeof(meal_time), "%s %s hrs", meal, time);
     } else {
         safe_copy(meal_time, sizeof(meal_time), meal);
     }

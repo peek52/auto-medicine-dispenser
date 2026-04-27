@@ -153,9 +153,16 @@ static void keyboard_submit(void)
     ESP_LOGI(TAG, "Keyboard Submitted: %s", kb_input_buf);
 
     if (is_wifi_setup) {
-        fill_screen(0xFFFF);
-        fill_rect(0, 130, LCD_W, 50, THEME_PANEL);
-        draw_string_gfx(20, 162, "Connecting to WiFi...", 0xFFFF, THEME_PANEL, &FreeSans18pt7b);
+        // Full-screen status background — was previously a 50px strip
+        // that left the keyboard underneath visible.
+        fill_screen(THEME_BG);
+        fill_rect(0, 130, LCD_W, 60, THEME_PANEL);
+        const char *line1_th = "\xe0\xb8\x81\xe0\xb8\xb3\xe0\xb8\xa5\xe0\xb8\xb1\xe0\xb8\x87\xe0\xb9\x80\xe0\xb8\x8a\xe0\xb8\xb7\xe0\xb9\x88\xe0\xb8\xad\xe0\xb8\xa1\xe0\xb8\x95\xe0\xb9\x88\xe0\xb8\xad Wi-Fi"; // กำลังเชื่อมต่อ Wi-Fi
+        if (g_ui_language == UI_LANG_TH) {
+            draw_utf8_centered_line_scaled(LCD_W / 2, 142, line1_th, 0xFFFF, THEME_PANEL, 26);
+        } else {
+            draw_string_centered(LCD_W / 2, 162, "Connecting to WiFi...", 0xFFFF, THEME_PANEL, &FreeSans18pt7b);
+        }
         dfplayer_play_track(14); // Save sound
         wifi_sta_reconnect(selected_ssid, kb_input_buf);
         pending_page = PAGE_STANDBY;
