@@ -646,12 +646,9 @@ static bool vl53_init_on_channel(int idx)
 
 static void vl53_release_xshut(void)
 {
-    // Pulse XSHUT LOW for 5ms then HIGH to fully power-cycle every
-    // VL53L0X. Just driving HIGH (without the low pulse) leaves any
-    // module that retained state from a previous panic stuck in a
-    // half-initialized I2C state, which then panics the bus on the
-    // first read after the chip resets. The chip's own RTS reset
-    // does not cycle XSHUT, so we have to do it explicitly here.
+    // Drive XSHUT lines HIGH to bring every VL53L0X out of reset. Even though
+    // we use the TCA9548A to isolate the bus, XSHUT still needs to be high for
+    // the sensor to power its I2C front-end. Without this, all 6 channels NACK.
     static const gpio_num_t xshut[PILL_SENSOR_COUNT] = {
         VL53L0X_XSHUT_M1, VL53L0X_XSHUT_M2, VL53L0X_XSHUT_M3,
         VL53L0X_XSHUT_M4, VL53L0X_XSHUT_M5, VL53L0X_XSHUT_M6,
@@ -672,17 +669,9 @@ static void vl53_release_xshut(void)
     };
     gpio_config(&cfg);
 
-    // Hold every XSHUT LOW so all modules enter shutdown mode.
-    for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
-        if (xshut[i] >= 0) gpio_set_level(xshut[i], 0);
-    }
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    // Then bring them out of reset. Datasheet says boot takes ~1.2ms.
     for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
         if (xshut[i] >= 0) gpio_set_level(xshut[i], 1);
     }
-    vTaskDelay(pdMS_TO_TICKS(5));
 }
 
 static void vl53_init_all(void)
