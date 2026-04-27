@@ -275,7 +275,25 @@ static void sync_time_task(void *arg) {
         ESP_LOGW(TAG, "Time not synced from NTP properly.");
     }
 
-    vTaskDelete(NULL);
+    // Periodic NTP resync every 6 hours so the DS3231 doesn't drift out
+    // of sync over weeks of uptime. SNTP is already initialised; we just
+    // pull the result, push it to the RTC, sleep, repeat.
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(6 * 60 * 60 * 1000));  // 6h
+        sntp_restart();
+        for (int wait = 0; wait < 30; ++wait) {
+            if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) break;
+            vTaskDelay(pdMS_TO_TICKS(2000));
+        }
+        time_t now2 = 0;
+        struct tm tm2 = {0};
+        time(&now2);
+        localtime_r(&now2, &tm2);
+        if (tm2.tm_year >= (2024 - 1900)) {
+            ds3231_set_time(&tm2);
+            ESP_LOGI(TAG, "RTC re-synced from NTP: %s", asctime(&tm2));
+        }
+    }
 }
 
 static void deferred_init_task(void *arg)

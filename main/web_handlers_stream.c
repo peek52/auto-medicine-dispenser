@@ -47,6 +47,7 @@ esp_err_t stream_handler(httpd_req_t *req) {
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 
+    jpeg_enc_client_added();
     char part_hdr[128];
     while (true) {
         uint8_t *jpeg_buf = NULL;
@@ -73,6 +74,7 @@ esp_err_t stream_handler(httpd_req_t *req) {
             vTaskDelay(pdMS_TO_TICKS(s_stream_delay_ms));
         }
     }
+    jpeg_enc_client_removed();
     ESP_LOGI(TAG, "MJPEG client disconnected");
     return ESP_OK;
 }
@@ -82,9 +84,15 @@ esp_err_t capture_handler(httpd_req_t *req) {
     esp_err_t auth = web_require_tech_api_auth(req);
     if (auth != ESP_OK) return auth;
 
+    // Briefly mark a client so the camera task encodes a fresh frame
+    // (idle-skip optimization in camera_task otherwise leaves the
+    // last buffer stale when nobody is streaming).
+    jpeg_enc_client_added();
     uint8_t *jpeg_buf = NULL;
     size_t jpeg_len = 0;
-    if (jpeg_enc_get_frame(&jpeg_buf, &jpeg_len, 1000) != ESP_OK) {
+    esp_err_t got = jpeg_enc_get_frame(&jpeg_buf, &jpeg_len, 2000);
+    jpeg_enc_client_removed();
+    if (got != ESP_OK) {
         return httpd_resp_send_500(req);
     }
     httpd_resp_set_type(req, "image/jpeg");

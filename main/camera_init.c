@@ -181,6 +181,16 @@ static void camera_task(void *arg) {
         esp_cache_msync(frame_buffers[encode_idx], frame_buffer_size,
                         ESP_CACHE_MSYNC_FLAG_DIR_M2C);
 
+        // Skip the JPEG encode if no /stream client is connected. The
+        // encoder uses the JPEG hardware DMA + ~1MB output buffer, so
+        // running it 50 times a second with no viewer just burns CPU
+        // and heap fragmentation. Snapshot endpoint still encodes on
+        // demand, so /capture stays responsive.
+        if (!jpeg_enc_has_clients()) {
+            enc_active_idx = -1;
+            continue;
+        }
+
         size_t encode_len = frame_buffer_size;
         const uint8_t *encode_buf = camera_prepare_encode_frame((const uint8_t *)frame_buffers[encode_idx],
                                                                 frame_buffer_size,

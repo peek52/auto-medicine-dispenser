@@ -161,3 +161,23 @@ esp_err_t jpeg_enc_set_quality(int quality) {
 int jpeg_enc_get_quality(void) {
     return s_jpeg_quality;
 }
+
+/* Active streaming-client counter. The camera task checks this before
+ * encoding so we don't burn CPU + heap when no one is watching. */
+static volatile int s_stream_clients = 0;
+
+void jpeg_enc_client_added(void) {
+    if (s_swap_mutex) xSemaphoreTake(s_swap_mutex, portMAX_DELAY);
+    s_stream_clients++;
+    if (s_swap_mutex) xSemaphoreGive(s_swap_mutex);
+}
+
+void jpeg_enc_client_removed(void) {
+    if (s_swap_mutex) xSemaphoreTake(s_swap_mutex, portMAX_DELAY);
+    if (s_stream_clients > 0) s_stream_clients--;
+    if (s_swap_mutex) xSemaphoreGive(s_swap_mutex);
+}
+
+bool jpeg_enc_has_clients(void) {
+    return s_stream_clients > 0;
+}
