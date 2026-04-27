@@ -25,28 +25,24 @@
 
 static const char *TAG = "web_server";
 
-/* ── GET / — ส่งหน้า Dashboard HTML ── */
+/* ── GET / — login + smart router (already redirects to /tech if signed in) ── */
 static esp_err_t index_handler(httpd_req_t *req) {
     return web_entry_handler(req);
 }
 
-static esp_err_t maint_handler(httpd_req_t *req) {
-    esp_err_t auth = web_require_tech_page_auth(req);
-    if (auth != ESP_OK) return auth;
-
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-    return httpd_resp_send(req, index_html, strlen(index_html));
+/* ── GET /maint and /monitor — legacy entry points. The old index_html
+ * dashboard duplicated /tech and was the source of "หน้าไม่สัมพันกัน" UX
+ * complaints. Both routes now 303-redirect to /tech (tech auth handles
+ * sign-in if needed) so there is one consistent dashboard. ── */
+static esp_err_t redirect_to_tech(httpd_req_t *req) {
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "Location", "/tech");
+    return httpd_resp_send(req, NULL, 0);
 }
 
-static esp_err_t monitor_handler(httpd_req_t *req) {
-    esp_err_t auth = web_require_maintenance_auth(req);
-    if (auth != ESP_OK) return auth;
-
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-    return httpd_resp_send(req, index_html, strlen(index_html));
-}
+static esp_err_t maint_handler(httpd_req_t *req)    { return redirect_to_tech(req); }
+static esp_err_t monitor_handler(httpd_req_t *req)  { return redirect_to_tech(req); }
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Port 80 — API Server (dashboard + REST endpoints)
