@@ -794,7 +794,13 @@ static void draw_standby_page(bool force, const char *hhmm, const char *ss, cons
 
         if (strcmp(dose, "No schedule") == 0 || strlen(dose) == 0) {
             if (g_ui_language == UI_LANG_TH) {
-                draw_standby_label_centered(content_center_x, DOSE_Y + 34, &kThNoUpcoming);
+                // User asked for the "ยังไม่มีตารางยาถัดไป" line to be larger.
+                // The 158x16 bitmap label was too small; switch to the
+                // scaled UTF-8 renderer at the same size used elsewhere
+                // for prominent Thai status text.
+                draw_utf8_centered_line_scaled(content_center_x, DOSE_Y + 28,
+                                               "ยังไม่มีตารางยาถัดไป",
+                                               ST_DOSE_MUTED, ST_DOSE_CARD, 28);
             } else {
                 draw_string_centered(content_center_x, DOSE_Y + 52, "No upcoming schedule", ST_DOSE_MUTED, ST_DOSE_CARD, &FreeSans12pt7b);
             }
