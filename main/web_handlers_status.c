@@ -1469,6 +1469,205 @@ esp_err_t sensors_capture_handler(httpd_req_t *req)
     return httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+ * Guided per-pill calibration session.
+ *
+ * Flow (per channel):
+ *  1. Operator fills the cartridge fully and types max_pills.
+ *  2. POST /sensors/cal_guide?ch=N&action=start&max_pills=13
+ *       → captures filtered_mm right now as the "full" distance, opens
+ *         a session with steps[0] = {count=13, dist=full}.
+ *  3. POST /sensors/cal_guide?ch=N&action=step
+ *       → fires a single manual dispense for that channel, waits for
+ *         the cartridge to settle, captures the new filtered_mm as the
+ *         next entry. Repeat until empty.
+ *  4. POST /sensors/cal_guide?ch=N&action=finish
+ *       → uses linear regression on the captured (count, dist) pairs to
+ *         derive pill_height_mm, then commits the result via
+ *         vl53l0x_set_channel_config so it persists in NVS. Resets the
+ *         count_offset to 0.
+ *  5. POST .../action=reset cancels the session at any time.
+ * ───────────────────────────────────────────────────────────────────── */
+#define CAL_GUIDE_MAX_STEPS 100
+
+typedef struct {
+    bool     active;
+    int      max_pills;
+    int      steps_count;       // number of (count, dist) pairs recorded
+    int16_t  step_count[CAL_GUIDE_MAX_STEPS];
+    int16_t  step_dist[CAL_GUIDE_MAX_STEPS];
+} cal_guide_session_t;
+
+static cal_guide_session_t s_cal_guide[PILL_SENSOR_COUNT];
+
+static void cal_guide_reset(int ch)
+{
+    memset(&s_cal_guide[ch], 0, sizeof(s_cal_guide[ch]));
+}
+
+static int cal_guide_capture_distance(int ch)
+{
+    // Wait briefly for sensor to give a stable reading after dispense.
+    // pill_sensor_status_recalc happens inside vl53 task on each poll,
+    // so a 700 ms wait covers ~7 EMA cycles.
+    vTaskDelay(pdMS_TO_TICKS(700));
+    const pill_sensor_status_t *all = pill_sensor_status_get_all();
+    if (!all[ch].valid || all[ch].filtered_mm <= 0) return -1;
+    return all[ch].filtered_mm;
+}
+
+static esp_err_t cal_guide_send(httpd_req_t *req, const char *json)
+{
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t cal_guide_send_state(httpd_req_t *req, int ch)
+{
+    cal_guide_session_t *s = &s_cal_guide[ch];
+    char *out = (char *)malloc(2048);
+    if (!out) return httpd_resp_send_500(req);
+    int off = snprintf(out, 2048,
+        "{\"ok\":true,\"ch\":%d,\"active\":%s,\"max_pills\":%d,\"steps\":[",
+        ch, s->active ? "true" : "false", s->max_pills);
+    for (int i = 0; i < s->steps_count && off < 2000; ++i) {
+        off += snprintf(out + off, 2048 - off, "%s{\"count\":%d,\"dist\":%d}",
+                        i ? "," : "", s->step_count[i], s->step_dist[i]);
+    }
+    snprintf(out + off, 2048 - off, "]}");
+    esp_err_t r = cal_guide_send(req, out);
+    free(out);
+    return r;
+}
+
+esp_err_t sensors_calguide_handler(httpd_req_t *req)
+{
+    esp_err_t auth = web_require_tech_api_auth(req);
+    if (auth != ESP_OK) return auth;
+
+    char query[80] = {0};
+    char ch_s[8] = {0}, action[16] = {0}, max_s[8] = {0};
+    if (httpd_req_get_url_query_len(req) > 0 &&
+        httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        httpd_query_key_value(query, "ch", ch_s, sizeof(ch_s));
+        httpd_query_key_value(query, "action", action, sizeof(action));
+        httpd_query_key_value(query, "max_pills", max_s, sizeof(max_s));
+    }
+    int ch = atoi(ch_s);
+    if (ch < 0 || ch >= PILL_SENSOR_COUNT) {
+        return cal_guide_send(req, "{\"ok\":false,\"error\":\"invalid_ch\"}");
+    }
+
+    cal_guide_session_t *s = &s_cal_guide[ch];
+
+    // GET = state query
+    if (req->method == HTTP_GET || action[0] == '\0') {
+        return cal_guide_send_state(req, ch);
+    }
+
+    if (strcmp(action, "reset") == 0) {
+        cal_guide_reset(ch);
+        return cal_guide_send_state(req, ch);
+    }
+
+    if (strcmp(action, "start") == 0) {
+        int max_pills = atoi(max_s);
+        if (max_pills <= 0 || max_pills > CAL_GUIDE_MAX_STEPS) {
+            return cal_guide_send(req, "{\"ok\":false,\"error\":\"invalid_max_pills\"}");
+        }
+        int dist = cal_guide_capture_distance(ch);
+        if (dist <= 0) {
+            return cal_guide_send(req, "{\"ok\":false,\"error\":\"no_live_reading\"}");
+        }
+        cal_guide_reset(ch);
+        s->active = true;
+        s->max_pills = max_pills;
+        s->steps_count = 1;
+        s->step_count[0] = (int16_t)max_pills;
+        s->step_dist[0] = (int16_t)dist;
+        return cal_guide_send_state(req, ch);
+    }
+
+    if (!s->active) {
+        return cal_guide_send(req, "{\"ok\":false,\"error\":\"session_not_started\"}");
+    }
+
+    if (strcmp(action, "step") == 0) {
+        if (s->steps_count >= CAL_GUIDE_MAX_STEPS) {
+            return cal_guide_send(req, "{\"ok\":false,\"error\":\"too_many_steps\"}");
+        }
+        // Fire one manual dispense for this channel and wait for it to
+        // finish (manual_dispense_task runs in the background, mutex-
+        // serialized). Then capture the new distance.
+        extern void dispenser_manual_dispense(int med_idx, int qty);
+        dispenser_manual_dispense(ch, 1);
+
+        // Poll until busy clears or timeout (~10 s total).
+        extern bool dispenser_emergency_active(void);
+        for (int i = 0; i < 100; ++i) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            // Approximate: if no busy, manual is done. We don't have
+            // a public "is_busy" so use the dispense mutex behaviour
+            // by checking dispense flow — a 10s grace covers normal
+            // 1-pill dispense (~4 s servo + IR wait + audio).
+        }
+
+        int dist = cal_guide_capture_distance(ch);
+        if (dist <= 0) {
+            return cal_guide_send(req, "{\"ok\":false,\"error\":\"no_live_reading\"}");
+        }
+        int prev_count = s->step_count[s->steps_count - 1];
+        s->step_count[s->steps_count] = (int16_t)(prev_count - 1);
+        s->step_dist[s->steps_count] = (int16_t)dist;
+        s->steps_count++;
+        return cal_guide_send_state(req, ch);
+    }
+
+    if (strcmp(action, "finish") == 0) {
+        if (s->steps_count < 2) {
+            return cal_guide_send(req, "{\"ok\":false,\"error\":\"need_at_least_2_steps\"}");
+        }
+        // Simple linear regression: dist = full_dist + (max - count) * height
+        // Using least-squares on (count, dist) pairs:
+        //   slope = -height, intercept = full_dist + max * height
+        long n = s->steps_count;
+        long sum_x = 0, sum_y = 0, sum_xy = 0, sum_xx = 0;
+        for (int i = 0; i < n; ++i) {
+            long x = s->step_count[i];
+            long y = s->step_dist[i];
+            sum_x += x; sum_y += y; sum_xy += x * y; sum_xx += x * x;
+        }
+        long denom = n * sum_xx - sum_x * sum_x;
+        if (denom == 0) {
+            return cal_guide_send(req, "{\"ok\":false,\"error\":\"degenerate_data\"}");
+        }
+        long slope_q1000 = (1000L * (n * sum_xy - sum_x * sum_y)) / denom;
+        long intercept_q1000 = (1000L * sum_y - slope_q1000 * sum_x) / n;
+        int height = (int)((-slope_q1000 + 500) / 1000);  // round
+        if (height <= 0) height = 1;
+        if (height > 50) height = 50;
+        // full_dist = intercept + slope * max_pills
+        int full_dist = (int)((intercept_q1000 + slope_q1000 * s->max_pills + 500) / 1000);
+        if (full_dist < 1) full_dist = 1;
+        if (full_dist > 500) full_dist = 500;
+
+        extern void vl53l0x_set_channel_config(int ch, int full_dist_mm, int pill_height_mm, int max_pills);
+        extern void vl53l0x_set_channel_offset(int ch, int count_offset);
+        vl53l0x_set_channel_config(ch, full_dist, height, s->max_pills);
+        vl53l0x_set_channel_offset(ch, 0);  // reset offset since cal is now accurate
+
+        char json[160];
+        snprintf(json, sizeof(json),
+            "{\"ok\":true,\"ch\":%d,\"steps\":%d,\"full_dist_mm\":%d,\"pill_height_mm\":%d,\"max_pills\":%d}",
+            ch, (int)n, full_dist, height, s->max_pills);
+        cal_guide_reset(ch);
+        return cal_guide_send(req, json);
+    }
+
+    return cal_guide_send(req, "{\"ok\":false,\"error\":\"unknown_action\"}");
+}
+
 esp_err_t sensors_offset_handler(httpd_req_t *req)
 {
     esp_err_t auth = web_require_tech_api_auth(req);

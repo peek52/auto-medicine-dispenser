@@ -52,6 +52,12 @@ esp_err_t sensors_capture_handler(httpd_req_t *req);
 /* ── POST /sensors/offset — ปรับ +/- จำนวนเม็ดยา (signed) ── */
 esp_err_t sensors_offset_handler(httpd_req_t *req);
 
+/* ── /sensors/cal_guide — guided per-pill calibration session
+ *  POST ?ch=N&action=start|step|finish|reset
+ *  GET  ?ch=N         → current session state (table of dist per step)
+ */
+esp_err_t sensors_calguide_handler(httpd_req_t *req);
+
 /* ── GET /audit.json — ประวัติการเพิ่ม/ลด/จ่ายของยาแต่ละช่อง ── */
 esp_err_t audit_json_handler(httpd_req_t *req);
 
