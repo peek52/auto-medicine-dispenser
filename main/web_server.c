@@ -97,6 +97,7 @@ httpd_handle_t start_webserver(void) {
         { "/sensors/cal_capture", HTTP_POST, sensors_capture_handler, NULL },
         { "/tech",            HTTP_GET,  tech_dashboard_handler, NULL },
         { "/tech/reboot",     HTTP_POST, tech_reboot_handler,    NULL },
+        { "/tech/estop",      HTTP_POST, tech_estop_handler,     NULL },
     };
 
     for (int i = 0; i < sizeof(routes)/sizeof(routes[0]); i++) {

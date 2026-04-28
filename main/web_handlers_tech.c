@@ -206,10 +206,13 @@ static const char TECH_PAGE[] =
 "<div class='card'><div class='k'>IDF Version</div><div class='v' id='sys-idf'>&mdash;</div></div>"
 "</div>"
 "<div class='row' style='margin-top:22px'>"
+"<button class='btn warn' id='sys-estop' style='font-size:16px;padding:0 22px'>🛑 หยุดฉุกเฉิน</button>"
 "<button class='btn warn' id='sys-reboot'>รีบูตอุปกรณ์</button>"
 "<a class='btn ghost' href='/' target='_blank'>เปิดหน้าหลัก</a>"
+"<span id='sys-estop-state' style='align-self:center;font-weight:700'></span>"
 "</div>"
-"<p class='sub' style='margin-top:18px'>การรีบูตจะตัดการเชื่อมต่อชั่วคราวประมาณ 15 วินาที</p>"
+"<p class='sub' style='margin-top:18px'>หยุดฉุกเฉิน = บล็อกการจ่ายยาทุกประเภท (manual + scheduled) จนกว่าจะกดอีกครั้งเพื่อยกเลิก สถานะคงอยู่หลังรีบูต</p>"
+"<p class='sub'>การรีบูตจะตัดการเชื่อมต่อชั่วคราวประมาณ 15 วินาที</p>"
 "</div>"
 
 "<script>"
@@ -284,6 +287,17 @@ static const char TECH_PAGE[] =
 "  try{await fetch('/tech/reboot',{method:'POST'});}catch(e){}"
 "  alert('กำลังรีบูต... กรุณารอ ~15 วินาที แล้วโหลดหน้าใหม่');"
 "});"
+"function renderEstop(active){const b=document.getElementById('sys-estop');const s=document.getElementById('sys-estop-state');"
+"  if(active){b.textContent='🟢 ยกเลิกหยุดฉุกเฉิน';b.style.background='linear-gradient(135deg,#22c55e,#16a34a)';b.style.color='#fff';s.textContent='🛑 ระบบหยุดอยู่';s.style.color='#ff8a80';}"
+"  else{b.textContent='🛑 หยุดฉุกเฉิน';b.style.background='';b.style.color='';s.textContent='✅ ทำงานปกติ';s.style.color='#9ae8d0';}}"
+"async function refreshEstop(){try{const r=await fetch('/status.json');const j=await r.json();renderEstop(!!j.estop);}catch(e){}}"
+"document.getElementById('sys-estop').addEventListener('click',async()=>{"
+"  const willStop=!document.getElementById('sys-estop').textContent.includes('ยกเลิก');"
+"  if(willStop&&!confirm('ยืนยันหยุดฉุกเฉิน? การจ่ายยาทุกอันจะถูกบล็อกทันที'))return;"
+"  if(!willStop&&!confirm('ยกเลิกหยุดฉุกเฉิน? เครื่องจะกลับมาจ่ายยาตามกำหนด'))return;"
+"  try{const r=await fetch('/tech/estop?action=toggle',{method:'POST'});const j=await r.json();renderEstop(!!j.active);}catch(e){alert('ขัดข้อง');}"
+"});"
+"refreshEstop();setInterval(refreshEstop,5000);"
 
 "const camImg=document.getElementById('cam-stream');"
 "const streamBase=location.protocol+'//'+location.hostname+':81';"
@@ -458,4 +472,39 @@ esp_err_t tech_reboot_handler(httpd_req_t *req)
 
     xTaskCreate(reboot_task, "reboot", 2048, NULL, 5, NULL);
     return ESP_OK;
+}
+
+extern void dispenser_emergency_set(void);
+extern void dispenser_emergency_clear(void);
+extern bool dispenser_emergency_active(void);
+
+/* POST /tech/estop?action=set|clear|toggle (default: toggle).
+ * Returns the resulting state. */
+esp_err_t tech_estop_handler(httpd_req_t *req)
+{
+    esp_err_t auth = web_require_tech_api_auth(req);
+    if (auth != ESP_OK) return auth;
+
+    char query[64] = {0};
+    char action[16] = "toggle";
+    if (httpd_req_get_url_query_len(req) > 0 &&
+        httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        httpd_query_key_value(query, "action", action, sizeof(action));
+    }
+
+    if (strcmp(action, "set") == 0) {
+        dispenser_emergency_set();
+    } else if (strcmp(action, "clear") == 0) {
+        dispenser_emergency_clear();
+    } else {  // toggle
+        if (dispenser_emergency_active()) dispenser_emergency_clear();
+        else dispenser_emergency_set();
+    }
+
+    char json[64];
+    snprintf(json, sizeof(json), "{\"ok\":true,\"active\":%s}",
+             dispenser_emergency_active() ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
 }

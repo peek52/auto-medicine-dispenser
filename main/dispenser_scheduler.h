@@ -33,6 +33,14 @@ void dispenser_skip_meds(void);
 /** สั่งจ่ายยาแบบ Manual ทันที (Non-blocking) */
 void dispenser_manual_dispense(int med_idx, int qty);
 
+/** Emergency stop — block all new dispense triggers (manual + scheduled)
+ *  until dispenser_emergency_clear() is called. In-flight servo motion
+ *  finishes naturally; new ones won't start. Persists across reboots
+ *  via NVS so a stuck system stays stopped after auto-restart. */
+void dispenser_emergency_set(void);
+void dispenser_emergency_clear(void);
+bool dispenser_emergency_active(void);
+
 /** บันทึกการปรับจำนวนยาจากหน้า setup และส่ง audit ไป Telegram แบบหน่วงรวมเหตุการณ์ */
 void dispenser_audit_stock_adjust(int med_idx, int old_count, int new_count);
 

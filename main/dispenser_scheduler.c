@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 #include "dispenser_scheduler.h"
+#include "nvs.h"
 #include "netpie_mqtt.h"
 #include "ds3231.h"
 #include "pca9685.h"
@@ -70,6 +71,54 @@ static SemaphoreHandle_t s_dispense_mutex = NULL;
 static portMUX_TYPE s_dispense_state_mux = portMUX_INITIALIZER_UNLOCKED;
 static bool s_dispense_busy = false;
 static bool s_low_stock_alert_sent[DISPENSER_MED_COUNT] = {0};
+
+// Emergency stop flag — when set, no new dispense (manual or scheduled)
+// will start. In-flight servo motion runs to completion. Persisted via
+// NVS so an auto-restart while stopped stays stopped.
+static volatile bool s_emergency_stop = false;
+
+static void dispenser_emergency_save_nvs(bool active)
+{
+    nvs_handle_t h;
+    if (nvs_open("dispenser", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, "estop", active ? 1 : 0);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+static void dispenser_emergency_load_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open("dispenser", NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = 0;
+        if (nvs_get_u8(h, "estop", &v) == ESP_OK) {
+            s_emergency_stop = (v != 0);
+        }
+        nvs_close(h);
+    }
+}
+
+void dispenser_emergency_set(void)
+{
+    if (s_emergency_stop) return;
+    s_emergency_stop = true;
+    dispenser_emergency_save_nvs(true);
+    ESP_LOGW(TAG, "EMERGENCY STOP set — no new dispense will start");
+}
+
+void dispenser_emergency_clear(void)
+{
+    if (!s_emergency_stop) return;
+    s_emergency_stop = false;
+    dispenser_emergency_save_nvs(false);
+    ESP_LOGI(TAG, "Emergency stop cleared — dispenser back online");
+}
+
+bool dispenser_emergency_active(void)
+{
+    return s_emergency_stop;
+}
 
 static const char *TG_SLOT_LABELS_TH[7] = {
     "ก่อนอาหารเช้า", "หลังอาหารเช้า", "ก่อนอาหารกลางวัน", "หลังอาหารกลางวัน",
@@ -644,6 +693,7 @@ static void dispenser_task(void *arg)
 
             const netpie_shadow_t *sh = netpie_get_shadow();
             if (!sh->loaded || !sh->enabled) continue;
+            if (s_emergency_stop) continue;  // Skip slot eval entirely while stopped
 
             for (int s = 0; s < 7; s++) {
                 int th, tm;
@@ -775,6 +825,11 @@ void dispenser_scheduler_start(void)
             ESP_LOGE(TAG, "Failed to create dispense mutex");
             return;
         }
+    }
+    dispenser_emergency_load_nvs();
+    if (s_emergency_stop) {
+        ESP_LOGW(TAG, "Dispenser starting with emergency stop ACTIVE — "
+                      "no dispense will fire until /resume or web Clear");
     }
     if (xTaskCreate(dispenser_task, "dispenser", DISPENSER_TASK_STACK_SIZE, NULL, 4, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create dispenser scheduler task");
@@ -1009,6 +1064,10 @@ static void manual_dispense_task(void *arg) {
 
 void dispenser_manual_dispense(int med_idx, int qty) {
     if (qty <= 0 || med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return;
+    if (s_emergency_stop) {
+        ESP_LOGW(TAG, "Manual dispense blocked: emergency stop active");
+        return;
+    }
     if (ui_manual_disp_status > 0 || s_waiting_confirm || s_dispense_approved) return; // Prevent overlap with active scheduler/manual flow
     if (!dispenser_mark_busy_if_idle()) return;
     manual_disp_args_t *args = malloc(sizeof(manual_disp_args_t));

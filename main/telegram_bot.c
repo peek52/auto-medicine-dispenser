@@ -1151,6 +1151,16 @@ static void handle_telegram_command_safe(const char *cmd_text)
             telegram_send_text(telegram_pick("Unknown language. Use /lang en or /lang th",
                                              "ไม่รู้จักภาษาที่ระบุ ใช้ /lang en หรือ /lang th"));
         }
+    } else if (strcmp(cmd, "/stop") == 0) {
+        dispenser_emergency_set();
+        telegram_send_text(telegram_pick(
+            "EMERGENCY STOP set. No dispense will fire until /resume.",
+            "หยุดฉุกเฉินแล้ว เครื่องจะไม่จ่ายยาจนกว่าจะกด /resume"));
+    } else if (strcmp(cmd, "/resume") == 0) {
+        dispenser_emergency_clear();
+        telegram_send_text(telegram_pick(
+            "Emergency stop cleared. Dispenser is back online.",
+            "ยกเลิกหยุดฉุกเฉินแล้ว เครื่องจ่ายยากลับมาทำงานปกติ"));
     } else if (strcmp(cmd, "/photo") == 0 || strcmp(cmd, "/capture") == 0) {
         char time_str[16] = "--:--";
         ds3231_get_time_str(time_str, sizeof(time_str));

@@ -580,6 +580,9 @@ esp_err_t status_json_handler(httpd_req_t *req) {
         }
     }
     cJSON_AddStringToObject(root, "time", t_str);  /* alias for tech dashboard */
+
+    extern bool dispenser_emergency_active(void);
+    cJSON_AddBoolToObject(root, "estop", dispenser_emergency_active());
     cJSON_AddBoolToObject(root, "pcf_present", pcf);
     cJSON_AddBoolToObject(root, "pca_present", pca);
     cJSON_AddBoolToObject(root, "rtc_present", rtc);
