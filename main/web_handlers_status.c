@@ -1357,7 +1357,16 @@ esp_err_t sensors_config_handler(httpd_req_t *req)
     int full = atoi(full_s);
     int height = atoi(height_s);
     int max_pills = atoi(max_s);
-    if (ch < 0 || ch >= PILL_SENSOR_COUNT || full <= 0 || height <= 0 || max_pills <= 0) {
+    // Sanity-check ranges so a typo doesn't permanently corrupt cal NVS:
+    //  full   1..500 mm   (cartridge length sanely bounded)
+    //  height 1..50 mm    (a 50 mm "pill" is a hard sanity limit)
+    //  max    1..200      (200 pills × 50 mm = 10 m, well past full range)
+    //  full + max*height should not exceed VL53 max range (8190 mm).
+    if (ch < 0 || ch >= PILL_SENSOR_COUNT ||
+        full <= 0   || full > 500   ||
+        height <= 0 || height > 50  ||
+        max_pills <= 0 || max_pills > 200 ||
+        (full + max_pills * height) > 8190) {
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_send(req, "{\"ok\":false,\"error\":\"invalid_sensor_config\"}", HTTPD_RESP_USE_STRLEN);

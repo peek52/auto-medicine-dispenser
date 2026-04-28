@@ -12,7 +12,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 #include "web_server.h"
-#include "index_html.h"
 #include "web_handlers_servo.h"
 #include "web_handlers_status.h"
 #include "web_handlers_stream.h"

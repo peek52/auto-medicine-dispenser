@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "cJSON.h"
 #include "esp_log.h"
@@ -387,8 +388,24 @@ void netpie_shadow_update_slot(int slot_idx, const char *hh_mm)
 {
     if (!hh_mm || slot_idx < 0 || slot_idx >= 7) return;
 
-    char safe_time[6];
-    strlcpy(safe_time, hh_mm, sizeof(safe_time));
+    // HH:MM validation — reject "25:00", "12:60", "ab:cd", "1:2",
+    // "10:5", etc. Strict 5-char format with two digits, colon, two
+    // digits, in valid 24-hour ranges. Empty string ("--:--") is also
+    // valid since it means "slot disabled".
+    char safe_time[6] = {0};
+    if (strcmp(hh_mm, "--:--") == 0 || hh_mm[0] == '\0') {
+        strlcpy(safe_time, "--:--", sizeof(safe_time));
+    } else {
+        if (strlen(hh_mm) != 5 || hh_mm[2] != ':' ||
+            !isdigit((unsigned char)hh_mm[0]) || !isdigit((unsigned char)hh_mm[1]) ||
+            !isdigit((unsigned char)hh_mm[3]) || !isdigit((unsigned char)hh_mm[4])) {
+            return;  // malformed
+        }
+        int hh = (hh_mm[0]-'0')*10 + (hh_mm[1]-'0');
+        int mm = (hh_mm[3]-'0')*10 + (hh_mm[4]-'0');
+        if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return;  // out of range
+        strlcpy(safe_time, hh_mm, sizeof(safe_time));
+    }
 
     if (shadow_lock()) {
         strlcpy(s_shadow.slot_time[slot_idx], safe_time, sizeof(s_shadow.slot_time[slot_idx]));
