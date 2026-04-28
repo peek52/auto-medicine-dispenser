@@ -166,6 +166,67 @@ bool dispenser_emergency_active(void)
     return s_emergency_stop;
 }
 
+// Quiet hours: minutes-of-day window during which scheduled dispense is
+// suppressed. -1/-1 or start==end means disabled. Window may wrap
+// midnight (start > end). Manual + Telegram /dispense bypass the gate.
+static int s_quiet_start_min = 0;
+static int s_quiet_end_min = 0;
+
+static void quiet_hours_save_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open("dispenser", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_i16(h, "qh_start", (int16_t)s_quiet_start_min);
+        nvs_set_i16(h, "qh_end",   (int16_t)s_quiet_end_min);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+static void quiet_hours_load_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open("dispenser", NVS_READONLY, &h) == ESP_OK) {
+        int16_t s = 0, e = 0;
+        nvs_get_i16(h, "qh_start", &s);
+        nvs_get_i16(h, "qh_end", &e);
+        if (s >= 0 && s < 1440) s_quiet_start_min = s;
+        if (e >= 0 && e < 1440) s_quiet_end_min   = e;
+        nvs_close(h);
+    }
+}
+
+void dispenser_set_quiet_hours(int start_min, int end_min)
+{
+    if (start_min < 0 || start_min >= 1440) start_min = 0;
+    if (end_min < 0 || end_min >= 1440) end_min = 0;
+    s_quiet_start_min = start_min;
+    s_quiet_end_min = end_min;
+    quiet_hours_save_nvs();
+    ESP_LOGI(TAG, "Quiet hours set: %02d:%02d → %02d:%02d (%s)",
+             start_min / 60, start_min % 60,
+             end_min / 60, end_min % 60,
+             (start_min == end_min) ? "disabled" : "active");
+}
+
+void dispenser_get_quiet_hours(int *start_min, int *end_min)
+{
+    if (start_min) *start_min = s_quiet_start_min;
+    if (end_min) *end_min = s_quiet_end_min;
+}
+
+bool dispenser_in_quiet_hours(int cur_h, int cur_m)
+{
+    if (s_quiet_start_min == s_quiet_end_min) return false;  // disabled
+    int now = cur_h * 60 + cur_m;
+    if (s_quiet_start_min < s_quiet_end_min) {
+        // Same-day window e.g. 13:00 → 14:00.
+        return (now >= s_quiet_start_min && now < s_quiet_end_min);
+    }
+    // Wrap-midnight window e.g. 22:00 → 06:00 (now >= 22:00 OR now < 6:00).
+    return (now >= s_quiet_start_min || now < s_quiet_end_min);
+}
+
 static const char *TG_SLOT_LABELS_TH[7] = {
     "ก่อนอาหารเช้า", "หลังอาหารเช้า", "ก่อนอาหารกลางวัน", "หลังอาหารกลางวัน",
     "ก่อนอาหารเย็น", "หลังอาหารเย็น", "ก่อนนอน"
@@ -787,6 +848,12 @@ static void dispenser_task(void *arg)
             const netpie_shadow_t *sh = netpie_get_shadow();
             if (!sh->loaded || !sh->enabled) continue;
             if (s_emergency_stop) continue;  // Skip slot eval entirely while stopped
+            if (dispenser_in_quiet_hours(cur_h, cur_m)) {
+                // Within user-configured quiet window — auto-skip slot
+                // triggers so the elderly user isn't woken up by an
+                // alarm at 06:00 if they want quiet until 07:00.
+                continue;
+            }
 
             for (int s = 0; s < 7; s++) {
                 int th, tm;
@@ -920,6 +987,7 @@ void dispenser_scheduler_start(void)
         }
     }
     dispenser_emergency_load_nvs();
+    quiet_hours_load_nvs();
     if (s_emergency_stop) {
         ESP_LOGW(TAG, "Dispenser starting with emergency stop ACTIVE — "
                       "no dispense will fire until /resume or web Clear");

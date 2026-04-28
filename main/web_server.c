@@ -97,6 +97,7 @@ httpd_handle_t start_webserver(void) {
         { "/tech",            HTTP_GET,  tech_dashboard_handler, NULL },
         { "/tech/reboot",     HTTP_POST, tech_reboot_handler,    NULL },
         { "/tech/estop",      HTTP_POST, tech_estop_handler,     NULL },
+        { "/tech/quiet",      HTTP_POST, tech_quiet_handler,     NULL },
     };
 
     for (int i = 0; i < sizeof(routes)/sizeof(routes[0]); i++) {

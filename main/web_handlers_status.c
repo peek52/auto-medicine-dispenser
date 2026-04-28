@@ -584,6 +584,12 @@ esp_err_t status_json_handler(httpd_req_t *req) {
 
     extern bool dispenser_emergency_active(void);
     cJSON_AddBoolToObject(root, "estop", dispenser_emergency_active());
+
+    extern void dispenser_get_quiet_hours(int *start_min, int *end_min);
+    int qh_s = 0, qh_e = 0;
+    dispenser_get_quiet_hours(&qh_s, &qh_e);
+    cJSON_AddNumberToObject(root, "quiet_start_min", (double)qh_s);
+    cJSON_AddNumberToObject(root, "quiet_end_min",   (double)qh_e);
     cJSON_AddBoolToObject(root, "pcf_present", pcf);
     cJSON_AddBoolToObject(root, "pca_present", pca);
     cJSON_AddBoolToObject(root, "rtc_present", rtc);

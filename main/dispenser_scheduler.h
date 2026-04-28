@@ -41,6 +41,14 @@ void dispenser_emergency_set(void);
 void dispenser_emergency_clear(void);
 bool dispenser_emergency_active(void);
 
+/** Quiet hours — suppress *scheduled* dispense between [start, end]
+ *  (24-hour minutes-of-day). Manual + Telegram /dispense still works.
+ *  start == end OR both == 0 → quiet hours disabled.
+ *  Window can wrap midnight (e.g. start=22*60, end=6*60). */
+void dispenser_set_quiet_hours(int start_min, int end_min);
+void dispenser_get_quiet_hours(int *start_min, int *end_min);
+bool dispenser_in_quiet_hours(int cur_h, int cur_m);
+
 /* Audit log entry exposed through /audit.json. Source codes:
  *   'M' = manual via touch UI / web manual button
  *   'S' = scheduled auto-dispense

@@ -224,6 +224,17 @@ static const char TECH_PAGE[] =
 "</div>"
 "<p class='sub' style='margin-top:18px'>หยุดฉุกเฉิน = บล็อกการจ่ายยาทุกประเภท (manual + scheduled) จนกว่าจะกดอีกครั้งเพื่อยกเลิก สถานะคงอยู่หลังรีบูต</p>"
 "<p class='sub'>การรีบูตจะตัดการเชื่อมต่อชั่วคราวประมาณ 15 วินาที</p>"
+
+"<h3 style='margin-top:30px'>ช่วงเวลาเงียบ (Quiet Hours)</h3>"
+"<p class='sub'>กำหนดช่วงเวลาที่ห้ามจ่ายยาอัตโนมัติ &middot; ตัวอย่าง 22:00 → 06:00 = ช่วงนอน &middot; manual + Telegram /dispense ยังจ่ายได้ปกติ &middot; เคลียร์ทั้งคู่เป็น 00:00 = ปิดฟีเจอร์</p>"
+"<div class='row' style='align-items:flex-end;gap:10px'>"
+"<label style='font-size:12px;color:#a7bdd7'>เริ่มเงียบ"
+"<input id='qh-start' type='time' value='00:00' style='display:block;margin-top:4px;padding:10px;border-radius:8px;border:1px solid #35567f;background:#06101e;color:#f4f8ff;font-family:inherit'></label>"
+"<label style='font-size:12px;color:#a7bdd7'>สิ้นสุด"
+"<input id='qh-end' type='time' value='00:00' style='display:block;margin-top:4px;padding:10px;border-radius:8px;border:1px solid #35567f;background:#06101e;color:#f4f8ff;font-family:inherit'></label>"
+"<button class='btn primary' id='qh-save' style='min-height:44px'>บันทึก</button>"
+"<span id='qh-state' style='align-self:center;color:#9ae8d0;font-size:13px'></span>"
+"</div>"
 "</div>"
 
 "<script>"
@@ -310,6 +321,24 @@ static const char TECH_PAGE[] =
 "});"
 "refreshEstop();setInterval(refreshEstop,5000);"
 
+/* Quiet hours load + save (System tab) */
+"function minToHHMM(m){const h=Math.floor(m/60),mm=m%60;return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0');}"
+"function hhmmToMin(s){const [h,m]=s.split(':').map(Number);return h*60+m;}"
+"async function loadQuiet(){try{const r=await fetch('/status.json');const j=await r.json();"
+"  document.getElementById('qh-start').value=minToHHMM(j.quiet_start_min||0);"
+"  document.getElementById('qh-end').value=minToHHMM(j.quiet_end_min||0);"
+"  const st=document.getElementById('qh-state');"
+"  if((j.quiet_start_min||0)===(j.quiet_end_min||0)){st.textContent='ปิดอยู่';st.style.color='#a7bdd7';}"
+"  else{st.textContent='เปิดอยู่ '+minToHHMM(j.quiet_start_min)+' → '+minToHHMM(j.quiet_end_min);st.style.color='#9ae8d0';}"
+"}catch(e){}}"
+"document.getElementById('qh-save').addEventListener('click',async()=>{"
+"  const s=hhmmToMin(document.getElementById('qh-start').value);"
+"  const e=hhmmToMin(document.getElementById('qh-end').value);"
+"  const st=document.getElementById('qh-state');st.textContent='กำลังบันทึก…';"
+"  try{await fetch('/tech/quiet',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'start_min='+s+'&end_min='+e});loadQuiet();}"
+"  catch(err){st.textContent='ขัดข้อง';st.style.color='#ff8a80';}});"
+"loadQuiet();"
+
 /* Monitor panel (native — replaces the old /sensors iframe) */
 "async function monRender(){if(!tabActive('monitor'))return;"
 "  let chans=[];try{const r=await fetch('/sensors.json',{cache:'no-store'});if(r.ok){const j=await r.json();chans=j.channels||[];}}catch(e){return;}"
@@ -390,8 +419,8 @@ static const char TECH_PAGE[] =
 "}"
 "renderServos();"
 "document.getElementById('servo-refresh').addEventListener('click',renderServos);"
-"document.getElementById('servo-home-all').addEventListener('click',async()=>{for(let i=0;i<6;i++)await servoAction(i,'home');});"
-"document.getElementById('servo-test-all').addEventListener('click',async()=>{for(let i=0;i<6;i++){await servoAction(i,'test');await new Promise(r=>setTimeout(r,400));}});"
+"document.getElementById('servo-home-all').addEventListener('click',async()=>{if(!confirm('กลับตำแหน่งเริ่มต้นทุกช่อง? (servo จะหมุนพร้อมกัน 6 ช่อง)'))return;for(let i=0;i<6;i++)await servoAction(i,'home');});"
+"document.getElementById('servo-test-all').addEventListener('click',async()=>{if(!confirm('ทดสอบทุกช่อง? ⚠️ ถ้ามียาในตลับ ยาจะออกมา ทำในช่วงตลับว่างเท่านั้น'))return;for(let i=0;i<6;i++){await servoAction(i,'test');await new Promise(r=>setTimeout(r,400));}});"
 
 "async function calRender(){"
 "  let chans=[];"
@@ -534,6 +563,8 @@ esp_err_t tech_reboot_handler(httpd_req_t *req)
 extern void dispenser_emergency_set(void);
 extern void dispenser_emergency_clear(void);
 extern bool dispenser_emergency_active(void);
+extern void dispenser_set_quiet_hours(int start_min, int end_min);
+extern void dispenser_get_quiet_hours(int *start_min, int *end_min);
 
 /* POST /tech/estop?action=set|clear|toggle (default: toggle).
  * Returns the resulting state. */
@@ -564,4 +595,33 @@ esp_err_t tech_estop_handler(httpd_req_t *req)
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
     return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+}
+
+/* POST /tech/quiet?start_min=N&end_min=M
+ * Save quiet-hours window. start==end disables it. */
+esp_err_t tech_quiet_handler(httpd_req_t *req)
+{
+    esp_err_t auth = web_require_tech_api_auth(req);
+    if (auth != ESP_OK) return auth;
+
+    char body[80] = {0};
+    int len = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (len < 0) return ESP_FAIL;
+    body[len] = '\0';
+
+    // Minimal x-www-form-urlencoded parser — accepts start_min=N&end_min=M.
+    int s = 0, e = 0;
+    const char *p_s = strstr(body, "start_min=");
+    const char *p_e = strstr(body, "end_min=");
+    if (p_s) s = atoi(p_s + 10);
+    if (p_e) e = atoi(p_e + 8);
+    if (s < 0 || s >= 1440) s = 0;
+    if (e < 0 || e >= 1440) e = 0;
+    dispenser_set_quiet_hours(s, e);
+
+    char out[80];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"start_min\":%d,\"end_min\":%d}", s, e);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
 }

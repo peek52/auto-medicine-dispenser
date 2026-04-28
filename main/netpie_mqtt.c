@@ -357,6 +357,16 @@ void netpie_shadow_update_med_name(int med_id, const char *name)
     char safe_name[32];
     strlcpy(safe_name, name, sizeof(safe_name));
 
+    // Trim leading + trailing whitespace so "Para " and "Para" are stored
+    // identically (otherwise matching/sort breaks downstream).
+    char *start = safe_name;
+    while (*start && isspace((unsigned char)*start)) start++;
+    if (start != safe_name) memmove(safe_name, start, strlen(start) + 1);
+    size_t len = strlen(safe_name);
+    while (len > 0 && isspace((unsigned char)safe_name[len - 1])) {
+        safe_name[--len] = '\0';
+    }
+
     if (shadow_lock()) {
         strlcpy(s_shadow.med[med_id - 1].name, safe_name, sizeof(s_shadow.med[med_id - 1].name));
         shadow_cache_save_locked();
