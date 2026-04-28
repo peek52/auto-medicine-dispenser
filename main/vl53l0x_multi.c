@@ -839,12 +839,23 @@ static void vl53_cal_save_nvs(int ch, int full_dist_mm, int pill_height_mm, int 
     nvs_close(h);
 }
 
+static void vl53_offset_save_nvs(int ch, int offset)
+{
+    nvs_handle_t h;
+    if (nvs_open(VL53_NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    char key[10];
+    snprintf(key, sizeof(key), "off%d", ch);
+    nvs_set_i16(h, key, (int16_t)offset);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
 void vl53l0x_load_calibration_from_nvs(void)
 {
     nvs_handle_t h;
     if (nvs_open(VL53_NVS_NS, NVS_READONLY, &h) != ESP_OK) return;
     for (int ch = 0; ch < PILL_SENSOR_COUNT; ++ch) {
-        char key[8];
+        char key[10];
         snprintf(key, sizeof(key), "ch%d", ch);
         vl53_cal_blob_t blob;
         size_t sz = sizeof(blob);
@@ -854,6 +865,12 @@ void vl53l0x_load_calibration_from_nvs(void)
             ESP_LOGI(TAG, "Ch%d cal loaded from NVS: full=%dmm height=%dmm max=%d",
                      ch, blob.full_dist_mm, blob.pill_height_mm, blob.max_pills);
         }
+        snprintf(key, sizeof(key), "off%d", ch);
+        int16_t off = 0;
+        if (nvs_get_i16(h, key, &off) == ESP_OK) {
+            pill_sensor_status_set_offset(ch, off);
+            if (off != 0) ESP_LOGI(TAG, "Ch%d count_offset=%+d (NVS)", ch, off);
+        }
     }
     nvs_close(h);
 }
@@ -862,4 +879,10 @@ void vl53l0x_set_channel_config(int ch, int full_dist_mm, int pill_height_mm, in
 {
     pill_sensor_status_set_config(ch, full_dist_mm, pill_height_mm, max_pills);
     vl53_cal_save_nvs(ch, full_dist_mm, pill_height_mm, max_pills);
+}
+
+void vl53l0x_set_channel_offset(int ch, int count_offset)
+{
+    pill_sensor_status_set_offset(ch, count_offset);
+    vl53_offset_save_nvs(ch, count_offset);
 }

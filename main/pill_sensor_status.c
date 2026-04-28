@@ -18,6 +18,7 @@ void pill_sensor_status_init_defaults(void)
         s_sensors[i].full_dist_mm  = VL53_FULL_DIST_MM;
         s_sensors[i].pill_height_mm = VL53_PILL_HEIGHT_MM;
         s_sensors[i].max_pills      = VL53_MAX_PILLS;
+        s_sensors[i].count_offset   = 0;
     }
 }
 
@@ -53,6 +54,15 @@ void pill_sensor_status_set_config(int idx, int full_dist_mm, int pill_height_mm
     pill_sensor_status_recalc(idx);
 }
 
+void pill_sensor_status_set_offset(int idx, int count_offset)
+{
+    if (idx < 0 || idx >= PILL_SENSOR_COUNT) return;
+    if (count_offset < -50) count_offset = -50;
+    if (count_offset > 50) count_offset = 50;
+    s_sensors[idx].count_offset = count_offset;
+    pill_sensor_status_recalc(idx);
+}
+
 void pill_sensor_status_recalc(int idx)
 {
     if (idx < 0 || idx >= PILL_SENSOR_COUNT) return;
@@ -74,7 +84,7 @@ void pill_sensor_status_recalc(int idx)
     int removed = (dist - full + (h / 2)) / h;  // round
     if (removed < 0) removed = 0;
 
-    int count = maxp - removed;
+    int count = maxp - removed + s->count_offset;  // signed +/- fine-tune
     if (count < 0) count = 0;
     if (count > maxp) count = maxp;
 

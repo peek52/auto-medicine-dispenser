@@ -49,6 +49,9 @@ esp_err_t sensors_config_handler(httpd_req_t *req);
 /* ── POST /sensors/cal_capture — บันทึกระยะปัจจุบัน (full/empty) ── */
 esp_err_t sensors_capture_handler(httpd_req_t *req);
 
+/* ── POST /sensors/offset — ปรับ +/- จำนวนเม็ดยา (signed) ── */
+esp_err_t sensors_offset_handler(httpd_req_t *req);
+
 /* ── GET /audit.json — ประวัติการเพิ่ม/ลด/จ่ายของยาแต่ละช่อง ── */
 esp_err_t audit_json_handler(httpd_req_t *req);
 

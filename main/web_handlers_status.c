@@ -1329,14 +1329,16 @@ esp_err_t sensors_json_handler(httpd_req_t *req)
                         "%s{\"ch\":%d,\"idx\":%d,\"addr\":%u,\"present\":%s,\"valid\":%s,"
                         "\"raw_mm\":%d,\"filtered_mm\":%d,\"pill_count\":%d,"
                         "\"is_empty\":%s,\"is_full\":%s,"
-                        "\"full_dist_mm\":%d,\"pill_height_mm\":%d,\"max_pills\":%d}",
+                        "\"full_dist_mm\":%d,\"pill_height_mm\":%d,\"max_pills\":%d,"
+                        "\"count_offset\":%d}",
                         i ? "," : "", i, i + 1, (unsigned)s[i].address,
                         s[i].present ? "true" : "false",
                         s[i].valid ? "true" : "false",
                         s[i].raw_mm, s[i].filtered_mm, s[i].pill_count,
                         s[i].is_empty ? "true" : "false",
                         s[i].is_full ? "true" : "false",
-                        s[i].full_dist_mm, s[i].pill_height_mm, s[i].max_pills);
+                        s[i].full_dist_mm, s[i].pill_height_mm, s[i].max_pills,
+                        s[i].count_offset);
     }
     snprintf(json + off, sizeof(json) - off, "]}");
 
@@ -1465,6 +1467,37 @@ esp_err_t sensors_capture_handler(httpd_req_t *req)
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t sensors_offset_handler(httpd_req_t *req)
+{
+    esp_err_t auth = web_require_tech_api_auth(req);
+    if (auth != ESP_OK) return auth;
+
+    char body[64] = {0};
+    int len = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (len < 0) return ESP_FAIL;
+    body[len] = '\0';
+
+    char ch_s[8] = {0};
+    char off_s[8] = {0};
+    extract_form_value(body, "ch", ch_s, sizeof(ch_s));
+    extract_form_value(body, "offset", off_s, sizeof(off_s));
+    int ch = atoi(ch_s);
+    int off = atoi(off_s);
+    if (ch < 0 || ch >= PILL_SENSOR_COUNT || off < -50 || off > 50) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"ok\":false,\"error\":\"invalid_offset\"}", HTTPD_RESP_USE_STRLEN);
+    }
+
+    extern void vl53l0x_set_channel_offset(int ch, int count_offset);
+    vl53l0x_set_channel_offset(ch, off);
+
+    char json[80];
+    snprintf(json, sizeof(json), "{\"ok\":true,\"ch\":%d,\"offset\":%d}", ch, off);
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
 }
 
 esp_err_t audit_json_handler(httpd_req_t *req)
