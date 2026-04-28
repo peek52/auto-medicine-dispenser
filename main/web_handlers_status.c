@@ -796,7 +796,7 @@ esp_err_t cloud_setup_handler(httpd_req_t *req) {
         "<head>"
         "<meta charset='UTF-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>Cloud Config</title>"
+        "<title>ตั้งค่าคลาวด์ &middot; เครื่องจ่ายยาอัตโนมัติ</title>"
         "<style>"
         ":root{color-scheme:dark;--text:#f4f8ff;--muted:#96acc8;--accent:#4dd7b0;--accent2:#6db8ff;}"
         "*{box-sizing:border-box}"
@@ -823,23 +823,23 @@ esp_err_t cloud_setup_handler(httpd_req_t *req) {
         "<body>"
         "<div class='shell'>"
         "<section class='card'>"
-        "<div class='eyebrow'>Cloud Setup</div>"
-        "<h1>Cloud Config</h1>"
-        "<p class='lead'>Use this page only for Telegram and Google Sheets settings. Other technician, monitor, Wi-Fi, and access-code functions were removed from this page.</p>"
+        "<div class='eyebrow'>ตั้งค่าคลาวด์</div>"
+        "<h1>คลาวด์ &middot; Telegram / Google Sheets</h1>"
+        "<p class='lead'>หน้านี้ใช้ตั้งค่า Telegram Bot และ Google Sheets เท่านั้น &middot; ตั้งค่า WiFi / ช่าง / รหัสผ่าน ย้ายไปอยู่ในหน้า /tech แล้ว</p>"
         "<form method='POST' action='/cloud/save'>"
         "<div class='field'>"
         "<label for='tg_token'>Telegram Bot Token"
-        "<span class='label-sub'>Paste the full token from BotFather.</span></label>"
+        "<span class='label-sub'>วาง token เต็มที่ได้จาก BotFather</span></label>"
         "<input id='tg_token' name='tg_token' value=\"%s\" autocomplete='off' spellcheck='false' placeholder='123456:ABC...'>"
         "</div>"
         "<div class='field'>"
         "<label for='tg_chat'>Telegram Chat ID"
-        "<span class='label-sub'>Chat or user ID that should receive bot messages.</span></label>"
+        "<span class='label-sub'>หมายเลข chat หรือ user ที่ต้องการให้ bot ส่งข้อความถึง</span></label>"
         "<input id='tg_chat' name='tg_chat' value=\"%s\" autocomplete='off' spellcheck='false' placeholder='8146728406'>"
         "</div>"
         "<div class='field'>"
         "<label for='gs_url'>Google Apps Script URL"
-        "<span class='label-sub'>Optional. Leave empty if Google Sheets is not used.</span></label>"
+        "<span class='label-sub'>ไม่บังคับ &middot; เว้นว่างถ้าไม่ใช้ Google Sheets</span></label>"
         "<textarea id='gs_url' name='gs_url' spellcheck='false' placeholder='https://script.google.com/macros/s/.../exec'>%s</textarea>"
         "</div>"
         "<div class='actions'>"
@@ -1488,34 +1488,7 @@ esp_err_t audit_json_handler(httpd_req_t *req)
     return ret;
 }
 
-esp_err_t sensors_page_handler(httpd_req_t *req)
-{
-    esp_err_t auth = web_require_maintenance_auth(req);
-    if (auth != ESP_OK) return auth;
-
-    const char *html =
-        "<!doctype html><html><head><meta charset='utf-8'>"
-        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>Pill Sensors</title><style>"
-        "body{margin:0;background:#07131f;color:#eef;font-family:Segoe UI,Tahoma,sans-serif;padding:24px}"
-        ".top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}"
-        "a,button{border:1px solid #246070;background:#0d3440;color:#dff;border-radius:12px;padding:10px 14px;text-decoration:none;font-weight:700}"
-        ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:18px}"
-        ".card{background:#101f2a;border:1px solid #223747;border-radius:18px;padding:16px}"
-        ".badge{float:right;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800;background:#35404f}"
-        ".ok{background:#115b38}.warn{background:#6b530b}.bad{background:#64202b}"
-        ".dist{font-size:34px;font-weight:900;margin:10px 0}.muted{color:#9eb2c7;font-size:13px;line-height:1.6}"
-        ".bar{height:9px;background:#1b3140;border-radius:99px;overflow:hidden}.fill{height:100%;background:#4dd7b0}"
-        "input{width:70px;background:#07131f;color:#eef;border:1px solid #29475b;border-radius:9px;padding:6px;margin:4px}"
-        "</style></head><body>"
-        "<div class='top'><div><h1>Pill Level Sensors</h1><div class='muted'>VL53L0X x6 through TCA9548A multiplexer. Live values update every 2 seconds.</div></div><a href='/maint'>Back to Dashboard</a></div>"
-        "<div id='grid' class='grid'></div>"
-        "<script>"
-        "function pct(s){return (!s.valid||s.pill_count<0||!s.max_pills)?0:Math.max(0,Math.min(100,Math.round(s.pill_count/s.max_pills*100)));}"
-        "function save(ch){const b=new URLSearchParams();b.set('ch',ch);b.set('full_dist_mm',document.getElementById('fd'+ch).value);b.set('pill_height_mm',document.getElementById('ph'+ch).value);b.set('max_pills',document.getElementById('mp'+ch).value);fetch('/sensors/config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(tick)}"
-        "async function tick(){let j=await (await fetch('/sensors.json',{cache:'no-store'})).json();let g=document.getElementById('grid');g.innerHTML='';(j.channels||[]).forEach(s=>{let p=pct(s);let state=!s.present?'NO SENSOR':(!s.valid?'NO READING':(s.is_empty?'EMPTY':(p<25?'LOW':'READY')));let cls=!s.present||s.is_empty?'bad':(!s.valid||p<25?'warn':'ok');g.innerHTML+=`<div class='card'><span class='badge ${cls}'>${state}</span><h3>Module ${s.idx}</h3><div class='dist'>${s.valid?s.filtered_mm:'--'} <small>mm</small></div><div class='bar'><div class='fill' style='width:${p}%'></div></div><p>${s.pill_count>=0?s.pill_count:'-'}/${s.max_pills} pills</p><div class='muted'>Addr 0x${Number(s.addr).toString(16)} | Raw ${s.raw_mm||'--'} mm</div><div><input id='fd${s.ch}' value='${s.full_dist_mm}'><input id='ph${s.ch}' value='${s.pill_height_mm}'><input id='mp${s.ch}' value='${s.max_pills}'><button onclick='save(${s.ch})'>Save</button></div></div>`})}"
-        "tick();setInterval(tick,2000);"
-        "</script></body></html>";
-    httpd_resp_set_type(req, "text/html; charset=UTF-8");
-    return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
-}
+/* sensors_page_handler removed — the legacy English HTML page was
+ * superseded by the native "ดูเซ็นเซอร์" tab on /tech that pulls
+ * /sensors.json directly. /sensors.json itself stays alive (used by
+ * the tab and by external scripts). */

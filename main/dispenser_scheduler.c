@@ -259,12 +259,20 @@ static uint32_t s_wait_start_ticks = 0;
 static int s_pending_slot_idx = -1;
 static bool s_dispense_approved = false;
 
+// Tick recorded when s_dispense_busy was set true. Used by the watchdog
+// in dispenser_task to detect a stuck busy state (servo hang, I2C
+// wedge, task crash mid-operation) and recover instead of bricking
+// the whole dispenser.
+static TickType_t s_dispense_busy_since = 0;
+#define DISPENSE_BUSY_TIMEOUT_MS  30000
+
 static bool dispenser_mark_busy_if_idle(void)
 {
     bool acquired = false;
     taskENTER_CRITICAL(&s_dispense_state_mux);
     if (!s_dispense_busy) {
         s_dispense_busy = true;
+        s_dispense_busy_since = xTaskGetTickCount();
         acquired = true;
     }
     taskEXIT_CRITICAL(&s_dispense_state_mux);
@@ -695,6 +703,23 @@ static void dispenser_task(void *arg)
         uint32_t now_ms = now_ticks * portTICK_PERIOD_MS;
 
         flush_pending_stock_audits(now_ticks);
+
+        // Watchdog: if s_dispense_busy stayed true longer than the
+        // timeout, something deadlocked (servo bind, I2C wedge, task
+        // crashed before clearing). Force-clear so the next dispense
+        // can proceed instead of permanently bricking the dispenser.
+        if (s_dispense_busy &&
+            ((now_ticks - s_dispense_busy_since) * portTICK_PERIOD_MS) > DISPENSE_BUSY_TIMEOUT_MS) {
+            ESP_LOGE(TAG, "Dispense busy >%dms — forcing clear (servo hang or task crash)",
+                     DISPENSE_BUSY_TIMEOUT_MS);
+            dispenser_clear_busy();
+            // Try to send servos home so a half-rotated cup doesn't sit
+            // in the work position blocking the next dispense.
+            for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
+                pca9685_go_home(i);
+                vTaskDelay(pdMS_TO_TICKS(20));
+            }
+        }
 
         // Check timeout logic
         if (s_waiting_confirm) {

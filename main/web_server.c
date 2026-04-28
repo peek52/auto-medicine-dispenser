@@ -90,7 +90,6 @@ httpd_handle_t start_webserver(void) {
         { "/sound/config", HTTP_GET,  sound_state_handler,  NULL },
         { "/sound/save",   HTTP_POST, sound_save_handler,   NULL },
         { "/sound/play",   HTTP_GET,  sound_play_handler,   NULL },
-        { "/sensors",         HTTP_GET,  sensors_page_handler,   NULL },
         { "/sensors.json",    HTTP_GET,  sensors_json_handler,   NULL },
         { "/sensors/config",  HTTP_POST, sensors_config_handler, NULL },
         { "/sensors/cal_capture", HTTP_POST, sensors_capture_handler, NULL },

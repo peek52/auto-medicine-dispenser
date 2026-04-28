@@ -52,5 +52,4 @@ esp_err_t sensors_capture_handler(httpd_req_t *req);
 /* ── GET /audit.json — ประวัติการเพิ่ม/ลด/จ่ายของยาแต่ละช่อง ── */
 esp_err_t audit_json_handler(httpd_req_t *req);
 
-/* ── GET /sensors — หน้าเว็บ real-time sensor ── */
-esp_err_t sensors_page_handler(httpd_req_t *req);
+/* /sensors HTML page removed — /tech "ดูเซ็นเซอร์" tab is the canonical view. */

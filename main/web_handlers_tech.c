@@ -102,7 +102,7 @@ static const char TECH_PAGE[] =
 "<div class='panel' data-panel='monitor'>"
 "<h2>ดูเซ็นเซอร์แบบเรียลไทม์</h2>"
 "<div class='sub'>VL53L0X x6 &middot; ระยะวัดและจำนวนยาในแต่ละช่อง (อัปเดตทุก 2 วินาที)</div>"
-"<div class='frame'><iframe data-src='/sensors' src='about:blank'></iframe></div>"
+"<div class='cards' id='mon-grid' style='grid-template-columns:repeat(auto-fit,minmax(200px,1fr))'></div>"
 "</div>"
 
 "<div class='panel' data-panel='camera'>"
@@ -309,6 +309,27 @@ static const char TECH_PAGE[] =
 "  try{const r=await fetch('/tech/estop?action=toggle',{method:'POST'});const j=await r.json();renderEstop(!!j.active);}catch(e){alert('ขัดข้อง');}"
 "});"
 "refreshEstop();setInterval(refreshEstop,5000);"
+
+/* Monitor panel (native — replaces the old /sensors iframe) */
+"async function monRender(){if(!tabActive('monitor'))return;"
+"  let chans=[];try{const r=await fetch('/sensors.json',{cache:'no-store'});if(r.ok){const j=await r.json();chans=j.channels||[];}}catch(e){return;}"
+"  const g=document.getElementById('mon-grid');let h='';"
+"  for(const s of chans){"
+"    const max=s.max_pills||1;const pct=s.valid&&s.pill_count>=0?Math.min(100,Math.round(s.pill_count/max*100)):0;"
+"    let state,clr;if(!s.present){state='ไม่พบเซ็นเซอร์';clr='#ff8a80';}"
+"      else if(!s.valid){state='ไม่มีข้อมูล';clr='#ffd166';}"
+"      else if(s.is_empty){state='ว่าง';clr='#ff8a80';}"
+"      else if(pct<25){state='ใกล้หมด';clr='#ffd166';}"
+"      else{state='พร้อม';clr='#9ae8d0';}"
+"    h+=\"<div class='card'><div class='card-hdr' style='display:flex;justify-content:space-between;align-items:center'><b>ช่อง \"+(s.idx)+\"</b><span style='color:\"+clr+\";font-size:12px;font-weight:700'>\"+state+\"</span></div>\""
+"     +\"<div style='font-size:28px;font-weight:800;margin-top:6px'>\"+(s.valid?s.filtered_mm+' <small style=\\\"font-size:14px;color:#a7bdd7\\\">mm</small>':'-- mm')+\"</div>\""
+"     +\"<div style='height:6px;background:#1a2a44;border-radius:3px;margin-top:8px;overflow:hidden'><div style='height:100%;width:\"+pct+\"%;background:\"+clr+\"'></div></div>\""
+"     +\"<div style='font-size:13px;color:#a7bdd7;margin-top:6px'>\"+(s.pill_count>=0?s.pill_count:'-')+\" / \"+(s.max_pills||0)+\" เม็ด</div>\""
+"     +\"<div style='font-size:11px;color:#5a6b80;margin-top:4px'>raw=\"+(s.raw_mm||'-')+\"mm &middot; full=\"+(s.full_dist_mm||'-')+\"mm\"+\"</div>\""
+"     +\"</div>\";}"
+"  g.innerHTML=h;}"
+"setInterval(monRender,2000);"
+"(new MutationObserver(()=>{const p=document.querySelector('[data-panel=monitor]');if(p&&p.classList.contains('active'))monRender();})).observe(document.querySelector('[data-panel=monitor]'),{attributes:true,attributeFilter:['class']});"
 
 /* Audit history panel */
 "function fmtTs(ts){if(!ts)return '—';const d=new Date(ts*1000);"
