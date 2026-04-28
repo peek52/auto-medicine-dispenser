@@ -262,9 +262,11 @@ static bool s_dispense_approved = false;
 // Tick recorded when s_dispense_busy was set true. Used by the watchdog
 // in dispenser_task to detect a stuck busy state (servo hang, I2C
 // wedge, task crash mid-operation) and recover instead of bricking
-// the whole dispenser.
+// the whole dispenser. Bumped from 30s → 90s after observing that a
+// 6-med slot takes ~25s for servo + IR wait + audio play, leaving no
+// safety margin and risking a watchdog fire mid-dispense.
 static TickType_t s_dispense_busy_since = 0;
-#define DISPENSE_BUSY_TIMEOUT_MS  30000
+#define DISPENSE_BUSY_TIMEOUT_MS  90000
 
 static bool dispenser_mark_busy_if_idle(void)
 {
