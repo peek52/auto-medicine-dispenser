@@ -45,6 +45,10 @@ int g_snd_volup_th  = 95;  // TH: เพิ่ม
 int g_snd_volup_en  = 97;  // EN: increase
 int g_snd_voldn_th  = 96;  // TH: ลด
 int g_snd_voldn_en  = 98;  // EN: decrease
+// Loop interval (seconds) for the dose-confirm alarm — pause this long
+// between back-to-back replays so a long voice prompt finishes before
+// the next trigger. Range 5..120; default 15 fits most TH/EN prompts.
+int g_snd_alarm_interval_s = 15;
 
 #define CARD_X          12
 #define CARD_W          (LCD_W - 24)
@@ -131,6 +135,7 @@ void settings_save_nvs(void)
         nvs_set_i16(h, "snd_vupen",  (int16_t)g_snd_volup_en);
         nvs_set_i16(h, "snd_vdnth",  (int16_t)g_snd_voldn_th);
         nvs_set_i16(h, "snd_vden",   (int16_t)g_snd_voldn_en);
+        nvs_set_i16(h, "snd_alrmint",(int16_t)g_snd_alarm_interval_s);
         nvs_commit(h);
         nvs_close(h);
         ESP_LOGI(TAG, "Settings saved: alt=%d nav=%d en=%d lang=%d",
@@ -190,6 +195,9 @@ void settings_load_nvs(void)
         if (vupen > 0 && vupen < 200) g_snd_volup_en = vupen;
         if (vdnth > 0 && vdnth < 200) g_snd_voldn_th = vdnth;
         if (vden  > 0 && vden  < 200) g_snd_voldn_en = vden;
+        int16_t aint = g_snd_alarm_interval_s;
+        nvs_get_i16(h, "snd_alrmint", &aint);
+        if (aint >= 5 && aint <= 120) g_snd_alarm_interval_s = aint;
         ESP_LOGI(TAG, "Settings loaded: alt=%d nav=%d en=%d lang=%d",
                  g_alert_volume, g_nav_volume, g_nav_sound_enabled, g_ui_language);
     }
