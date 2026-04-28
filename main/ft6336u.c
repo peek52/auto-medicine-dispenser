@@ -25,12 +25,34 @@ esp_err_t ft6336u_init(void)
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
-    uint8_t chip_id = 0;
-    if (i2c_manager_read_reg(ADDR_FT6336U, 0xA8, &chip_id, 1) == ESP_OK) {
-        ESP_LOGI(TAG, "Touch controller found. ID: 0x%02X", chip_id);
-        return ESP_OK;
+    // Try up to 3 times: a recent panic-induced reset can leave the
+    // FT6336U glitched (returning garbage like 0x00 from chip-id)
+    // even though the I2C transaction succeeds. Retry the GPIO reset
+    // pulse and re-read; if all 3 attempts return something other
+    // than a known FT ID, treat the controller as unavailable so
+    // clock_task doesn't pump bad reads at it.
+    static const uint8_t kKnownIds[] = { 0x11, 0x06, 0x64, 0xCD };
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        uint8_t chip_id = 0;
+        if (i2c_manager_read_reg(ADDR_FT6336U, 0xA8, &chip_id, 1) == ESP_OK) {
+            for (size_t i = 0; i < sizeof(kKnownIds); ++i) {
+                if (chip_id == kKnownIds[i]) {
+                    ESP_LOGI(TAG, "Touch controller found. ID: 0x%02X (attempt %d)",
+                             chip_id, attempt + 1);
+                    return ESP_OK;
+                }
+            }
+            ESP_LOGW(TAG, "Touch chip-id 0x%02X not recognised on attempt %d — retrying",
+                     chip_id, attempt + 1);
+        }
+        if (CTP_RST_PIN >= 0) {
+            gpio_set_level((gpio_num_t)CTP_RST_PIN, 0);
+            vTaskDelay(pdMS_TO_TICKS(80));
+            gpio_set_level((gpio_num_t)CTP_RST_PIN, 1);
+            vTaskDelay(pdMS_TO_TICKS(120));
+        }
     }
-    ESP_LOGE(TAG, "Touch controller not found at 0x%02X", ADDR_FT6336U);
+    ESP_LOGE(TAG, "Touch controller failed ID check after 3 retries — disabling touch");
     return ESP_ERR_NOT_FOUND;
 }
 
