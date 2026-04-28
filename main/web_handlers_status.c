@@ -23,6 +23,7 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "esp_idf_version.h"
+#include "dispenser_scheduler.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "cJSON.h"
@@ -1444,6 +1445,38 @@ esp_err_t sensors_capture_handler(httpd_req_t *req)
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t audit_json_handler(httpd_req_t *req)
+{
+    esp_err_t auth = web_require_maintenance_api_auth(req);
+    if (auth != ESP_OK) return auth;
+
+    dispenser_audit_entry_t entries[32];
+    size_t n = dispenser_audit_get(entries, 32);
+
+    char *out = (char *)malloc(4096);
+    if (!out) return httpd_resp_send_500(req);
+    size_t off = 0;
+
+    const netpie_shadow_t *sh = netpie_get_shadow();
+    off += snprintf(out + off, 4096 - off, "{\"ok\":true,\"count\":%u,\"entries\":[", (unsigned)n);
+    for (size_t i = 0; i < n && off < 4000; ++i) {
+        const dispenser_audit_entry_t *e = &entries[i];
+        const char *name = (sh && e->med_idx >= 0 && e->med_idx < DISPENSER_MED_COUNT &&
+                            sh->med[e->med_idx].name[0]) ? sh->med[e->med_idx].name : "";
+        off += snprintf(out + off, 4096 - off,
+                        "%s{\"ts\":%lu,\"med\":%d,\"name\":\"%s\",\"from\":%d,\"to\":%d,\"src\":\"%c\"}",
+                        i ? "," : "", (unsigned long)e->timestamp,
+                        e->med_idx + 1, name, e->from_count, e->to_count, e->source);
+    }
+    snprintf(out + off, 4096 - off, "]}");
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    esp_err_t ret = httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+    free(out);
+    return ret;
 }
 
 esp_err_t sensors_page_handler(httpd_req_t *req)

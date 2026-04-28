@@ -95,6 +95,7 @@ httpd_handle_t start_webserver(void) {
         { "/sensors.json",    HTTP_GET,  sensors_json_handler,   NULL },
         { "/sensors/config",  HTTP_POST, sensors_config_handler, NULL },
         { "/sensors/cal_capture", HTTP_POST, sensors_capture_handler, NULL },
+        { "/audit.json",      HTTP_GET,  audit_json_handler,     NULL },
         { "/tech",            HTTP_GET,  tech_dashboard_handler, NULL },
         { "/tech/reboot",     HTTP_POST, tech_reboot_handler,    NULL },
         { "/tech/estop",      HTTP_POST, tech_estop_handler,     NULL },

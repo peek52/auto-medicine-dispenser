@@ -77,6 +77,52 @@ static bool s_low_stock_alert_sent[DISPENSER_MED_COUNT] = {0};
 // NVS so an auto-restart while stopped stays stopped.
 static volatile bool s_emergency_stop = false;
 
+// Audit ring: holds the last 32 stock-change events for /audit.json. RAM
+// only — survives normal task churn but not reboot. Entries newest-first
+// when fetched.
+#define AUDIT_RING_SIZE 32
+static dispenser_audit_entry_t s_audit_ring[AUDIT_RING_SIZE];
+static int s_audit_head = 0;     // next write index
+static int s_audit_count = 0;    // populated entries (capped at SIZE)
+static portMUX_TYPE s_audit_mux = portMUX_INITIALIZER_UNLOCKED;
+
+void dispenser_audit_log(int med_idx, int from_count, int to_count, char source)
+{
+    if (med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return;
+    if (from_count == to_count) return;
+    time_t now = 0;
+    time(&now);
+    taskENTER_CRITICAL(&s_audit_mux);
+    s_audit_ring[s_audit_head] = (dispenser_audit_entry_t){
+        .timestamp  = (uint32_t)now,
+        .med_idx    = (int16_t)med_idx,
+        .from_count = (int16_t)from_count,
+        .to_count   = (int16_t)to_count,
+        .source     = source ? source : 'X',
+    };
+    s_audit_head = (s_audit_head + 1) % AUDIT_RING_SIZE;
+    if (s_audit_count < AUDIT_RING_SIZE) s_audit_count++;
+    taskEXIT_CRITICAL(&s_audit_mux);
+}
+
+size_t dispenser_audit_get(dispenser_audit_entry_t *out_entries, size_t max_entries)
+{
+    if (!out_entries || max_entries == 0) return 0;
+    size_t written = 0;
+    taskENTER_CRITICAL(&s_audit_mux);
+    int idx = s_audit_head - 1;
+    if (idx < 0) idx += AUDIT_RING_SIZE;
+    int remaining = s_audit_count;
+    while (remaining > 0 && written < max_entries) {
+        out_entries[written++] = s_audit_ring[idx];
+        idx--;
+        if (idx < 0) idx += AUDIT_RING_SIZE;
+        remaining--;
+    }
+    taskEXIT_CRITICAL(&s_audit_mux);
+    return written;
+}
+
 static void dispenser_emergency_save_nvs(bool active)
 {
     nvs_handle_t h;
@@ -464,6 +510,11 @@ static void send_stock_adjust_audit(int med_idx, int from_count, int to_count)
     const netpie_shadow_t *sh = netpie_get_shadow();
     if (!sh || med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return;
 
+    // Persist the change in the in-memory ring so /audit.json + /tech UI
+    // can show it. Source 'V' = sensor sync (this audit path is fired
+    // when VL53 sees the cartridge level change after a refill / drain).
+    dispenser_audit_log(med_idx, from_count, to_count, 'V');
+
     char time_str[16] = "--:--";
     ds3231_get_time_str(time_str, sizeof(time_str));
 
@@ -605,9 +656,11 @@ static void execute_dispense(int slot_idx)
         vTaskDelay(pdMS_TO_TICKS(500));
 
         if (pill_detected) {
-            int new_count = sh->med[i].count - 1;
+            int old_count = sh->med[i].count;
+            int new_count = old_count - 1;
             if (new_count < 0) new_count = 0;
             netpie_shadow_update_count(i + 1, new_count);
+            dispenser_audit_log(i, old_count, new_count, 'S');
             send_low_stock_alert(i, new_count,
                                  "ยาใกล้หมด เหลือ 2 เม็ดสุดท้ายหรือน้อยกว่า",
                                  "Medicine is running low. Two pills or fewer remain.",
@@ -989,6 +1042,7 @@ static void manual_dispense_task(void *arg) {
                 int new_count = current_count - 1;
                 if (new_count < 0) new_count = 0;
                 netpie_shadow_update_count(m_idx + 1, new_count);
+                dispenser_audit_log(m_idx, current_count, new_count, 'M');
                 send_low_stock_alert(m_idx, new_count,
                                      "ยาใกล้หมด เหลือ 2 เม็ดสุดท้ายหรือน้อยกว่า",
                                      "Medicine is running low. Two pills or fewer remain.",
@@ -998,7 +1052,9 @@ static void manual_dispense_task(void *arg) {
             ESP_LOGW(TAG, "No pill detected during manual dispense/return. Marking stock empty.");
             extern int g_snd_nomeds_th, g_snd_nomeds_en;
             dfplayer_play_track(telegram_lang_is_th() ? g_snd_nomeds_th : g_snd_nomeds_en);
+            int prev_count = sh->med[m_idx].count;
             netpie_shadow_update_count(m_idx + 1, 0);
+            dispenser_audit_log(m_idx, prev_count, 0, 'M');
             forced_empty = true;
             send_low_stock_alert(m_idx, 0,
                                  "ไม่พบยาผ่านเซนเซอร์ระหว่างคืนยา/จ่ายยา ระบบตั้งค่ายาคงเหลือเป็น 0 แล้ว กรุณาเติมยา",

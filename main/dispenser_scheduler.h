@@ -41,6 +41,28 @@ void dispenser_emergency_set(void);
 void dispenser_emergency_clear(void);
 bool dispenser_emergency_active(void);
 
+/* Audit log entry exposed through /audit.json. Source codes:
+ *   'M' = manual via touch UI / web manual button
+ *   'S' = scheduled auto-dispense
+ *   'W' = web/edit screen stock change (user typed new count)
+ *   'V' = VL53 sensor sync (cartridge filled/refilled physically)
+ *   'X' = unknown / other
+ */
+typedef struct {
+    uint32_t  timestamp;   // unix seconds (0 if RTC not synced)
+    int16_t   med_idx;     // 0..DISPENSER_MED_COUNT-1
+    int16_t   from_count;
+    int16_t   to_count;
+    char      source;
+} dispenser_audit_entry_t;
+
+/** Append an event to the audit ring (32 entries, newest wins). */
+void dispenser_audit_log(int med_idx, int from_count, int to_count, char source);
+
+/** Copy up to max_entries newest-first audit entries into out_entries.
+ *  Returns the number actually written. */
+size_t dispenser_audit_get(dispenser_audit_entry_t *out_entries, size_t max_entries);
+
 /** บันทึกการปรับจำนวนยาจากหน้า setup และส่ง audit ไป Telegram แบบหน่วงรวมเหตุการณ์ */
 void dispenser_audit_stock_adjust(int med_idx, int old_count, int new_count);
 
