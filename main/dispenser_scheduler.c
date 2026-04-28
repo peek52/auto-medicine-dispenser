@@ -685,6 +685,19 @@ static void execute_dispense(int slot_idx)
     xSemaphoreGive(s_dispense_mutex);
     dispenser_clear_busy();
 
+    // Result sound for the scheduled dose: at least one pill dropped =
+    // จ่ายยาสำเร็จ; nothing dropped = ไม่พบยา.
+    {
+        extern int g_snd_disp_th, g_snd_disp_en, g_snd_nomeds_th, g_snd_nomeds_en;
+        bool any_dispensed = (dispensed_meds && dispensed_meds[0] != '\0');
+        bool is_th = telegram_lang_is_th();
+        if (any_dispensed) {
+            dfplayer_play_track(is_th ? g_snd_disp_th : g_snd_disp_en);
+        } else {
+            dfplayer_play_track(is_th ? g_snd_nomeds_th : g_snd_nomeds_en);
+        }
+    }
+
     send_dispense_result_summary(slot_idx, dispensed_meds, empty_meds, missed_meds);
     free(dispensed_meds);
     free(empty_meds);
@@ -1074,9 +1087,12 @@ static void manual_dispense_task(void *arg) {
                                      false);
             }
         } else {
-            ESP_LOGW(TAG, "No pill detected during manual dispense/return. Marking stock empty.");
-            extern int g_snd_nomeds_th, g_snd_nomeds_en;
-            dfplayer_play_track(telegram_lang_is_th() ? g_snd_nomeds_th : g_snd_nomeds_en);
+            // Pill missed mid-batch (e.g. last attempt during a return).
+            // Don't play "ไม่พบยา" yet — let the end-of-task summary
+            // decide based on whether *any* pills came out. If at least
+            // one dropped, this is still a successful return / dispense.
+            ESP_LOGW(TAG, "No pill detected on attempt %d/%d (dropped so far=%d). "
+                          "Marking stock empty.", actually_dropped + 1, qty, actually_dropped);
             int prev_count = sh->med[m_idx].count;
             netpie_shadow_update_count(m_idx + 1, 0);
             dispenser_audit_log(m_idx, prev_count, 0, 'M');
@@ -1088,12 +1104,16 @@ static void manual_dispense_task(void *arg) {
             break;
         }
     }
-    
+
     ESP_LOGI(TAG, "Manual dispense complete. Dropped: %d pills", actually_dropped);
-    // Play result audio via configurable track globals
+    // Result audio: pick by *what actually happened*, not by forced_empty.
+    //   actually_dropped == 0  → ไม่พบยา (no pill came out at all)
+    //   eject_all (return)     → คืนยาเรียบร้อย (return success, even if last
+    //                             attempt missed — at least one came out)
+    //   manual dispense        → จ่ายยาสำเร็จ
     extern int g_snd_disp_th, g_snd_disp_en, g_snd_return_th, g_snd_return_en, g_snd_nomeds_th, g_snd_nomeds_en;
     bool is_th = telegram_lang_is_th();
-    if (forced_empty || actually_dropped == 0) {
+    if (actually_dropped == 0) {
         dfplayer_play_track(is_th ? g_snd_nomeds_th : g_snd_nomeds_en);
     } else if (eject_all) {
         dfplayer_play_track(is_th ? g_snd_return_th : g_snd_return_en);
