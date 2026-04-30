@@ -388,8 +388,13 @@ static bool send_google_sheets_sync(const char *event, const char *meds, const c
     esp_http_client_cleanup(client);
     free(post_data);
 
-    if (status > 0 || err == ESP_OK || gsheet_status_ok(status)) {
-        ESP_LOGI(TAG, "GSheet send accepted. Status=%d err=%s", status, esp_err_to_name(err));
+    // Only accept the send when the HTTP perform actually succeeded AND
+    // the server returned a 2xx/3xx status. The previous "status > 0 OR
+    // err == ESP_OK" treated any reachable endpoint as success — even
+    // 4xx/5xx responses would mark the event as sent and drop it from the
+    // retry queue, silently losing dispense events.
+    if (err == ESP_OK && gsheet_status_ok(status)) {
+        ESP_LOGI(TAG, "GSheet send accepted. Status=%d", status);
         gsheet_mark_recent(event, meds, detail);
         return true;
     }

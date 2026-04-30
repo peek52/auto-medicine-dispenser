@@ -12,6 +12,7 @@
 #include "offline_sync.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "esp_timer.h"
 #include <string.h>
 #include <stdbool.h>
 
@@ -21,6 +22,11 @@ static const char *TAG = "wifi_sta";
 #define WIFI_FAIL_BIT       BIT1
 #define WIFI_SCAN_DONE_BIT  BIT2
 #define MAX_RETRY           10
+// After exhausting MAX_RETRY fast attempts, back off this long before
+// resetting the counter and trying again. Without the backoff the device
+// loops esp_wifi_connect() at the disconnect-event rate (multiple per
+// second), which can hammer a router that's still rebooting.
+#define WIFI_BACKOFF_MS     30000
 
 static EventGroupHandle_t s_wifi_event_group;
 static char s_ip_str[16] = "0.0.0.0";
@@ -28,6 +34,41 @@ static char s_ssid_str[33] = "";
 static bool s_connected = false;
 static int s_retry_num = 0;
 static bool s_wifi_stack_ready = false;
+static esp_timer_handle_t s_reconnect_timer = NULL;
+static volatile bool s_reconnect_pending = false;
+
+static void wifi_reconnect_timer_cb(void *arg)
+{
+    (void)arg;
+    s_reconnect_pending = false;
+    s_retry_num = 0;
+    ESP_LOGI(TAG, "Backoff elapsed — re-arming Wi-Fi connect");
+    esp_wifi_connect();
+}
+
+static void wifi_schedule_backoff_reconnect(void)
+{
+    if (s_reconnect_pending) return;
+    if (!s_reconnect_timer) {
+        const esp_timer_create_args_t args = {
+            .callback = wifi_reconnect_timer_cb,
+            .name = "wifi_backoff",
+        };
+        if (esp_timer_create(&args, &s_reconnect_timer) != ESP_OK) {
+            // Fallback: reset counter and reconnect immediately.
+            s_retry_num = 0;
+            esp_wifi_connect();
+            return;
+        }
+    }
+    s_reconnect_pending = true;
+    if (esp_timer_start_once(s_reconnect_timer,
+                             (uint64_t)WIFI_BACKOFF_MS * 1000ULL) != ESP_OK) {
+        s_reconnect_pending = false;
+        s_retry_num = 0;
+        esp_wifi_connect();
+    }
+}
 
 static esp_err_t start_sta(const char *ssid, const char *pass);
 static void start_ap(void);
@@ -120,6 +161,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         esp_wifi_connect();
     } else if (base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         s_connected = false;
+        if (s_reconnect_pending) {
+            // A backoff timer is already in flight — don't let a stray
+            // disconnect event short-circuit it back into a fast loop.
+            return;
+        }
         if (s_retry_num < MAX_RETRY) {
             esp_wifi_connect();
             s_retry_num++;
@@ -127,14 +173,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         } else {
             // Don't give up forever — if the router rebooted or the
             // signal blipped, the board would otherwise stay offline
-            // until the user power-cycles. Reset the counter and try
-            // again so reconnect happens on the next disconnect event.
+            // until the user power-cycles. Back off WIFI_BACKOFF_MS
+            // before resetting the counter so we don't hammer a router
+            // that's still coming back up.
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
             display_clock_set_ip("0.0.0.0");
-            s_retry_num = 0;
             ESP_LOGW(TAG, "Wi-Fi reconnect attempts exhausted — "
-                          "resetting counter for next try");
-            esp_wifi_connect();
+                          "backing off %d ms", WIFI_BACKOFF_MS);
+            wifi_schedule_backoff_reconnect();
         }
     } else if (base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *ev = (ip_event_got_ip_t *)event_data;

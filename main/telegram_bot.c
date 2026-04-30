@@ -26,6 +26,14 @@ static TaskHandle_t s_poll_task_handle = NULL;
 static telegram_language_t s_tg_language = TELEGRAM_LANG_TH;
 static SemaphoreHandle_t s_http_mutex = NULL;
 
+// Bound concurrent /photo uploads. Each task owns a 12 KB stack + the JPEG
+// buffer (~100 KB), so an unbounded burst of /photo commands could exhaust
+// PSRAM/internal RAM before the first upload finishes. Cap to TG_PHOTO_MAX
+// in flight; surplus calls drop the buffer and return immediately.
+#define TG_PHOTO_MAX_INFLIGHT 2
+static volatile int s_photo_inflight = 0;
+static portMUX_TYPE s_photo_inflight_mux = portMUX_INITIALIZER_UNLOCKED;
+
 // Async Task payload wrapper
 typedef struct {
     char *message;
@@ -76,6 +84,16 @@ static void telegram_save_language(void)
 static void telegram_load_language(void)
 {
     s_tg_language = TELEGRAM_LANG_TH;
+    nvs_handle_t h;
+    if (nvs_open("settings", NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = (uint8_t)TELEGRAM_LANG_TH;
+        if (nvs_get_u8(h, "lang_tg", &v) == ESP_OK) {
+            s_tg_language = (v == (uint8_t)TELEGRAM_LANG_EN)
+                                ? TELEGRAM_LANG_EN
+                                : TELEGRAM_LANG_TH;
+        }
+        nvs_close(h);
+    }
 }
 
 telegram_language_t telegram_get_language(void)
@@ -989,6 +1007,9 @@ static void telegram_send_photo_task(void *pvParameters) {
     free(args->photo_buf);
     free(args->caption);
     free(args);
+    portENTER_CRITICAL(&s_photo_inflight_mux);
+    if (s_photo_inflight > 0) s_photo_inflight--;
+    portEXIT_CRITICAL(&s_photo_inflight_mux);
     vTaskDelete(NULL);
 }
 
@@ -997,28 +1018,48 @@ void telegram_send_photo_with_text(uint8_t *photo_buf, size_t photo_len, const c
         free(photo_buf);
         return;
     }
-    
+
+    portENTER_CRITICAL(&s_photo_inflight_mux);
+    bool over_limit = (s_photo_inflight >= TG_PHOTO_MAX_INFLIGHT);
+    if (!over_limit) s_photo_inflight++;
+    portEXIT_CRITICAL(&s_photo_inflight_mux);
+    if (over_limit) {
+        ESP_LOGW(TAG, "Photo backpressure: %d in-flight, dropping new send",
+                 TG_PHOTO_MAX_INFLIGHT);
+        free(photo_buf);
+        return;
+    }
+
     tg_photo_args_t *args = malloc(sizeof(tg_photo_args_t));
     if (!args) {
         free(photo_buf); // Take ownership of buffer to free it
+        portENTER_CRITICAL(&s_photo_inflight_mux);
+        if (s_photo_inflight > 0) s_photo_inflight--;
+        portEXIT_CRITICAL(&s_photo_inflight_mux);
         return;
     }
-    
+
     args->photo_buf = photo_buf;
     args->photo_len = photo_len;
     args->caption = strdup(caption ? caption : "");
-    
+
     if (!args->caption) {
         free(photo_buf);
         free(args);
+        portENTER_CRITICAL(&s_photo_inflight_mux);
+        if (s_photo_inflight > 0) s_photo_inflight--;
+        portEXIT_CRITICAL(&s_photo_inflight_mux);
         return;
     }
-    
+
     if (xTaskCreate(telegram_send_photo_task, "tg_pho_task", 12288, args, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create Telegram photo task");
         free(args->photo_buf);
         free(args->caption);
         free(args);
+        portENTER_CRITICAL(&s_photo_inflight_mux);
+        if (s_photo_inflight > 0) s_photo_inflight--;
+        portEXIT_CRITICAL(&s_photo_inflight_mux);
     }
 }
 
