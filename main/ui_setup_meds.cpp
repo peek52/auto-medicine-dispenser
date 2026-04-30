@@ -601,7 +601,7 @@ void ui_setup_meds_detail_render(void)
                     draw_meds_label((LCD_W - kThDispenseFail2.width) / 2, 175, &kThDispenseFail2);
                 } else {
                     draw_string_centered(LCD_W/2, 150, "Dispense Failed", 0xFFFF, THEME_BAD, &FreeSans18pt7b);
-                    draw_string_centered(LCD_W/2, 190, "Hardware I2C disconnect", 0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                    draw_string_centered(LCD_W/2, 190, "Tap to retry", 0xFFFF, THEME_BAD, &FreeSans12pt7b);
                 }
                 if (is_new_status) s_disp_fail_tick = xTaskGetTickCount();
             } else if (ui_manual_disp_status == 0) {

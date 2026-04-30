@@ -8,13 +8,26 @@
 #include "i2c_manager.h"
 #include "config.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "tca9548a";
 
 esp_err_t tca9548a_init(void)
 {
-    if (!tca9548a_is_present()) {
-        ESP_LOGW(TAG, "TCA9548A not found at 0x%02X — VL53 sensors disabled", ADDR_TCA9548A);
+    // 6 retries × 250 ms = 1.5 s window — enough for modules with slow
+    // 3.3 V rail bring-up. Higher retry counts trigger an IDF v5.3.2
+    // i2c_master ISR race when the bus is genuinely dead, but with the
+    // bus-disable mitigation (i2c_manager_disable_bus) firing later on
+    // total bus death we can afford a wider window for the live case.
+    bool present = false;
+    for (int attempt = 0; attempt < 6; ++attempt) {
+        if (tca9548a_is_present()) { present = true; break; }
+        vTaskDelay(pdMS_TO_TICKS(250));
+    }
+    if (!present) {
+        ESP_LOGW(TAG, "TCA9548A not found at 0x%02X after retries — VL53 sensors disabled",
+                 ADDR_TCA9548A);
         return ESP_ERR_NOT_FOUND;
     }
     esp_err_t ret = tca9548a_disable_all();

@@ -17,6 +17,7 @@
 #include "pill_sensor_status.h"
 #include "vl53l0x_multi.h"
 #include "config.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_system.h"
@@ -1470,38 +1471,54 @@ esp_err_t sensors_capture_handler(httpd_req_t *req)
 }
 
 /* ─────────────────────────────────────────────────────────────────────
- * Guided per-pill calibration session.
+ * Auto per-pill calibration session.
  *
  * Flow (per channel):
  *  1. Operator fills the cartridge fully and types max_pills.
- *  2. POST /sensors/cal_guide?ch=N&action=start&max_pills=13
- *       → captures filtered_mm right now as the "full" distance, opens
- *         a session with steps[0] = {count=13, dist=full}.
- *  3. POST /sensors/cal_guide?ch=N&action=step
- *       → fires a single manual dispense for that channel, waits for
- *         the cartridge to settle, captures the new filtered_mm as the
- *         next entry. Repeat until empty.
- *  4. POST /sensors/cal_guide?ch=N&action=finish
- *       → uses linear regression on the captured (count, dist) pairs to
- *         derive pill_height_mm, then commits the result via
- *         vl53l0x_set_channel_config so it persists in NVS. Resets the
- *         count_offset to 0.
- *  5. POST .../action=reset cancels the session at any time.
+ *  2. POST /sensors/cal_guide?ch=N&action=auto&max_pills=13
+ *       → captures full distance now, then spawns a background task
+ *         that dispenses pills one at a time (max_pills total) and
+ *         records the filtered_mm reading after each dispense.
+ *       → when the run finishes, the task averages the captured
+ *         (count, dist) pairs at fixed pill_height=15mm, derives
+ *         full_dist_mm and persists via vl53l0x_set_channel_config.
+ *         count_offset is reset to 0.
+ *  3. GET /sensors/cal_guide?ch=N → live phase + steps for the UI.
+ *  4. POST .../action=reset cancels a running session at any time.
+ *
+ * Pill height is fixed at VL53_PILL_HEIGHT_MM (15 mm) — the cartridge
+ * geometry is standardized, so guided cal only learns the full-state
+ * distance.
  * ───────────────────────────────────────────────────────────────────── */
 #define CAL_GUIDE_MAX_STEPS 100
 
+typedef enum {
+    CAL_PHASE_IDLE = 0,
+    CAL_PHASE_RUNNING,
+    CAL_PHASE_DONE,
+    CAL_PHASE_ERROR,
+} cal_guide_phase_t;
+
 typedef struct {
-    bool     active;
-    int      max_pills;
-    int      steps_count;       // number of (count, dist) pairs recorded
-    int16_t  step_count[CAL_GUIDE_MAX_STEPS];
-    int16_t  step_dist[CAL_GUIDE_MAX_STEPS];
+    bool              active;          // task is alive and progressing
+    bool              cancel_req;      // set by /reset, polled by task
+    cal_guide_phase_t phase;
+    int               max_pills;
+    int               steps_count;
+    int16_t           step_count[CAL_GUIDE_MAX_STEPS];
+    int16_t           step_dist[CAL_GUIDE_MAX_STEPS];
+    int               result_full_dist;
+    int               result_height;
+    char              error_msg[32];
 } cal_guide_session_t;
 
-static cal_guide_session_t s_cal_guide[PILL_SENSOR_COUNT];
+// Park in PSRAM — 6 sessions × ~450 B was crowding internal BSS, leaving
+// too little DMA-capable internal RAM for ESP-Hosted's SDIO mempool at boot.
+static EXT_RAM_BSS_ATTR cal_guide_session_t s_cal_guide[PILL_SENSOR_COUNT];
 
 static void cal_guide_reset(int ch)
 {
+    // Caller must have already stopped any background task on this ch.
     memset(&s_cal_guide[ch], 0, sizeof(s_cal_guide[ch]));
 }
 
@@ -1523,14 +1540,29 @@ static esp_err_t cal_guide_send(httpd_req_t *req, const char *json)
     return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
 }
 
+static const char *cal_phase_str(cal_guide_phase_t p)
+{
+    switch (p) {
+        case CAL_PHASE_RUNNING: return "running";
+        case CAL_PHASE_DONE:    return "done";
+        case CAL_PHASE_ERROR:   return "error";
+        case CAL_PHASE_IDLE:    /* fall through */
+        default:                return "idle";
+    }
+}
+
 static esp_err_t cal_guide_send_state(httpd_req_t *req, int ch)
 {
     cal_guide_session_t *s = &s_cal_guide[ch];
     char *out = (char *)malloc(2048);
     if (!out) return httpd_resp_send_500(req);
     int off = snprintf(out, 2048,
-        "{\"ok\":true,\"ch\":%d,\"active\":%s,\"max_pills\":%d,\"steps\":[",
-        ch, s->active ? "true" : "false", s->max_pills);
+        "{\"ok\":true,\"ch\":%d,\"active\":%s,\"phase\":\"%s\","
+        "\"max_pills\":%d,\"full_dist_mm\":%d,\"pill_height_mm\":%d,"
+        "\"error\":\"%s\",\"steps\":[",
+        ch, s->active ? "true" : "false", cal_phase_str(s->phase),
+        s->max_pills, s->result_full_dist, s->result_height,
+        s->error_msg);
     for (int i = 0; i < s->steps_count && off < 2000; ++i) {
         off += snprintf(out + off, 2048 - off, "%s{\"count\":%d,\"dist\":%d}",
                         i ? "," : "", s->step_count[i], s->step_dist[i]);
@@ -1539,6 +1571,103 @@ static esp_err_t cal_guide_send_state(httpd_req_t *req, int ch)
     esp_err_t r = cal_guide_send(req, out);
     free(out);
     return r;
+}
+
+/* ── Auto-cal background task: dispense N pills one at a time, record
+ *    distance after each, then average → full_dist_mm at fixed 15mm
+ *    height and persist via vl53l0x_set_channel_config. ── */
+static void cal_guide_auto_task(void *arg)
+{
+    int ch = (int)(intptr_t)arg;
+    cal_guide_session_t *s = &s_cal_guide[ch];
+    extern volatile int ui_manual_disp_status;
+    extern void dispenser_manual_dispense(int med_idx, int qty);
+    extern bool dispenser_emergency_active(void);
+
+    // Step 0: capture "full" distance with cartridge fully loaded.
+    int full_dist = cal_guide_capture_distance(ch);
+    if (full_dist <= 0) {
+        s->phase = CAL_PHASE_ERROR;
+        snprintf(s->error_msg, sizeof(s->error_msg), "no_live_reading");
+        s->active = false;
+        vTaskDelete(NULL);
+        return;
+    }
+    s->step_count[0] = (int16_t)s->max_pills;
+    s->step_dist[0]  = (int16_t)full_dist;
+    s->steps_count = 1;
+
+    int target = s->max_pills;
+    if (target > CAL_GUIDE_MAX_STEPS - 1) target = CAL_GUIDE_MAX_STEPS - 1;
+
+    for (int i = 0; i < target; ++i) {
+        if (s->cancel_req) {
+            snprintf(s->error_msg, sizeof(s->error_msg), "cancelled");
+            s->phase = CAL_PHASE_ERROR;
+            s->active = false;
+            vTaskDelete(NULL);
+            return;
+        }
+        if (dispenser_emergency_active()) {
+            snprintf(s->error_msg, sizeof(s->error_msg), "estop_active");
+            s->phase = CAL_PHASE_ERROR;
+            s->active = false;
+            vTaskDelete(NULL);
+            return;
+        }
+
+        // Fire a single manual dispense and wait for completion.
+        ui_manual_disp_status = 0;
+        dispenser_manual_dispense(ch, 1);
+        TickType_t start = xTaskGetTickCount();
+        while ((xTaskGetTickCount() - start) * portTICK_PERIOD_MS < 30000) {
+            if (s->cancel_req) break;
+            int st = ui_manual_disp_status;
+            if (st == 2 || st == 3) break;
+            vTaskDelay(pdMS_TO_TICKS(150));
+        }
+        ui_manual_disp_status = 0;  // free the slot for next iteration
+
+        if (s->cancel_req) {
+            snprintf(s->error_msg, sizeof(s->error_msg), "cancelled");
+            s->phase = CAL_PHASE_ERROR;
+            s->active = false;
+            vTaskDelete(NULL);
+            return;
+        }
+
+        int dist = cal_guide_capture_distance(ch);
+        if (dist > 0 && s->steps_count < CAL_GUIDE_MAX_STEPS) {
+            s->step_count[s->steps_count] = (int16_t)(s->max_pills - (i + 1));
+            s->step_dist[s->steps_count]  = (int16_t)dist;
+            s->steps_count++;
+        }
+    }
+
+    // Compute full_dist at fixed 15mm height across captured points.
+    if (s->steps_count >= 2) {
+        const int height = VL53_PILL_HEIGHT_MM;
+        long sum_full = 0;
+        for (int i = 0; i < s->steps_count; ++i) {
+            long removed = s->max_pills - s->step_count[i];
+            sum_full += (long)s->step_dist[i] - removed * height;
+        }
+        int fd = (int)((sum_full + (s->steps_count / 2)) / s->steps_count);
+        if (fd < 1) fd = 1;
+        if (fd > 500) fd = 500;
+        extern void vl53l0x_set_channel_config(int ch, int full_dist_mm, int pill_height_mm, int max_pills);
+        extern void vl53l0x_set_channel_offset(int ch, int count_offset);
+        vl53l0x_set_channel_config(ch, fd, height, s->max_pills);
+        vl53l0x_set_channel_offset(ch, 0);
+        s->result_full_dist = fd;
+        s->result_height    = height;
+        s->phase = CAL_PHASE_DONE;
+    } else {
+        snprintf(s->error_msg, sizeof(s->error_msg), "not_enough_steps");
+        s->phase = CAL_PHASE_ERROR;
+    }
+    s->active = false;
+    vTaskDelete(NULL);
 }
 
 esp_err_t sensors_calguide_handler(httpd_req_t *req)
@@ -1567,102 +1696,38 @@ esp_err_t sensors_calguide_handler(httpd_req_t *req)
     }
 
     if (strcmp(action, "reset") == 0) {
+        // If a task is still running, signal cancel and wait briefly so
+        // it can exit before we wipe the session struct it's writing to.
+        if (s->active) {
+            s->cancel_req = true;
+            for (int i = 0; i < 50 && s->active; ++i) {
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+        }
         cal_guide_reset(ch);
         return cal_guide_send_state(req, ch);
     }
 
-    if (strcmp(action, "start") == 0) {
+    if (strcmp(action, "auto") == 0) {
+        if (s->active) {
+            return cal_guide_send(req, "{\"ok\":false,\"error\":\"already_running\"}");
+        }
         int max_pills = atoi(max_s);
-        if (max_pills <= 0 || max_pills > CAL_GUIDE_MAX_STEPS) {
+        if (max_pills <= 0 || max_pills > CAL_GUIDE_MAX_STEPS - 1) {
             return cal_guide_send(req, "{\"ok\":false,\"error\":\"invalid_max_pills\"}");
         }
-        int dist = cal_guide_capture_distance(ch);
-        if (dist <= 0) {
-            return cal_guide_send(req, "{\"ok\":false,\"error\":\"no_live_reading\"}");
-        }
         cal_guide_reset(ch);
-        s->active = true;
-        s->max_pills = max_pills;
-        s->steps_count = 1;
-        s->step_count[0] = (int16_t)max_pills;
-        s->step_dist[0] = (int16_t)dist;
+        s->active     = true;
+        s->cancel_req = false;
+        s->phase      = CAL_PHASE_RUNNING;
+        s->max_pills  = max_pills;
+        BaseType_t ok = xTaskCreate(cal_guide_auto_task, "cal_auto", 4096,
+                                    (void *)(intptr_t)ch, 4, NULL);
+        if (ok != pdPASS) {
+            cal_guide_reset(ch);
+            return cal_guide_send(req, "{\"ok\":false,\"error\":\"task_create_failed\"}");
+        }
         return cal_guide_send_state(req, ch);
-    }
-
-    if (!s->active) {
-        return cal_guide_send(req, "{\"ok\":false,\"error\":\"session_not_started\"}");
-    }
-
-    if (strcmp(action, "step") == 0) {
-        if (s->steps_count >= CAL_GUIDE_MAX_STEPS) {
-            return cal_guide_send(req, "{\"ok\":false,\"error\":\"too_many_steps\"}");
-        }
-        // Fire one manual dispense for this channel and wait for it to
-        // finish (manual_dispense_task runs in the background, mutex-
-        // serialized). Then capture the new distance.
-        extern void dispenser_manual_dispense(int med_idx, int qty);
-        dispenser_manual_dispense(ch, 1);
-
-        // Poll until busy clears or timeout (~10 s total).
-        extern bool dispenser_emergency_active(void);
-        for (int i = 0; i < 100; ++i) {
-            vTaskDelay(pdMS_TO_TICKS(100));
-            // Approximate: if no busy, manual is done. We don't have
-            // a public "is_busy" so use the dispense mutex behaviour
-            // by checking dispense flow — a 10s grace covers normal
-            // 1-pill dispense (~4 s servo + IR wait + audio).
-        }
-
-        int dist = cal_guide_capture_distance(ch);
-        if (dist <= 0) {
-            return cal_guide_send(req, "{\"ok\":false,\"error\":\"no_live_reading\"}");
-        }
-        int prev_count = s->step_count[s->steps_count - 1];
-        s->step_count[s->steps_count] = (int16_t)(prev_count - 1);
-        s->step_dist[s->steps_count] = (int16_t)dist;
-        s->steps_count++;
-        return cal_guide_send_state(req, ch);
-    }
-
-    if (strcmp(action, "finish") == 0) {
-        if (s->steps_count < 2) {
-            return cal_guide_send(req, "{\"ok\":false,\"error\":\"need_at_least_2_steps\"}");
-        }
-        // Simple linear regression: dist = full_dist + (max - count) * height
-        // Using least-squares on (count, dist) pairs:
-        //   slope = -height, intercept = full_dist + max * height
-        long n = s->steps_count;
-        long sum_x = 0, sum_y = 0, sum_xy = 0, sum_xx = 0;
-        for (int i = 0; i < n; ++i) {
-            long x = s->step_count[i];
-            long y = s->step_dist[i];
-            sum_x += x; sum_y += y; sum_xy += x * y; sum_xx += x * x;
-        }
-        long denom = n * sum_xx - sum_x * sum_x;
-        if (denom == 0) {
-            return cal_guide_send(req, "{\"ok\":false,\"error\":\"degenerate_data\"}");
-        }
-        long slope_q1000 = (1000L * (n * sum_xy - sum_x * sum_y)) / denom;
-        long intercept_q1000 = (1000L * sum_y - slope_q1000 * sum_x) / n;
-        int height = (int)((-slope_q1000 + 500) / 1000);  // round
-        if (height <= 0) height = 1;
-        if (height > 50) height = 50;
-        // full_dist = intercept + slope * max_pills
-        int full_dist = (int)((intercept_q1000 + slope_q1000 * s->max_pills + 500) / 1000);
-        if (full_dist < 1) full_dist = 1;
-        if (full_dist > 500) full_dist = 500;
-
-        extern void vl53l0x_set_channel_config(int ch, int full_dist_mm, int pill_height_mm, int max_pills);
-        extern void vl53l0x_set_channel_offset(int ch, int count_offset);
-        vl53l0x_set_channel_config(ch, full_dist, height, s->max_pills);
-        vl53l0x_set_channel_offset(ch, 0);  // reset offset since cal is now accurate
-
-        char json[160];
-        snprintf(json, sizeof(json),
-            "{\"ok\":true,\"ch\":%d,\"steps\":%d,\"full_dist_mm\":%d,\"pill_height_mm\":%d,\"max_pills\":%d}",
-            ch, (int)n, full_dist, height, s->max_pills);
-        cal_guide_reset(ch);
-        return cal_guide_send(req, json);
     }
 
     return cal_guide_send(req, "{\"ok\":false,\"error\":\"unknown_action\"}");

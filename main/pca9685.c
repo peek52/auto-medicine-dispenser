@@ -92,8 +92,23 @@ void pca9685_save_nvs(void)
     }
 }
 
+void pca9685_load_cache_only(void)
+{
+    for (int i = 0; i < PCA9685_NUM_CHANNELS; i++) {
+        g_servo[i].home_angle = 66;
+        g_servo[i].work_angle = 33;
+        g_servo[i].cur_angle  = -1;
+    }
+    pca9685_load_nvs();
+}
+
 esp_err_t pca9685_init(void)
 {
+    // Populate the runtime cache up front — even if the hardware
+    // probe below fails, /servo/state should still report the user's
+    // saved home/work angles instead of BSS-zero 0/0.
+    pca9685_load_cache_only();
+
     // Reset
     esp_err_t ret = write_reg(PCA9685_MODE1, 0x00);
     if (ret != ESP_OK) {
@@ -120,15 +135,9 @@ esp_err_t pca9685_init(void)
     ret = write_reg(PCA9685_MODE1, 0xA0);
     if (ret != ESP_OK) return ret;
 
-    // Init servo configs to defaults first
-    for (int i = 0; i < PCA9685_NUM_CHANNELS; i++) {
-        g_servo[i].home_angle = 66;
-        g_servo[i].work_angle = 33;
-        g_servo[i].cur_angle  = -1;
-    }
-
-    // Load actual configurations from NVS overriding defaults if exist
-    pca9685_load_nvs();
+    // (Defaults + NVS load now happen at the top of pca9685_init so
+    //  the web /servo/state shows the right values even when the chip
+    //  isn't physically present.)
 
     ESP_LOGI(TAG, "PCA9685 initialized (prescale=%d, ~50Hz)", prescale);
     return ESP_OK;
@@ -145,7 +154,18 @@ esp_err_t pca9685_set_pwm(uint8_t channel, uint16_t on, uint16_t off)
         (uint8_t)(off & 0xFF),
         (uint8_t)(off >> 8),
     };
-    return i2c_manager_write(ADDR_PCA9685, buf, 5);
+    // Retry on transient bus glitches (servo current spikes can corrupt
+    // a single I2C transaction). 5 attempts with 10 ms gap is enough to
+    // ride out brown-out wobble without bricking the dispense flow.
+    esp_err_t r = ESP_FAIL;
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        r = i2c_manager_write(ADDR_PCA9685, buf, 5);
+        if (r == ESP_OK) return ESP_OK;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    ESP_LOGW(TAG, "PCA9685 set_pwm ch=%d failed after retries: %s",
+             channel, esp_err_to_name(r));
+    return r;
 }
 
 esp_err_t pca9685_set_angle(uint8_t channel, int angle)

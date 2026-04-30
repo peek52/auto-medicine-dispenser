@@ -32,6 +32,7 @@
 #include "vl53l0x_multi.h"
 #include "tca9548a.h"
 #include "web_log.h"
+#include "driver/gpio.h"
 #if ENABLE_SD_CARD
 #include "sd_card.h"
 #endif
@@ -300,26 +301,61 @@ static void deferred_init_task(void *arg)
 {
     (void)arg;
 
-    // Initialize audio/settings in the background. Audio is currently disabled in firmware.
+    // Brief settle before any ESP_LOG calls — gives the i2c_master
+    // driver's interrupt queue time to flush after boot probes that
+    // failed against missing modules (IDF v5.3.2 race in
+    // i2c_ll_read_rxfifo can otherwise panic this task's first log).
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    ESP_LOGI(TAG, "deferred_init: starting (uptime ~%lu ms)",
+             (unsigned long)(xTaskGetTickCount() * portTICK_PERIOD_MS));
+
+    // 1) Audio + settings (no I/O blocking).
+    ESP_LOGI(TAG, "deferred_init: dfplayer_init");
     dfplayer_init();
+    ESP_LOGI(TAG, "deferred_init: settings_load_nvs");
     settings_load_nvs();
+
+    // 2) Camera + web servers BEFORE WiFi. wifi_sta_init() can block
+    //    up to 15 s waiting for ESP-Hosted to associate; if camera/web
+    //    init were sequenced after that, every flash where WiFi is
+    //    slow leaves /tech stream and /photo dead until reboot.
+    //    Web servers just open listeners — they happily wait for IP
+    //    without needing WiFi up first.
+    ESP_LOGI(TAG, "deferred_init: camera_init");
+    esp_err_t cret = camera_init();
+    ESP_LOGI(TAG, "deferred_init: camera_init -> %s", esp_err_to_name(cret));
+
+    ESP_LOGI(TAG, "deferred_init: start_webserver");
+    start_webserver();
+    ESP_LOGI(TAG, "deferred_init: start_stream_server");
+    start_stream_server();
+
+    // 3) Things that don't need WiFi.
+    ESP_LOGI(TAG, "deferred_init: dispenser_scheduler_start");
+    dispenser_scheduler_start();
+    ESP_LOGI(TAG, "deferred_init: usb_mouse_start");
+    usb_mouse_start();
+
+    // 4) Now bring up WiFi. May block ~15 s.
+    ESP_LOGI(TAG, "deferred_init: wifi_sta_init (may block up to 15s)");
     wifi_sta_init();
+    ESP_LOGI(TAG, "deferred_init: wifi_sta_init done, ip=%s", wifi_sta_get_ip());
+    display_clock_set_ip(wifi_sta_get_ip());
+
+    // 5) Network-dependent services.
     if (xTaskCreate(sync_time_task, "sync_time", 4096, NULL, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create sync_time task");
     }
+    ESP_LOGI(TAG, "deferred_init: netpie_init");
     netpie_init();
-    camera_init();
-    start_webserver();
-    start_stream_server();
-    dispenser_scheduler_start();
-    display_clock_set_ip(wifi_sta_get_ip());
-    usb_mouse_start();
+
     if (xTaskCreate(cli_task, "cli_task", 4096, NULL, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create cli_task");
     }
 
     // VL53 pill sensors are started in app_main (they don't need Wi-Fi).
 
+    ESP_LOGI(TAG, "deferred_init: complete, marking system ready");
     extern bool g_system_ready;
     g_system_ready = true;
     vTaskDelete(NULL);
@@ -344,6 +380,105 @@ static void safe_mode_init_task(void *arg)
                   "(WiFi/camera/web/MQTT disabled until power-cycle)");
     vTaskDelete(NULL);
 }
+
+// Late-detect any I2C device that was missing during the boot probe.
+// Retries for up to ~3 min and brings devices online once they finally
+// ACK. Frees the `missing[3]` buffer when done. Caller passes a malloc'd
+// bool[3] = { tca_missing, pca_missing, pcf_missing }.
+//
+// Also attempts to recover the bus when the driver reports
+// ESP_ERR_INVALID_STATE — without this the bus stays wedged for the
+// whole detection window and slow-waking modules never come online.
+void late_detect_task(void *arg)
+{
+    bool *missing = (bool *)arg;
+    bool tca_left = missing[0];
+    bool pca_left = missing[1];
+    bool pcf_left = missing[2];
+
+    // Track consecutive wedge rounds so we space out recovery attempts —
+    // hammering recover_bus() every 3 s can itself confuse the driver.
+    int wedge_streak = 0;
+
+    const int TOTAL_ROUNDS = 60;  // 60 × 3 s = 180 s
+
+    ESP_LOGW(TAG, "Late-detect armed: TCA=%d PCA=%d PCF=%d (window=%ds)",
+             tca_left, pca_left, pcf_left, TOTAL_ROUNDS * 3);
+
+    for (int round = 0; round < TOTAL_ROUNDS && (tca_left || pca_left || pcf_left); ++round) {
+        vTaskDelay(pdMS_TO_TICKS(3000));
+
+        // Heartbeat every 10 rounds (30s) so the user sees we're still trying.
+        if (round > 0 && (round % 10) == 0) {
+            ESP_LOGW(TAG, "Late-detect: still searching at +%ds (TCA=%d PCA=%d PCF=%d)",
+                     round * 3, tca_left, pca_left, pcf_left);
+        }
+
+        // If the i2c driver is wedged (ESP_ERR_INVALID_STATE), continuing
+        // to poke it can trigger a store-fault inside i2c_isr_receive_handler.
+        // Try to actually recover the bus rather than waiting it out: tear
+        // down the master bus, GPIO-unstick SDA, recreate. After that the
+        // next round can probe again with a clean driver state.
+        esp_err_t probe = i2c_manager_ping(ADDR_TCA9548A);
+        if (probe == ESP_ERR_INVALID_STATE) {
+            wedge_streak++;
+            // First wedge of a streak gets recovery immediately; further
+            // wedges back off (every 3rd round) so we don't loop forever.
+            if (wedge_streak == 1 || (wedge_streak % 3) == 0) {
+                ESP_LOGW(TAG, "Late-detect: bus wedged at round %d — recovering",
+                         round + 1);
+                i2c_manager_recover_bus();
+            } else {
+                ESP_LOGW(TAG, "Late-detect: bus still wedged (streak=%d, round %d)",
+                         wedge_streak, round + 1);
+            }
+            continue;
+        }
+        wedge_streak = 0;
+
+        if (tca_left && probe == ESP_OK) {
+            ESP_LOGW(TAG, "Late-detect: TCA9548A appeared at round %d — "
+                          "bringing VL53 online", round + 1);
+            if (tca9548a_init() == ESP_OK) {
+#if ENABLE_VL53_PILL_SENSORS
+                if (!g_safe_mode) {
+                    vl53l0x_load_calibration_from_nvs();
+                    vl53l0x_multi_bootstrap();
+                    vl53l0x_multi_start();
+                }
+#endif
+                tca_left = false;
+            }
+        }
+        if (pca_left && i2c_manager_ping(ADDR_PCA9685) == ESP_OK) {
+            ESP_LOGW(TAG, "Late-detect: PCA9685 appeared at round %d", round + 1);
+            if (pca9685_init() == ESP_OK) pca_left = false;
+        }
+        if (pcf_left && i2c_manager_ping(ADDR_PCF8574) == ESP_OK) {
+            ESP_LOGW(TAG, "Late-detect: PCF8574 appeared at round %d", round + 1);
+            pcf8574_set_all_input();
+            pcf_left = false;
+        }
+    }
+    if (tca_left || pca_left || pcf_left) {
+        ESP_LOGW(TAG, "Late-detect timeout: TCA=%d PCA=%d PCF=%d still missing",
+                 tca_left, pca_left, pcf_left);
+    }
+    free(missing);
+    vTaskDelete(NULL);
+}
+
+// Set true once we've torn down the I2C master bus this boot. Used to
+// suppress later code paths (i2c_watchdog) that would re-create it
+// and re-arm the IDF v5.3.2 ISR race we just escaped.
+static bool s_i2c_disabled = false;
+
+// Touch retry task removed: each cycle's i2c_manager_recover_bus +
+// probe was triggering the IDF v5.3.2 ISR race AND occasionally
+// blocking long enough to fire TASK_WDT (5 s). When the bus is dead
+// at boot, leave it dead until the next reboot — the user can
+// power-cycle after fixing wiring instead of fighting a retry loop
+// that's itself unstable.
 
 void app_main(void)
 {
@@ -427,30 +562,129 @@ void app_main(void)
     // Per-device pings below are enough to know what's connected.
     ESP_LOGI(TAG, "Skipping bus scan (per-device pings only)");
 
+    // 2 s settle for modules' 3.3 V rail to come up fully — TCA + VL53
+    // breakouts in particular have observed cold-start delays beyond
+    // 1 s. Without this margin the very first transaction NACKs even
+    // when wiring is correct.
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    // Release FT6336U reset BEFORE probing — without this the touch
+    // chip's RST line floats (default GPIO config) which can hold it
+    // permanently in reset, making every subsequent ping NACK even
+    // when the chip itself is healthy. Configure CTP_RST high before
+    // the pre-probe so FT6336U is actually awake when we ping it.
+#if CTP_RST_PIN >= 0
+    {
+        gpio_config_t rst_cfg = {
+            .pin_bit_mask = (1ULL << CTP_RST_PIN),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = 1,
+            .pull_down_en = 0,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        gpio_config(&rst_cfg);
+        gpio_set_level((gpio_num_t)CTP_RST_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(20));
+        gpio_set_level((gpio_num_t)CTP_RST_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(150));
+    }
+#endif
+
+    // Probe FT6336U FIRST with the SAME retry budget as the medication
+    // modules below (4×300ms). A single-shot probe was missing the chip
+    // on cold boot when the rail hadn't fully settled, which then
+    // gated ft6336u_init() out and left the user with a non-touch
+    // screen even though hardware was fine.
+    bool touch_alive_pre = false;
+    for (int a = 0; a < 4; ++a) {
+        if (i2c_manager_ping(ADDR_FT6336U) == ESP_OK) { touch_alive_pre = true; break; }
+        vTaskDelay(pdMS_TO_TICKS(300));
+    }
+    if (touch_alive_pre) {
+        ESP_LOGI(TAG, "FT6336U responded on initial ping");
+    } else {
+        ESP_LOGW(TAG, "FT6336U did not ACK initial ping (will retry after module probes)");
+    }
+
 #if ENABLE_VL53_PILL_SENSORS
     if (tca9548a_init() != ESP_OK) {
         ESP_LOGW(TAG, "TCA9548A not found at 0x%02X — VL53 will be skipped", ADDR_TCA9548A);
     }
 #endif
 
-    // 3. Initialize I2C Devices
+    // 4 retries × 300 ms = 1.2 s window per device. Upping back from
+    // the brief 2-retry window: when modules are present but slow,
+    // 2 retries was missing them. The bus-disable mitigation handles
+    // the dead-bus case downstream, so we can spend more retry budget
+    // here on the live-but-slow case.
+    #define I2C_PING_RETRIES 4
+    #define I2C_PING_GAP_MS  300
+
     // PCA9685 (Servo)
-    if (i2c_manager_ping(ADDR_PCA9685) == ESP_OK) {
+    bool pca_ok = false;
+    for (int a = 0; a < I2C_PING_RETRIES; ++a) {
+        if (i2c_manager_ping(ADDR_PCA9685) == ESP_OK) { pca_ok = true; break; }
+        vTaskDelay(pdMS_TO_TICKS(I2C_PING_GAP_MS));
+    }
+    if (pca_ok) {
         pca9685_init();
     } else {
-        ESP_LOGW(TAG, "PCA9685 not found at 0x%02X", ADDR_PCA9685);
+        ESP_LOGW(TAG, "PCA9685 not found at 0x%02X after retries", ADDR_PCA9685);
+        // Even without hardware, populate g_servo[] from defaults +
+        // NVS so the web UI / dashboard still shows the user's saved
+        // home/work angles instead of BSS-zero 0/0.
+        pca9685_load_cache_only();
     }
 
     // PCF8574 (IR) â€” set all pins HIGH (input mode) immediately at boot
-    if (i2c_manager_ping(ADDR_PCF8574) == ESP_OK) {
+    bool pcf_ok = false;
+    for (int a = 0; a < I2C_PING_RETRIES; ++a) {
+        if (i2c_manager_ping(ADDR_PCF8574) == ESP_OK) { pcf_ok = true; break; }
+        vTaskDelay(pdMS_TO_TICKS(I2C_PING_GAP_MS));
+    }
+    if (pcf_ok) {
         pcf8574_set_all_input();
         ESP_LOGI(TAG, "PCF8574 initialized â€” all pins set to INPUT (0xFF)");
     } else {
-        ESP_LOGW(TAG, "PCF8574 not found at 0x%02X", ADDR_PCF8574);
+        ESP_LOGW(TAG, "PCF8574 not found at 0x%02X after retries", ADDR_PCF8574);
     }
 
-    // FT6336U (Touch screen)
-    ft6336u_init();
+    // FT6336U (Touch screen). Run init if either:
+    //   - the initial probe ACKed (touch alive even if modules dead), or
+    //   - any module ACKed (bus is alive, normal case).
+    // Skip only when neither — running ft6336u_init's 3 reads on a
+    // wedged bus loads stale ISR state in the IDF v5.3.2 i2c_master
+    // driver that panics the chip in the next ESP_LOGI critical section.
+    static bool s_touch_ok = false;
+    if (touch_alive_pre || pca_ok || pcf_ok) {
+        s_touch_ok = (ft6336u_init() == ESP_OK);
+    } else {
+        // All probes failed but user reports hardware is normal.
+        // The bus may have been wedged at boot (previous panic left
+        // SDA low). Try one full bus recovery + re-probe touch BEFORE
+        // declaring the bus dead — touch is the highest-priority
+        // peripheral for the user, and ft6336u_init has its own reset
+        // pulse + 3-attempt chip-id check, so it won't loop forever
+        // on a truly absent chip.
+        ESP_LOGW(TAG, "All initial probes failed — attempting bus recovery before giving up");
+        if (i2c_manager_recover_bus() == ESP_OK) {
+            for (int a = 0; a < 4; ++a) {
+                if (i2c_manager_ping(ADDR_FT6336U) == ESP_OK) {
+                    touch_alive_pre = true;
+                    break;
+                }
+                vTaskDelay(pdMS_TO_TICKS(200));
+            }
+            if (touch_alive_pre) {
+                ESP_LOGW(TAG, "FT6336U appeared after bus recovery — initialising touch");
+                s_touch_ok = (ft6336u_init() == ESP_OK);
+            } else {
+                ESP_LOGW(TAG, "Skipping FT6336U init — entire bus appears dead");
+            }
+        } else {
+            ESP_LOGW(TAG, "Skipping FT6336U init — bus recovery failed");
+        }
+    }
 
 #if ENABLE_VL53_PILL_SENSORS
     // VL53 init must not sit in deferred_init_task — that path is gated on
@@ -466,16 +700,36 @@ void app_main(void)
     }
 #endif
 
-    }
-    // Display hardware init first, then start the periodic UI task immediately.
-    display_clock_init();
-    if (g_ultra_safe_mode) {
-        display_clock_show_ultra_safe();
-        ESP_LOGW(TAG, "Ultra safe mode: clock_task NOT started — "
-                      "static message on screen, no touch polling");
+    // When NOTHING acked, the I2C bus is dead (no power on the rail
+    // or no slaves connected). Tear down the i2c_master driver so its
+    // ISR can never fire — the IDF v5.3.2 race fires when stale ISR
+    // state is touched in the next ESP_LOG critical section, deadlocking
+    // the chip permanently. With the driver gone the firmware can boot
+    // through to WiFi/web/Telegram so the user can still reach /tech.
+    (void)s_touch_ok;
+    bool any_present = pca_ok || pcf_ok || s_touch_ok;
+    if (!any_present) {
+        ESP_LOGW(TAG, "All I2C dead — disabling master bus permanently this boot");
+        i2c_manager_disable_bus();
+        s_i2c_disabled = true;
     } else {
-        display_clock_start_task();
+        bool *missing = (bool *)malloc(3 * sizeof(bool));
+        if (missing) {
+            missing[0] = true;
+            missing[1] = !pca_ok;
+            missing[2] = !pcf_ok;
+            xTaskCreate(late_detect_task, "i2c_late", 3072, missing, 3, NULL);
+        }
     }
+
+    }
+    // Display hardware init only — defer clock_task until AFTER all
+    // other init logs/tasks are spawned. Spawning clock_task here was
+    // racing with the next ESP_LOGI in app_main (same-tick log calls
+    // from two tasks corrupted UART output and hung the firmware
+    // deterministically around the 22 s mark on every cold boot when
+    // I2C devices were missing).
+    display_clock_init();
 #if ENABLE_SD_CARD
     if (sd_card_init() != ESP_OK) {
         ESP_LOGW(TAG, "SD card not available");
@@ -483,18 +737,14 @@ void app_main(void)
 #else
     ESP_LOGI(TAG, "SD card init disabled");
 #endif
-    // Erase coredump partition every boot we see one — repeatedly
-    // re-reading the same dump on each boot consumes flash IO and may
-    // be contributing to the bootloop. We've already grabbed what we
-    // need from the boot logs.
-    {
-        const esp_partition_t *cd = esp_partition_find_first(
-            ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, NULL);
-        if (cd) {
-            esp_partition_erase_range(cd, 0, cd->size);
-            ESP_LOGW(TAG, "Coredump partition erased (post-panic cleanup)");
-        }
-    }
+    // Per-boot coredump erase removed: erase_range from app_main was
+    // racing with display SPI/DMA. Manual erase via /tech if needed.
+    //
+    // Short settle before spawning init tasks. With modules absent the
+    // boot probes leave the IDF v5.3.2 i2c_master driver in a fragile
+    // state; a brief pause here gives any pending interrupts time to
+    // flush before deferred_init_task starts using ESP_LOG aggressively.
+    vTaskDelay(pdMS_TO_TICKS(500));
 
     if (g_ultra_safe_mode) {
         ESP_LOGW(TAG, "Ultra safe mode: skipping all init tasks");
@@ -510,9 +760,27 @@ void app_main(void)
             }
         }
     }
-    if (xTaskCreate(i2c_watchdog_task, "i2c_wdog", 4096, NULL, 2, NULL) != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create i2c watchdog task");
+    // Skip the i2c watchdog when the master bus is disabled — its
+    // periodic recovery attempts would re-create the bus driver and
+    // re-arm the IDF v5.3.2 ISR race that we just escaped, eventually
+    // triggering an esp_restart from inside recover_bus.
+    if (!s_i2c_disabled) {
+        if (xTaskCreate(i2c_watchdog_task, "i2c_wdog", 4096, NULL, 2, NULL) != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create i2c watchdog task");
+        }
+    } else {
+        ESP_LOGW(TAG, "I2C watchdog skipped — bus is permanently disabled this boot");
     }
+    // NOW it's safe to spawn the display task — all the noisy log calls
+    // are done and the other init tasks are running on their own threads.
+    if (g_ultra_safe_mode) {
+        display_clock_show_ultra_safe();
+        ESP_LOGW(TAG, "Ultra safe mode: clock_task NOT started — "
+                      "static message on screen, no touch polling");
+    } else {
+        display_clock_start_task();
+    }
+    ESP_LOGI(TAG, "app_main: init complete, entering keepalive loop");
 
     // 11. Main loop — periodic heap/uptime log to catch leaks at a glance.
     TickType_t boot_ticks = xTaskGetTickCount();

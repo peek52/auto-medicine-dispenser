@@ -10,7 +10,12 @@
 #include <stdio.h>
 #include <string.h>
 
-#define WEB_LOG_BUF_SIZE 12288
+// Bump from 12 KB → 64 KB so boot-time camera_init / SCCB / sensor
+// detect logs survive long enough to debug live (chip outputs ~50 lines
+// in the first 30 s; the 12 KB window was overflowing within 2 minutes).
+// 64 KB lives in PSRAM-eligible heap via static storage and is well
+// within available memory for this firmware.
+#define WEB_LOG_BUF_SIZE 65536
 #define WEB_LOG_TMP_SIZE 384
 
 static char s_log_buf[WEB_LOG_BUF_SIZE];

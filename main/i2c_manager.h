@@ -68,6 +68,14 @@ esp_err_t i2c_manager_read(uint8_t addr, uint8_t *buf, size_t len);
  */
 esp_err_t i2c_manager_recover_bus(void);
 
+/**
+ * Permanently disable the I2C master driver until next reboot.
+ * Used when the bus is provably dead (all peripherals missing) so the
+ * IDF v5.3.2 i2c_master ISR can't panic the chip from stale state.
+ * After this all i2c_manager_* calls return ESP_ERR_INVALID_STATE.
+ */
+void i2c_manager_disable_bus(void);
+
 #ifdef __cplusplus
 }
 #endif

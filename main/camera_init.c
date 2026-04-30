@@ -248,6 +248,46 @@ esp_err_t camera_init(void) {
     CAM_RETURN_ON_ERR(esp_ldo_acquire_channel(&ldo_config, &ldo_mipi_phy),
                       "Failed to acquire camera LDO");
 
+    //---------------XCLK Generation via LEDC------------------//
+    // OV5647 needs an external clock to drive its internal logic.
+    // Without XCLK the sensor can NACK or drop register writes even
+    // though PID reads still succeed from a static latch. Generate
+    // a 24 MHz square wave on CAM_XCLK_PIN using LEDC. Settle before
+    // talking SCCB so the sensor's clock domain is locked.
+    {
+        ledc_timer_config_t xclk_timer = {
+            .speed_mode      = LEDC_LOW_SPEED_MODE,
+            .timer_num       = LEDC_TIMER_0,
+            .duty_resolution = LEDC_TIMER_1_BIT,
+            .freq_hz         = CAM_XCLK_FREQ,
+            .clk_cfg         = LEDC_AUTO_CLK,
+        };
+        esp_err_t lt = ledc_timer_config(&xclk_timer);
+        if (lt != ESP_OK) {
+            ESP_LOGW(TAG, "XCLK timer config failed: %s — sensor may misbehave",
+                     esp_err_to_name(lt));
+        } else {
+            ledc_channel_config_t xclk_chan = {
+                .speed_mode = LEDC_LOW_SPEED_MODE,
+                .channel    = LEDC_CHANNEL_0,
+                .timer_sel  = LEDC_TIMER_0,
+                .intr_type  = LEDC_INTR_DISABLE,
+                .gpio_num   = CAM_XCLK_PIN,
+                .duty       = 1,    // 50% with 1-bit resolution
+                .hpoint     = 0,
+            };
+            esp_err_t lc = ledc_channel_config(&xclk_chan);
+            if (lc != ESP_OK) {
+                ESP_LOGW(TAG, "XCLK channel config failed: %s",
+                         esp_err_to_name(lc));
+            } else {
+                ESP_LOGI(TAG, "XCLK %d Hz generated on GPIO%d",
+                         CAM_XCLK_FREQ, CAM_XCLK_PIN);
+                vTaskDelay(pdMS_TO_TICKS(20));  // sensor PLL lock
+            }
+        }
+    }
+
     //---------------I2C Init------------------//
     i2c_master_bus_handle_t i2c_bus_handle = i2c_manager_get_bus_handle();
     if (i2c_bus_handle == NULL) {

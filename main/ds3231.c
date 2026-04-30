@@ -3,6 +3,7 @@
 #include "config.h"
 #include "esp_log.h"
 #include <stdio.h>
+#include <time.h>
 
 static const char *TAG = "ds3231";
 
@@ -22,9 +23,17 @@ esp_err_t ds3231_get_time_str(char *buf, size_t buf_len)
     uint8_t regs[3];
     esp_err_t ret = i2c_manager_read_reg(ADDR_DS3231, 0x00, regs, 3);
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "read failed: %s", esp_err_to_name(ret));
-        snprintf(buf, buf_len, "--:--:--");
-        return ret;
+        // Fall back to ESP32 system time so the display always shows
+        // SOMETHING when the RTC is unreachable. Once SNTP has synced
+        // this is the correct wall time; before sync we still show the
+        // monotonic uptime (counts up from 00:00:00) which proves to
+        // the user that the firmware is alive even with the RTC dead.
+        time_t now = 0;
+        struct tm tm = {0};
+        time(&now);
+        localtime_r(&now, &tm);
+        snprintf(buf, buf_len, "%02d:%02d:%02d", tm.tm_hour, tm.tm_min, tm.tm_sec);
+        return ESP_OK;
     }
 
     uint8_t sec = bcd2dec(regs[0] & 0x7F);
@@ -43,8 +52,19 @@ esp_err_t ds3231_get_date_str(char *buf, size_t buf_len)
     uint8_t regs[4];
     esp_err_t ret = i2c_manager_read_reg(ADDR_DS3231, 0x03, regs, 4);
     if (ret != ESP_OK) {
-        buf[0] = '\0';
-        return ret;
+        // Fall back to ESP32 system time when RTC is unreachable. Pre-SNTP
+        // this shows 1970 dates which is obviously wrong but tells the
+        // user "no RTC, no NTP yet" rather than leaving the field blank.
+        time_t now = 0;
+        struct tm tm = {0};
+        time(&now);
+        localtime_r(&now, &tm);
+        static const char *days[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+        int dow = tm.tm_wday;
+        if (dow < 0 || dow > 6) dow = 0;
+        snprintf(buf, buf_len, "%s %02d/%02d/%04d",
+                 days[dow], tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900);
+        return ESP_OK;
     }
 
     static const char *days[] = { "", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };

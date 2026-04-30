@@ -130,9 +130,20 @@ void dfplayer_set_volume(uint8_t vol)
 
 void dfplayer_play_track(uint16_t num)
 {
-    // Tracks 1-4 = Alarm/Pre-alerts, 80-82 = system/language feedback, 34-36 = nav toggle (must always play)
-    bool is_alert = (num >= 1 && num <= 4) || (num == 34) || (num == 35) || (num == 36) || (num >= 80 && num <= 99);
-    
+    // Volume classification: only the actual alarm/pre-alert clips
+    // (tracks 1-4) should play at the louder alert volume. Nav-toggle
+    // feedback (34-36) and system/language/menu feedback (80-99) used
+    // to fall through this gate too, which made tap-feedback sounds
+    // (e.g. ตารางยาวันนี้ popup taps 89-94) noticeably louder than
+    // ordinary button taps. Treat those as nav-volume sounds instead.
+    bool is_alert = (num >= 1 && num <= 4);
+    // "must always play" — bypass the nav-sound-enabled toggle so
+    // critical feedback (alarms + nav toggle + system clips) still
+    // plays even when the user has nav sounds disabled.
+    bool always_play = is_alert ||
+                       (num == 34) || (num == 35) || (num == 36) ||
+                       (num >= 80 && num <= 99);
+
     extern int g_alert_volume;
     extern int g_nav_volume;
     extern bool g_nav_sound_enabled;
@@ -141,7 +152,7 @@ void dfplayer_play_track(uint16_t num)
         return;
     }
 
-    if (!is_alert && !g_nav_sound_enabled) {
+    if (!always_play && !g_nav_sound_enabled) {
         ESP_LOGI(TAG, "Navigation sound disabled, skipping track %d", num);
         return;
     }

@@ -38,4 +38,4 @@ idf_component_register(SRCS "camera_init.c"
                              esp_driver_jpeg nvs_flash esp_wifi driver
                              esp_timer esp_hw_support mqtt LovyanGFX
                              usb esp_http_client esp-tls mbedtls json
-                             fatfs sdmmc esp_driver_sdmmc)
+                             fatfs sdmmc esp_driver_sdmmc esp_lcd)

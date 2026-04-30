@@ -192,6 +192,29 @@ esp_err_t i2c_manager_read(uint8_t addr, uint8_t *buf, size_t len)
     return ret;
 }
 
+// Tear down the master bus without recreating it. Used when we know
+// the bus is dead (all peripherals missing) — by deleting the driver
+// we disable its ISR, preventing the IDF v5.3.2 stale-ISR-state race
+// from panicking the chip in subsequent ESP_LOG critical sections.
+// All later i2c_manager_* calls return ESP_ERR_INVALID_STATE.
+void i2c_manager_disable_bus(void)
+{
+    if (!g_i2c_mutex) return;
+    if (xSemaphoreTake(g_i2c_mutex, pdMS_TO_TICKS(500)) != pdTRUE) return;
+    for (int i = 0; i < s_device_count; i++) {
+        if (s_device_cache[i].dev_handle) {
+            i2c_master_bus_rm_device(s_device_cache[i].dev_handle);
+            s_device_cache[i].dev_handle = NULL;
+        }
+    }
+    s_device_count = 0;
+    if (s_bus_handle) {
+        i2c_del_master_bus(s_bus_handle);
+        s_bus_handle = NULL;
+    }
+    xSemaphoreGive(g_i2c_mutex);
+}
+
 esp_err_t i2c_manager_recover_bus(void)
 {
     if (!g_i2c_mutex) return ESP_ERR_INVALID_STATE;

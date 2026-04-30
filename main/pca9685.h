@@ -25,6 +25,13 @@ extern pca9685_servo_cfg_t g_servo[PCA9685_NUM_CHANNELS];
 /** Initialise PCA9685: set oscillator mode and configure 50 Hz PWM */
 esp_err_t pca9685_init(void);
 
+/**
+ * Initialise g_servo[] cache (defaults + NVS) without touching the
+ * hardware. Call this from boot when the PCA9685 chip is not present
+ * so the web UI still sees sensible home/work positions.
+ */
+void pca9685_load_cache_only(void);
+
 /** Set raw PWM on/off counts for a channel (0–4095) */
 esp_err_t pca9685_set_pwm(uint8_t channel, uint16_t on, uint16_t off);
 

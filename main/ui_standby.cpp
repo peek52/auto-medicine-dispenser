@@ -905,9 +905,57 @@ static void ui_standby_render_modal(uint32_t now)
     if (force_redraw) force_redraw = false;
 
     if (is_forced || now_ms >= s_hw_health_next_check_ms) {
-        s_cached_pca_err = (i2c_manager_ping(ADDR_PCA9685) != ESP_OK);
-        s_cached_pcf_err = (i2c_manager_ping(ADDR_PCF8574) != ESP_OK);
-        s_cached_rtc_err = (i2c_manager_ping(ADDR_DS3231) != ESP_OK);
+        // Hysteresis: only flip "down" after CONSECUTIVE_FAIL_THRESHOLD
+        // failed health windows in a row (default 2 = 20 s). Cuts modal
+        // false-alarms when bus glitches briefly mid-operation.
+        // ESP_ERR_INVALID_STATE means the i2c driver itself is wedged —
+        // keep poking it and we trigger a store fault inside ISR. Skip
+        // remaining pings AND don't update fail counts on a wedge so a
+        // transient driver hiccup doesn't escalate to a "device down"
+        // verdict on its own.
+        constexpr int CONSECUTIVE_FAIL_THRESHOLD = 2;
+        static int s_fail_pca = 0, s_fail_pcf = 0, s_fail_rtc = 0;
+        // Track whether each device has *ever* answered OK in this boot.
+        // We only raise the modal for devices that were once known
+        // present and then went away — never-seen devices are treated as
+        // "not configured" so a flaky probe at boot doesn't permanently
+        // alarm the user even when their wiring is correct and the next
+        // round will succeed. This is the fix for the "boot probe NACK
+        // → modal stays even after bus recovers" pattern.
+        static bool s_seen_pca = false, s_seen_pcf = false, s_seen_rtc = false;
+
+        auto ping_3x = [](uint16_t addr) -> esp_err_t {
+            for (int a = 0; a < 3; ++a) {
+                esp_err_t r = i2c_manager_ping(addr);
+                if (r == ESP_OK) return ESP_OK;
+                if (r == ESP_ERR_INVALID_STATE) return r;
+                vTaskDelay(pdMS_TO_TICKS(30));
+            }
+            return ESP_FAIL;
+        };
+        auto update_one = [&](uint16_t addr, int *fail_count, bool *cache, bool *seen) -> bool {
+            esp_err_t r = ping_3x(addr);
+            if (r == ESP_ERR_INVALID_STATE) {
+                return false;  // bus wedged — leave verdict alone
+            }
+            if (r == ESP_OK) {
+                *seen = true;
+                *fail_count = 0;
+                *cache = false;
+                return true;
+            }
+            // NACK / no response. Only flag if we've ever seen this
+            // device alive. If we've never seen it (boot probe missed,
+            // user may be running without that module), keep quiet.
+            if (!*seen) { *cache = false; return true; }
+            if (*fail_count < CONSECUTIVE_FAIL_THRESHOLD) (*fail_count)++;
+            if (*fail_count >= CONSECUTIVE_FAIL_THRESHOLD) *cache = true;
+            return true;
+        };
+        if (update_one(ADDR_PCA9685, &s_fail_pca, &s_cached_pca_err, &s_seen_pca) &&
+            update_one(ADDR_PCF8574, &s_fail_pcf, &s_cached_pcf_err, &s_seen_pcf)) {
+            update_one(ADDR_DS3231, &s_fail_rtc, &s_cached_rtc_err, &s_seen_rtc);
+        }
         s_hw_health_next_check_ms = now_ms + 10000;
     }
 
@@ -971,9 +1019,15 @@ static void ui_standby_render_modal(uint32_t now)
     if (rtc_err) hw_mask |= 0x04;
 
     if (!hw_err && s_popup_state == 2) {
-        s_hw_warn_dismissed = false;
+        // Bus came back. Tear down the modal but DON'T reset
+        // s_hw_warn_dismissed *or* s_hw_alert_mask — a flapping bus
+        // oscillates "all good ⇄ all down" every 10 s; if we zeroed the
+        // mask here, the next failure with the same device set would
+        // satisfy the "(hw_mask & ~s_hw_alert_mask) != 0" new-bit check
+        // and re-arm dismiss, popping the modal again. Keeping the mask
+        // means: dismissed once → stays dismissed for the same fault
+        // pattern, even across recovery flaps.
         s_hw_alert_drawn = false;
-        s_hw_alert_mask = 0;
         s_today_schedule_popup_drawn = false;
         s_popup_state = 0;
         is_forced = true;
@@ -985,7 +1039,20 @@ static void ui_standby_render_modal(uint32_t now)
     }
 
     if (hw_err) {
-        s_hw_warn_dismissed = false;
+        // Once dismissed, stay dismissed *until a new device fails*.
+        // The bus flaps every health-check window (devices appearing /
+        // disappearing every 10 s); without sticky dismiss the modal
+        // would pop again on every cycle. Only the *new bits* in the
+        // failing mask compared to what was failing at dismiss time
+        // count as a fresh fault.
+        if (s_hw_warn_dismissed) {
+            if ((hw_mask & ~s_hw_alert_mask) == 0) {
+                // No new device joined the failing set — keep silenced.
+                return;
+            }
+            // New failure → re-arm.
+            s_hw_warn_dismissed = false;
+        }
         if (s_popup_state == 2 && s_hw_alert_drawn && !is_forced && hw_mask == s_hw_alert_mask) {
             return;
         }
@@ -1022,14 +1089,24 @@ static void ui_standby_render_modal(uint32_t now)
         // it (chip reset alone leaves slaves in their hung state). Tell
         // the user that directly — the previous "check wiring" hint just
         // wasted time when the wiring is actually fine.
-        draw_schedule_text_line(58, 194, 320,
+        draw_schedule_text_line(58, 188, 320,
                                 "Unplug USB power for 5 sec to recover",
                                 0xFFFF, THEME_BAD, 16);
+
+        // Dismiss button — lets the user keep using the device when a
+        // module is still listed as missing but everything else works.
+        // The modal will reappear automatically if the failing-device
+        // set changes (covered by the hw_mask compare above).
+        draw_standby_modal_button(kAlertButtonX, kAlertButtonY, kAlertButtonW, kAlertButtonH, ST_RGB565(185, 28, 28), 0xFFFF);
 
         s_hw_alert_drawn = true;
         s_hw_alert_mask = hw_mask;
         s_popup_state = 2;
         return;
+    } else {
+        // All hardware reachable again — clear dismiss so a future fault
+        // can repaint the modal.
+        s_hw_warn_dismissed = false;
     }
 
     if (s_netpie_sync_popup_until > 0 && now_ms < s_netpie_sync_popup_until) {
@@ -1215,6 +1292,18 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
     }
 
     if (s_popup_state == 2) {
+        // HW alert modal — dismiss when user taps the button rect. Keep
+        // the rest of the popup tap-through-to-clear so an accidental
+        // outside-tap doesn't silence a real fault. Once dismissed, the
+        // modal stays hidden until a *new* device fails (the dismiss
+        // logic compares hw_mask against s_hw_alert_mask).
+        if (tx_n >= kAlertButtonX && tx_n <= (kAlertButtonX + kAlertButtonW) &&
+            ty_n >= kAlertButtonY && ty_n <= (kAlertButtonY + kAlertButtonH)) {
+            s_hw_warn_dismissed = true;
+            s_hw_alert_drawn = false;
+            s_popup_state = 0;
+            force_redraw = true;
+        }
         return;
     }
 
