@@ -11,6 +11,9 @@ dependencies:
     rules:
       - if: "target in [esp32p4]"
   espressif/esp_hosted:
-    version: "~2"
+    # Pin to <=2.0.x for IDF v5.3.2 — newer 2.10+ mempool init asserts on
+    # this IDF (HS_MP: mempool create failed). Older 2.0 line predates the
+    # streaming-mode rework.
+    version: "~0.0"
     rules:
       - if: "target in [esp32p4]"
