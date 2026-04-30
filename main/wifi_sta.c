@@ -310,21 +310,35 @@ static volatile bool s_scan_in_progress = false;
 
 static void async_scan_worker_task(void *arg)
 {
+    // Explicit timings: on ESP-Hosted (P4 + C6 over SDIO) the default-zero
+    // dwell times occasionally come back with zero APs, presumably because
+    // RPC round-trip eats into the per-channel window. Pin sane values.
     wifi_scan_config_t scan_config = {
         .ssid = 0,
         .bssid = 0,
         .channel = 0,
-        .show_hidden = false
+        .show_hidden = true,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time = {
+            .active = { .min = 100, .max = 200 },
+        },
     };
 
     s_scan_in_progress = true;
     ESP_LOGI(TAG, "Worker Task: Executing WiFi scan...");
 
+    // Suspend any in-flight STA reconnect so the radio is free for scan.
+    // Errors here are non-fatal — esp_wifi_disconnect can return
+    // INVALID_STATE if STA is already idle.
+    (void)esp_wifi_disconnect();
+
     esp_err_t err = esp_wifi_scan_start(&scan_config, true);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Worker Task: esp_wifi_scan_start failed: %d", err);
+        ESP_LOGE(TAG, "Worker Task: esp_wifi_scan_start failed: %s", esp_err_to_name(err));
         s_scan_count = 0;
         s_scan_in_progress = false;
+        // Re-arm STA so the auto-reconnect path can resume.
+        if (!s_connected) (void)esp_wifi_connect();
         vTaskDelete(NULL);
         return;
     }
@@ -335,12 +349,19 @@ static void async_scan_worker_task(void *arg)
 
     if (ap_count > 0) {
         esp_wifi_scan_get_ap_records(&ap_count, s_scan_results);
+    } else {
+        // get_ap_num==0 still requires clear_ap_list to release internal buffers.
+        esp_wifi_clear_ap_list();
     }
 
     s_scan_count = ap_count;
     s_scan_in_progress = false;
 
     ESP_LOGI(TAG, "Worker Task: Scan complete! Found %d networks", ap_count);
+
+    // Resume STA reconnect attempts now that scan is done.
+    if (!s_connected) (void)esp_wifi_connect();
+
     vTaskDelete(NULL);
 }
 
@@ -352,7 +373,7 @@ esp_err_t wifi_sta_start_scan(void)
     }
 
     ESP_LOGI(TAG, "Scanning for WiFi networks... (dispatched to worker)");
-    if (xTaskCreate(async_scan_worker_task, "wifi_scn_wrk", 4096, NULL, 5, NULL) != pdPASS) {
+    if (xTaskCreate(async_scan_worker_task, "wifi_scn_wrk", 6144, NULL, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create WiFi scan worker task");
         return ESP_ERR_NO_MEM;
     }

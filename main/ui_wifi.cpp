@@ -120,7 +120,7 @@ void ui_wifi_scan_render(void)
             
             wf_state = 2;
             force_redraw = true; // Schedule drawing pass 3
-        } else if (elapsed > 7500) {
+        } else if (elapsed > 12000) {
             // Timeout explicitly
             ESP_LOGW(TAG, "Scan timeout from UI side");
             ap_count = 0;

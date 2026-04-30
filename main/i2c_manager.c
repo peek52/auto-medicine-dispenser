@@ -125,7 +125,9 @@ static i2c_master_dev_handle_t get_or_add_device(uint8_t addr)
 esp_err_t i2c_manager_ping(uint8_t addr)
 {
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(g_i2c_mutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
 
     esp_err_t ret = i2c_master_probe(s_bus_handle, addr, 100);
     i2c_master_bus_wait_all_done(s_bus_handle, 500);
@@ -136,7 +138,9 @@ esp_err_t i2c_manager_ping(uint8_t addr)
 esp_err_t i2c_manager_write(uint8_t addr, const uint8_t *data, size_t len)
 {
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(g_i2c_mutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
 
     esp_err_t ret = ESP_FAIL;
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
@@ -161,7 +165,9 @@ esp_err_t i2c_manager_write_locked(uint8_t addr, const uint8_t *data, size_t len
 esp_err_t i2c_manager_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len)
 {
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(g_i2c_mutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
 
     esp_err_t ret = ESP_FAIL;
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
@@ -180,7 +186,9 @@ esp_err_t i2c_manager_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t l
 esp_err_t i2c_manager_read(uint8_t addr, uint8_t *buf, size_t len)
 {
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(g_i2c_mutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
 
     esp_err_t ret = ESP_FAIL;
     i2c_master_dev_handle_t dev = get_or_add_device(addr);

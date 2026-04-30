@@ -289,6 +289,27 @@ esp_err_t camera_init(void) {
     }
 
     //---------------I2C Init------------------//
+    // The shared I2C bus arrives here in ESP_ERR_INVALID_STATE — the
+    // FT6336U fallback-mode poller and PCF8574 boot probes wedge the
+    // IDF v5.3.x master state machine, so the read of OV5647's PID
+    // succeeds (single short combined transaction) but the long
+    // ~250-register write burst that follows fails on every transmit.
+    // i2c_master_bus_reset alone doesn't fix it; the SCCB device
+    // handle keeps the stale state. Full teardown + re-init of the
+    // master bus, then refetch the handle, gives a clean state for
+    // the SCCB device handle that sccb_new_i2c_io will allocate.
+    {
+        esp_err_t r = i2c_manager_recover_bus();
+        if (r != ESP_OK) {
+            ESP_LOGW(TAG, "i2c_manager_recover_bus before SCCB: %s",
+                     esp_err_to_name(r));
+        } else {
+            ESP_LOGI(TAG, "Shared I2C bus recovered before SCCB init");
+        }
+        // Sensor PLL/clock-domain settle so the first SCCB write
+        // doesn't race the XCLK lock window.
+        vTaskDelay(pdMS_TO_TICKS(150));
+    }
     i2c_master_bus_handle_t i2c_bus_handle = i2c_manager_get_bus_handle();
     if (i2c_bus_handle == NULL) {
         ESP_LOGE(TAG, "Failed to get shared I2C bus handle");
@@ -304,66 +325,116 @@ esp_err_t camera_init(void) {
         .sensor_port = ESP_CAM_SENSOR_MIPI_CSI,
     };
 
-    // ---- Auto-detect camera sensor ----
-
+    // ---- Auto-detect + init in one retry block ----
+    //
+    // On IDF v5.3.3 + ESP32-P4 + the shared I2C bus, the very first
+    // i2c_master_transmit() to the SCCB device returns INVALID_STATE
+    // even on a freshly recovered bus, while the preceding PID READ
+    // (i2c_master_transmit_receive) succeeds. The error flag is sticky
+    // on the device handle, so just bus-resetting and retrying with the
+    // SAME handle never recovers. Each retry tears down the SCCB handle,
+    // recovers the I2C bus, then re-creates the handle and re-runs the
+    // detect → set_format → S_STREAM sequence so the writes happen on a
+    // brand-new device handle.
     esp_cam_sensor_device_t *cam = NULL;
-    for (esp_cam_sensor_detect_fn_t *p = &__esp_cam_sensor_detect_fn_array_start; p < &__esp_cam_sensor_detect_fn_array_end; ++p) {
-        sccb_i2c_config_t sccb_conf = {
-            .scl_speed_hz = 50000,
-            .device_address = p->sccb_addr,
-            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        };
-        ret = sccb_new_i2c_io(i2c_bus_handle, &sccb_conf, &cam_config.sccb_handle);
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "SCCB init failed at 0x%02X: %s",
-                     p->sccb_addr, esp_err_to_name(ret));
+    esp_err_t ret_fmt = ESP_FAIL;
+    esp_err_t ret_strm = ESP_FAIL;
+    int enable_flag = 1;
+    esp_cam_sensor_format_t *cam_cur_fmt = NULL;
+
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        // 1) Tear down anything left from a prior attempt + recover bus.
+        if (cam_config.sccb_handle) {
+            (void)esp_sccb_del_i2c_io(cam_config.sccb_handle);
             cam_config.sccb_handle = NULL;
-            continue;
+        }
+        cam = NULL;
+        cam_cur_fmt = NULL;
+        if (attempt > 0) {
+            (void)i2c_manager_recover_bus();
+            i2c_bus_handle = i2c_manager_get_bus_handle();
+            if (!i2c_bus_handle) {
+                ESP_LOGE(TAG, "Lost I2C bus handle during camera retry");
+                return ESP_FAIL;
+            }
+            vTaskDelay(pdMS_TO_TICKS(150));
         }
 
-        cam = (*(p->detect))(&cam_config);
+        // 2) Hold the shared I2C mutex across the whole SCCB sequence.
+        bool got_lock = (g_i2c_mutex && xSemaphoreTake(g_i2c_mutex, pdMS_TO_TICKS(1500)) == pdTRUE);
+
+        // 3) Detect.
+        for (esp_cam_sensor_detect_fn_t *p = &__esp_cam_sensor_detect_fn_array_start;
+             p < &__esp_cam_sensor_detect_fn_array_end; ++p) {
+            sccb_i2c_config_t sccb_conf = {
+                .scl_speed_hz   = 400000,
+                .device_address = p->sccb_addr,
+                .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            };
+            esp_err_t sret = sccb_new_i2c_io(i2c_bus_handle, &sccb_conf, &cam_config.sccb_handle);
+            if (sret != ESP_OK) {
+                cam_config.sccb_handle = NULL;
+                continue;
+            }
+            cam = (*(p->detect))(&cam_config);
+            if (cam) break;
+            (void)esp_sccb_del_i2c_io(cam_config.sccb_handle);
+            cam_config.sccb_handle = NULL;
+        }
+
         if (cam) {
+            // 4) Pick format.
+            esp_cam_sensor_format_array_t cam_fmt_array = {0};
+            esp_cam_sensor_query_format(cam, &cam_fmt_array);
+            for (int i = 0; i < cam_fmt_array.count; i++) {
+                if (!strcmp(cam_fmt_array.format_array[i].name, CSI_FORMAT_NAME)) {
+                    cam_cur_fmt = (esp_cam_sensor_format_t *)&cam_fmt_array.format_array[i];
+                    break;
+                }
+            }
+
+            (void)i2c_master_bus_wait_all_done(i2c_bus_handle, 200);
+
+            // 5) Configure + stream-on.
+            if (cam_cur_fmt) {
+                ret_fmt = esp_cam_sensor_set_format(cam, cam_cur_fmt);
+                if (ret_fmt == ESP_OK) {
+                    ret_strm = esp_cam_sensor_ioctl(cam, ESP_CAM_SENSOR_IOC_S_STREAM, &enable_flag);
+                }
+            }
+        }
+
+        if (got_lock) xSemaphoreGive(g_i2c_mutex);
+
+        if (cam && cam_cur_fmt && ret_fmt == ESP_OK && ret_strm == ESP_OK) {
+            ESP_LOGI(TAG, "Camera detect + format + stream-on OK (attempt %d)", attempt + 1);
             break;
         }
-        if (cam_config.sccb_handle) {
-            esp_err_t del_ret = esp_sccb_del_i2c_io(cam_config.sccb_handle);
-            if (del_ret != ESP_OK) {
-                ESP_LOGW(TAG, "Failed to release SCCB handle: %s",
-                         esp_err_to_name(del_ret));
-            }
-            cam_config.sccb_handle = NULL;
-        }
+        ESP_LOGW(TAG, "Camera attempt %d failed: cam=%p fmt_match=%d set_fmt=%s strm=%s",
+                 attempt + 1, (void *)cam, cam_cur_fmt != NULL,
+                 esp_err_to_name(ret_fmt), esp_err_to_name(ret_strm));
+        // Fall through to next iteration which tears down + recovers.
+        ret_fmt = ESP_FAIL;
+        ret_strm = ESP_FAIL;
     }
 
     if (!cam) {
-        ESP_LOGE(TAG, "failed to detect camera sensor");
+        ESP_LOGE(TAG, "Failed to detect camera sensor after retries");
         return ESP_FAIL;
     }
     s_cam_sensor = cam;
-
-    esp_cam_sensor_format_array_t cam_fmt_array = {0};
-    esp_cam_sensor_query_format(cam, &cam_fmt_array);
-    const esp_cam_sensor_format_t *parray = cam_fmt_array.format_array;
-    esp_cam_sensor_format_t *cam_cur_fmt = NULL;
-    for (int i = 0; i < cam_fmt_array.count; i++) {
-        if (!strcmp(parray[i].name, CSI_FORMAT_NAME)) {
-            cam_cur_fmt = (esp_cam_sensor_format_t *) &parray[i];
-            break;
-        }
-    }
-
     if (!cam_cur_fmt) {
-        ESP_LOGE(TAG, "failed to find matching camera format %s", CSI_FORMAT_NAME);
+        ESP_LOGE(TAG, "Failed to find matching camera format %s", CSI_FORMAT_NAME);
         return ESP_FAIL;
     }
-
-    esp_err_t ret_fmt = esp_cam_sensor_set_format(cam, cam_cur_fmt);
     if (ret_fmt != ESP_OK) {
-        ESP_LOGE(TAG, "Format set fail");
+        ESP_LOGE(TAG, "Format set fail after retries — camera will not stream");
+        return ret_fmt;
     }
-
-    int enable_flag = 1;
-    esp_cam_sensor_ioctl(cam, ESP_CAM_SENSOR_IOC_S_STREAM, &enable_flag);
+    if (ret_strm != ESP_OK) {
+        ESP_LOGE(TAG, "Sensor stream-on failed after retries");
+        return ret_strm;
+    }
 
     esp_cam_ctlr_csi_config_t csi_config = {
         .ctlr_id                = 0,

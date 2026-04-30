@@ -7,6 +7,7 @@
 #include "wifi_sta.h"
 #include "ui_standby_thai_labels.h"
 #include "ui_utf8_text.h"
+#include "esp_log.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -904,7 +905,15 @@ static void ui_standby_render_modal(uint32_t now)
     bool is_forced = force_redraw;
     if (force_redraw) force_redraw = false;
 
-    if (is_forced || now_ms >= s_hw_health_next_check_ms) {
+    // Run hardware health checks ONLY on the 10-second timer, NOT on
+    // every force_redraw. Force-redraw fires whenever UI state changes
+    // (touch on a popup button, page switch, etc.); calling ping_3x ×
+    // 3 devices on every redraw makes the UI freeze 1-3 s when the bus
+    // is in a bad state, because each ping_3x can block on i2c master
+    // mutex + 3 retries with delays. The cached verdicts from the last
+    // timer check are good enough for a redraw — modal will catch up
+    // on the next scheduled health window.
+    if (now_ms >= s_hw_health_next_check_ms) {
         // Hysteresis: only flip "down" after CONSECUTIVE_FAIL_THRESHOLD
         // failed health windows in a row (default 2 = 20 s). Cuts modal
         // false-alarms when bus glitches briefly mid-operation.
@@ -1138,23 +1147,37 @@ static void ui_standby_render_modal(uint32_t now)
             draw_standby_modal_button(kAlertButtonX, kAlertButtonY, kAlertButtonW, kAlertButtonH, ST_RGB565(185, 28, 28), 0xFFFF);
 
             s_popup_state = 1;
+            return;
         }
-        return;
+        // Schedule still empty but the warning has been dismissed.
+        // Don't fall back to the bare standby — that hides any other
+        // popup the user has explicitly opened (state 4 = today's
+        // schedule list, state 5 = slot detail). Without this fix the
+        // "ดูตารางยาวันนี้" tap silently no-ops once the user has
+        // dismissed the schedule warning even once.
+        if (s_popup_state == 1) {
+            return;
+        }
+        // fall through to popup-state handlers below
     }
 
     if (s_popup_state == 4) {
         if (s_today_schedule_popup_drawn) return;
 
+        ESP_LOGI("popup4", "enter render");
         int now_minutes = standby_time_to_minutes(hhmm);
-        
+        ESP_LOGI("popup4", "time_to_min OK now=%d", now_minutes);
+
         uint8_t missed_mask = dispenser_get_missed_slots();
         int missed_count = 0;
         for (int i = 0; i < 7; i++) {
             if (missed_mask & (1 << i)) missed_count++;
         }
+        ESP_LOGI("popup4", "missed_mask OK %d", missed_count);
 
         int all_slots[7] = {0};
         int count = standby_collect_today_schedule_slots(all_slots, 7);
+        ESP_LOGI("popup4", "collect_slots OK count=%d", count);
         s_schedule_visible_count = 0;
         for (int i = 0; i < count; i++) {
             if (s_show_only_missed) {
@@ -1166,12 +1189,17 @@ static void ui_standby_render_modal(uint32_t now)
             }
         }
 
+        ESP_LOGI("popup4", "frame fill start");
         fill_round_rect_frame(kSchedulePopupX, kSchedulePopupY, kSchedulePopupW, kSchedulePopupH, 16, THEME_PANEL, 0xFFFF);
+        ESP_LOGI("popup4", "frame fill done");
         fill_round_rect(kScheduleCloseX, kScheduleCloseY, kScheduleCloseW, kScheduleCloseH, 8, 0xFFFF);
         draw_string_centered(kScheduleCloseX + (kScheduleCloseW / 2), kScheduleCloseY + 23, "X", THEME_PANEL, 0xFFFF, &FreeSans12pt7b);
+        ESP_LOGI("popup4", "header done");
 
         if (g_ui_language == UI_LANG_TH) {
+            ESP_LOGI("popup4", "TH render start");
             draw_utf8_centered_line_scaled(LCD_W / 2, 42, s_show_only_missed ? "มื้อที่พลาดไป" : "ตารางยาวันนี้", 0xFFFF, THEME_PANEL, 26);
+            ESP_LOGI("popup4", "TH title done");
             
             char toggle_str[64];
             if (s_show_only_missed) {
@@ -1209,13 +1237,17 @@ static void ui_standby_render_modal(uint32_t now)
                 draw_string_centered(240, 164, s_show_only_missed ? "No missed doses today" : "No dispensing schedule for today", THEME_TXT_MUTED, THEME_PANEL, &FreeSans12pt7b);
             }
         } else {
+            ESP_LOGI("popup4", "drawing %d rows", s_schedule_visible_count);
             for (int i = 0; i < s_schedule_visible_count; ++i) {
+                ESP_LOGI("popup4", "row %d slot=%d start", i, s_schedule_visible_slots[i]);
                 draw_schedule_summary_row(kScheduleRowX, kScheduleRowY + (i * kScheduleRowH),
                                           kScheduleRowW, kScheduleRowH,
                                           s_schedule_visible_slots[i], now_minutes, g_ui_language);
+                ESP_LOGI("popup4", "row %d done", i);
             }
         }
 
+        ESP_LOGI("popup4", "all done");
         s_today_schedule_popup_drawn = true;
         return;
     }

@@ -719,6 +719,28 @@ static void clock_task(void *)
             }
         }
 
+        // Auto-return to standby after 5 min idle on any non-standby page.
+        // Skips the med-alarm confirm popup (it owns its own dismiss flow)
+        // and the boot intro. Touch activity resets the timer below.
+        {
+            static uint32_t s_last_activity_ms = 0;
+            uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            if (trigger_action) {
+                s_last_activity_ms = now_ms;
+            }
+            bool eligible = (current_page != PAGE_STANDBY &&
+                             current_page != PAGE_INTRO &&
+                             current_page != PAGE_CONFIRM_MEDS);
+            if (!eligible) {
+                s_last_activity_ms = now_ms;
+            } else if (s_last_activity_ms != 0 &&
+                       (now_ms - s_last_activity_ms) > (5U * 60U * 1000U)) {
+                ESP_LOGI(TAG, "Idle timeout — returning to standby");
+                pending_page = PAGE_STANDBY;
+                s_last_activity_ms = now_ms;
+            }
+        }
+
         if (pending_page != current_page) {
             if (pending_page == PAGE_WIFI_SCAN) {
                 wf_state = 0; // Reset scan state when entering the page!

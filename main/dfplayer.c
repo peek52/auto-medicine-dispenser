@@ -14,8 +14,8 @@ static bool s_uart_ready = false;
 // Configuration validation
 #ifndef DFPLAYER_UART_NUM
 #define DFPLAYER_UART_NUM   UART_NUM_1
-#define DFPLAYER_TX_PIN     22
-#define DFPLAYER_RX_PIN     23
+#define DFPLAYER_TX_PIN     37
+#define DFPLAYER_RX_PIN     38
 #endif
 
 static void dy_send_cmd(uint8_t cmd, const uint8_t *data, uint8_t len)
@@ -72,14 +72,9 @@ void dfplayer_init(void)
         .source_clk = UART_SCLK_DEFAULT,
     };
 
-    if (!uart_is_driver_installed(DFPLAYER_UART_NUM)) {
-        esp_err_t ret = uart_driver_install(DFPLAYER_UART_NUM, 256, 0, 0, NULL, 0);
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to install audio UART driver: %s", esp_err_to_name(ret));
-            return;
-        }
-    }
-
+    // Recommended IDF order: param_config → set_pin → driver_install.
+    // Earlier order (install first) was hanging UART0 console mid-log on
+    // ESP32-P4 / IDF v5.3.3 — a bigger RX buffer alone wasn't enough.
     esp_err_t ret = uart_param_config(DFPLAYER_UART_NUM, &uart_config);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "Failed to configure audio UART: %s", esp_err_to_name(ret));
@@ -90,6 +85,14 @@ void dfplayer_init(void)
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "Failed to assign audio UART pins: %s", esp_err_to_name(ret));
         return;
+    }
+
+    if (!uart_is_driver_installed(DFPLAYER_UART_NUM)) {
+        ret = uart_driver_install(DFPLAYER_UART_NUM, 1024, 0, 0, NULL, 0);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to install audio UART driver: %s", esp_err_to_name(ret));
+            return;
+        }
     }
 
     s_uart_ready = true;

@@ -6,6 +6,8 @@
 #include "esp_system.h"
 #include "esp_attr.h"
 #include "esp_partition.h"
+#include "esp_netif.h"
+#include "esp_event.h"
 
 #include "config.h"
 #include "i2c_manager.h"
@@ -309,7 +311,7 @@ static void deferred_init_task(void *arg)
     ESP_LOGI(TAG, "deferred_init: starting (uptime ~%lu ms)",
              (unsigned long)(xTaskGetTickCount() * portTICK_PERIOD_MS));
 
-    // 1) Audio + settings (no I/O blocking).
+    // 1) Audio + settings (no I/O blocking). DY-HV20T on UART1 GPIO 37/38.
     ESP_LOGI(TAG, "deferred_init: dfplayer_init");
     dfplayer_init();
     ESP_LOGI(TAG, "deferred_init: settings_load_nvs");
@@ -324,6 +326,14 @@ static void deferred_init_task(void *arg)
     ESP_LOGI(TAG, "deferred_init: camera_init");
     esp_err_t cret = camera_init();
     ESP_LOGI(TAG, "deferred_init: camera_init -> %s", esp_err_to_name(cret));
+
+    // lwIP + default event loop must exist before httpd_start() — otherwise
+    // tcpip_send_msg_wait_sem aborts with "Invalid mbox". wifi_sta_init()
+    // does these later, but start_webserver runs first by design (so the
+    // listener is up while WiFi is still trying to associate). Bring the
+    // networking core up here; both calls are idempotent.
+    (void)esp_netif_init();
+    (void)esp_event_loop_create_default();
 
     ESP_LOGI(TAG, "deferred_init: start_webserver");
     start_webserver();
