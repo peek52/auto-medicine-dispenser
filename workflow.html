@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<title>Unified Cam — Workflow Diagrams</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --accent-dim: #0ea5e9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Sarabun','Noto Sans Thai','Segoe UI',sans-serif;
+    line-height: 1.5;
+  }
+  header {
+    background: linear-gradient(90deg, #0c4a6e 0%, #155e75 100%);
+    padding: 32px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { margin: 0 0 4px; font-size: 28px; }
+  header p { margin: 0; color: var(--muted); }
+  nav {
+    position: sticky; top: 0;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 12px;
+    z-index: 10;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  nav a {
+    color: var(--accent);
+    text-decoration: none;
+    padding: 4px 10px;
+    margin-right: 4px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 13px;
+    display: inline-block;
+  }
+  nav a:hover { background: var(--accent-dim); color: white; }
+  main {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 24px;
+    padding: 20px 24px;
+  }
+  section h2 {
+    margin: 0 0 8px;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+  section .desc { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+  .mermaid {
+    background: #f8fafc;
+    border-radius: 6px;
+    padding: 16px;
+    text-align: center;
+    overflow-x: auto;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14px;
+    margin-top: 12px;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    text-align: left;
+  }
+  th { background: #334155; }
+  td code { background: #0f172a; padding: 2px 6px; border-radius: 3px; color: #fbbf24; }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    padding: 24px;
+    font-size: 13px;
+  }
+  details summary { cursor: pointer; color: var(--accent); margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🚀 Unified Cam — Workflow Diagrams</h1>
+  <p>ระบบจ่ายยาอัตโนมัติ · ESP32-P4-Nano · MIPI-CSI · WiFi/MQTT/Telegram</p>
+</header>
+
+<nav>
+  <a href="#boot">1. Boot</a>
+  <a href="#timing">2. Cycle timing</a>
+  <a href="#dispense">3. Dispense</a>
+  <a href="#schedule">4. Schedule</a>
+  <a href="#ui">5. UI state</a>
+  <a href="#touch">6. Touch read</a>
+  <a href="#cloud">7. Cloud arch</a>
+  <a href="#mqtt">8. MQTT</a>
+  <a href="#i2c">9. I2C watchdog</a>
+  <a href="#hw">10. Hardware</a>
+  <a href="#build">11. Build/flash</a>
+  <a href="#tg">12. Telegram</a>
+  <a href="#logs">13. Logs</a>
+</nav>
+
+<main>
+
+<section id="boot">
+  <h2>1. Boot sequence</h2>
+  <div class="desc">POWERON → bootloader → app_main → peripheral checks → spawn FreeRTOS tasks</div>
+  <div class="mermaid">
+flowchart TD
+    A[POWERON / Reset] --> B[Bootloader<br/>ESP-IDF v5.3.3 patched]
+    B --> C[app_main]
+    C --> D{Reset reason?}
+    D -->|≥3 PANIC| E[Ultra-safe mode<br/>skip ALL I2C]
+    D -->|1 PANIC| F[Safe mode<br/>skip VL53]
+    D -->|POWERON / SW| G[Normal boot]
+    E --> H[NVS init + cloud_secrets_load]
+    F --> H
+    G --> H
+    H --> I[i2c_manager_init<br/>SDA=7 SCL=8 @ 50 kHz]
+    I --> J[i2c_unstick_gpio<br/>ปลด SDA ที่ค้าง]
+    J --> K{ping peripherals}
+    K -->|TCA9548A 0x70| K1[disable VL53 ถ้าไม่เจอ]
+    K -->|PCA9685 0x40| K2[6-channel servo]
+    K -->|PCF8574 0x20| K3[IR pill sensors]
+    K -->|DS3231 0x68| K4[RTC]
+    K -->|FT6336U 0x38| K5[touch fallback OK<br/>ถ้า ACK]
+    K1 & K2 & K3 & K4 & K5 --> L[display_clock_init<br/>ST7796S SPI 40 MHz]
+    L --> M[start_core_services]
+    M --> M1[camera_init OV5647]
+    M --> M2[jpeg_encoder_init]
+    M --> M3[webserver :80]
+    M --> M4[stream :81]
+    M1 & M2 & M3 & M4 --> N[net_stack_preinit]
+    N --> O[wifi_sta_init<br/>ESP-Hosted SDIO → C6]
+    O --> P[Spawn tasks]
+    P --> P1[clock_task UI 30/67Hz]
+    P --> P2[dispenser_task 30s]
+    P --> P3[telegram_task 3s]
+    P --> P4[netpie_task MQTT]
+    P --> P5[offline_sync GSheets]
+    P --> P6[i2c_watchdog 15s]
+    P --> P7[alive_tick 60s]
+    P1 & P2 & P3 & P4 & P5 & P6 & P7 --> Q[Keepalive loop<br/>monitor heap, panic recovery]
+  </div>
+</section>
+
+<section id="timing">
+  <h2>2. Dispense cycle timing (~5.85 s/รอบ)</h2>
+  <div class="desc">Servo เคลื่อนพร้อม IR poll ตลอดทั้งรอบ</div>
+  <div class="mermaid">
+gantt
+    title One Dispense Cycle (~5.85 s)
+    dateFormat  X
+    axisFormat  %L ms
+    section Servo
+    go_work I2C cmd          :a1, 0, 10
+    Servo at WORK position   :a2, after a1, 1490
+    go_home I2C cmd          :a3, after a2, 10
+    Servo returning HOME     :a4, after a3, 3990
+    section IR polling
+    Poll window 1 (1.5 s)    :crit, b1, 0, 1500
+    Poll window 2 (4.0 s)    :crit, b2, 1500, 4000
+    Settle pause (350 ms)    :b3, 5500, 350
+    Final 8-sample jam check :crit, b4, 5850, 160
+  </div>
+</section>
+
+<section id="dispense">
+  <h2>3. Manual dispense / return-all</h2>
+  <div class="desc">Trigger จาก Telegram /dispense, /return, หรือกดบนจอ</div>
+  <div class="mermaid">
+flowchart TD
+    Start([Trigger]) --> Em{emergency_stop<br/>quiet_hours?}
+    Em -->|Yes| Reject[Reject + reason]
+    Em -->|No| Lock[Take s_dispense_mutex<br/>busy=true]
+    Lock --> Sound[Play track 32<br/>กำลังจ่าย…]
+    Sound --> Init[actually_dropped=0<br/>streak=0]
+    Init --> Loop{i &lt; loops_cap?}
+    Loop -->|Yes| W[T=0: pca9685_go_work]
+    W --> P1[T=0..1500ms<br/>Poll IR ~10ms]
+    P1 --> H[T=1500: pca9685_go_home]
+    H --> P2[T=1500..5500ms<br/>Poll IR ต่อ]
+    P2 --> Settle[T=5500..5850ms<br/>Settle 350 + 8 samples]
+    Settle --> Result{IR saw LOW?}
+    Result -->|Yes| Inc[actually_dropped++<br/>shadow.count--<br/>streak=0]
+    Result -->|No| Skip[streak++]
+    Inc --> Loop
+    Skip --> Empty{streak ≥ 2?}
+    Empty -->|No| Loop
+    Empty -->|Yes| ForceEmpty[forced_empty=true<br/>shadow.count=0]
+    Loop -->|i = cap| Done[Loop done]
+    ForceEmpty --> Done
+    Done --> Beep{actually_dropped == 0?}
+    Beep -->|Yes| NoMeds[play 'ไม่พบยา']
+    Beep -->|No, eject_all| Returned[play 'คืนยาแล้ว']
+    Beep -->|No, partial| Disp[play 'จ่ายยาสำเร็จ']
+    NoMeds & Returned & Disp --> Msg["send_telegram_photo_or_text:<br/>โมดูล: M (name)<br/>เวลา: HH:MM<br/>จำนวน: N เม็ด"]
+    Msg --> GS[Google Sheets log]
+    GS --> Unlock[Release mutex<br/>busy=false]
+    Reject --> End([Done])
+    Unlock --> End
+  </div>
+</section>
+
+<section id="schedule">
+  <h2>4. Scheduled dispense (จ่ายตามตาราง)</h2>
+  <div class="desc">7 slots/วัน · เทียบ DS3231 RTC ทุก 30s</div>
+  <div class="mermaid">
+flowchart TD
+    Tick[dispenser_task tick 30s] --> ReadRTC[ds3231_get_time]
+    ReadRTC --> Match{match slot_time<br/>±1 นาที?}
+    Match -->|No| Tick
+    Match -->|Yes| Enable{scheduleEnabled?}
+    Enable -->|No| Tick
+    Enable -->|Yes| Trig{trigger flag<br/>นาทีนี้แล้ว?}
+    Trig -->|Yes| Tick
+    Trig -->|No| Set[s_pending_slot_idx=slot<br/>s_waiting_confirm=true]
+    Set --> Alert[Telegram: ใกล้เวลากินยา<br/>+ play เสียงเตือน]
+    Alert --> Wait[รอ user]
+    Wait --> Choice{Action<br/>หรือ timeout?}
+    Choice -->|กดกินยา| Run[Loop med 1..6<br/>slot bit set?<br/>→ manual dispense]
+    Choice -->|กดเลื่อน| Snooze[Schedule retry +5 min]
+    Choice -->|Timeout 15 min| Skip[Log Skipped Timeout<br/>+ Telegram notify]
+    Run --> Done[Done]
+    Snooze --> Done
+    Skip --> Done
+    Done --> Clear[Clear pending<br/>set trigger flag]
+    Clear --> Tick
+  </div>
+</section>
+
+<section id="ui">
+  <h2>5. UI state machine</h2>
+  <div class="desc">Standby ↔ Menu + sub-screens · Confirm popup เมื่อถึงเวลายา</div>
+  <div class="mermaid">
+stateDiagram-v2
+    [*] --> Standby
+    Standby --> Menu: tap
+    Menu --> Settings: tap Settings
+    Menu --> Meds: tap Meds
+    Menu --> Schedule: tap Schedule
+    Menu --> WiFi: tap WiFi
+    Menu --> Cloud: tap Cloud
+    Menu --> Tech: tap Tech
+    Menu --> Standby: timeout / Back
+    Settings --> Settings: vol/lang/IR
+    Settings --> Menu: Back
+    Meds --> Keyboard: edit name
+    Meds --> Meds: count/slots
+    Meds --> Menu: Back
+    Schedule --> Schedule: edit slot time<br/>(popup4)
+    Schedule --> Menu: Back
+    WiFi --> Keyboard: enter pass
+    WiFi --> WiFi: scan / select
+    WiFi --> Menu: Back
+    Keyboard --> Caller: submit
+    Cloud --> Menu: Back
+    Tech --> Menu: Back
+    Standby --> Confirm: scheduled dose due
+    Confirm --> Run: tap กิน
+    Confirm --> Snooze: tap เลื่อน
+    Confirm --> Standby: timeout 15 min
+    Run --> Standby: dispense done
+    Snooze --> Standby: scheduled +5 min
+  </div>
+</section>
+
+<section id="touch">
+  <h2>6. FT6336U touch read pipeline</h2>
+  <div class="desc">Cache-rate 33ms idle / 15ms pressed · debounce 2 samples</div>
+  <div class="mermaid">
+flowchart LR
+    A[clock_task tick] --> B{s_touch_initialized?}
+    B -->|No| C[retry init 5s]
+    C --> Out1[return false]
+    B -->|Yes| D{cache valid?<br/>33/15 ms}
+    D -->|Yes| E[return cached]
+    D -->|No| F[i2c read_reg 0x02, 6B]
+    F --> G{I2C OK?}
+    G -->|No| H[fail<br/>2s cooldown]
+    H --> Out2[return false]
+    G -->|Yes| I[touches=data&0xF<br/>x=data1..2 y=data3..4]
+    I --> J{1-2 touches<br/>AND not 0,0?}
+    J -->|No| K[release_streak++]
+    J -->|Yes| L[press_streak++]
+    K --> M{release ≥ 2?}
+    M -->|Yes| N[pressed=false]
+    M -->|No, was pressed| O[stay pressed]
+    L --> P{press ≥ 2?}
+    P -->|Yes| Q[pressed=true<br/>save x,y]
+    P -->|No| R[wait next sample]
+    N & O & Q & R --> Out3[return state]
+  </div>
+</section>
+
+<section id="cloud">
+  <h2>7. Cloud architecture</h2>
+  <div class="desc">ESP-Hosted (P4 ↔ C6 SDIO) · เชื่อม Telegram, NETPIE, Google Apps Script</div>
+  <div class="mermaid">
+graph TB
+    subgraph Device [ESP32-P4-Nano]
+        Main[main loop]
+        Web[web_server :80<br/>stream :81]
+        Tg[telegram_task]
+        Mq[netpie_task]
+        Of[offline_sync_task]
+    end
+    subgraph C6 [ESP32-C6 ESP-Hosted]
+        WiFi[WiFi STA]
+    end
+    subgraph Internet
+        TGAPI[Telegram Bot API]
+        NETPIE[NETPIE MQTT broker<br/>mqtt.netpie.io:1883]
+        GAS[Google Apps Script HTTPS]
+        Browser[Browser - PC/Mobile]
+    end
+    Main -.SDIO.- C6
+    C6 --> WiFi
+    WiFi --> TGAPI
+    WiFi --> NETPIE
+    WiFi --> GAS
+    Browser --> Web
+    TGAPI -.poll 3s.-> Tg
+    NETPIE -.subscribe shadow.-> Mq
+    Mq -.publish updates.-> NETPIE
+    Of -.queued events.-> GAS
+    Tg -.snapshot + msg.-> TGAPI
+    Web -. cookie auth .-> Browser
+  </div>
+</section>
+
+<section id="mqtt">
+  <h2>8. NETPIE shadow sync</h2>
+  <div class="desc">Pub/sub สำหรับ med count, slot times, scheduleEnabled</div>
+  <div class="mermaid">
+sequenceDiagram
+    participant ESP as ESP32-P4
+    participant MQ as NETPIE Broker
+    participant App as Mobile App / Web
+    Note over ESP,MQ: Connect TLS 1883
+    ESP->>MQ: SUBSCRIBE @shadow/data/get/response
+    ESP->>MQ: SUBSCRIBE @shadow/data/updated
+    ESP->>MQ: PUBLISH @shadow/data/get
+    MQ-->>ESP: shadow current state
+    Note over ESP: cache → s_shadow.med[]<br/>slot_time[7], scheduleEnabled
+    App->>MQ: PUBLISH @shadow/data/update<br/>(count change)
+    MQ-->>ESP: @shadow/data/updated
+    ESP->>ESP: refresh s_shadow
+    Note over ESP: ทุก dispense
+    ESP->>MQ: PUBLISH @shadow/data/update<br/>(new count)
+    MQ-->>App: shadow updated
+  </div>
+</section>
+
+<section id="i2c">
+  <h2>9. I2C watchdog & recovery</h2>
+  <div class="desc">เช็ค peripheral ทุก 15s · 3 misses ติด → tear-down + GPIO unstick + recreate bus</div>
+  <div class="mermaid">
+stateDiagram-v2
+    [*] --> Healthy
+    Healthy --> Healthy: peripherals OK
+    Healthy --> Probe: tick 15s
+    Probe --> Healthy: TCA/PCA/PCF respond
+    Probe --> Miss1: 1+ missing
+    Miss1 --> Healthy: next tick OK
+    Miss1 --> Miss2: still missing
+    Miss2 --> Miss3: still missing
+    Miss3 --> Recover: 3 misses ติด
+    Recover --> RmDevs: Remove dev handles
+    RmDevs --> DelBus: i2c_del_master_bus
+    DelBus --> Unstick: GPIO unstick SDA<br/>4 rounds × 32 pulses
+    Unstick --> NewBus: i2c_new_master_bus
+    NewBus --> ReProbe: retry probe
+    ReProbe --> Healthy: peripheral back
+    ReProbe --> Degraded: still missing
+    Degraded --> Probe: keep trying
+    Degraded --> Restart: ≥2 panics in 10 min
+    Restart --> [*]: esp_restart
+  </div>
+</section>
+
+<section id="hw">
+  <h2>10. Hardware connections</h2>
+  <div class="desc">Pin map รวมจาก main/config.h</div>
+  <div class="mermaid">
+flowchart LR
+    subgraph P4 [ESP32-P4-Nano]
+        SDA[SDA GPIO7]
+        SCL[SCL GPIO8]
+        XCLK[XCLK GPIO33<br/>LEDC 24MHz]
+        SPI[SPI 32/36/26/24/25]
+        UART[UART1 37/38]
+        SDIO[SDIO 14-19]
+    end
+    subgraph I2C [I2C bus 50 kHz]
+        TCA[TCA9548A 0x70]
+        PCA[PCA9685 0x40]
+        PCF[PCF8574 0x20]
+        DS[DS3231 0x68]
+        FT[FT6336U 0x38]
+    end
+    subgraph Peripherals
+        VL[VL53L0X x6]
+        SERVO[Servo x6]
+        IR[IR beam x6]
+        LCD[ST7796S 480x320]
+        AUDIO[DY-HV20T audio]
+        CAM[OV5647 MIPI-CSI]
+        C6[ESP32-C6 WiFi]
+    end
+    SDA & SCL --> TCA & PCA & PCF & DS & FT
+    TCA -.mux.-> VL
+    PCA --> SERVO
+    PCF --> IR
+    FT --> LCD
+    SPI --> LCD
+    UART --> AUDIO
+    XCLK --> CAM
+    SDIO --> C6
+  </div>
+  <details>
+    <summary>📋 Pin table</summary>
+    <table>
+      <tr><th>Function</th><th>Pin</th><th>Note</th></tr>
+      <tr><td>I2C SDA</td><td><code>7</code></td><td>50 kHz</td></tr>
+      <tr><td>I2C SCL</td><td><code>8</code></td><td></td></tr>
+      <tr><td>Camera XCLK</td><td><code>33</code></td><td>LEDC 24 MHz</td></tr>
+      <tr><td>Camera LDO</td><td>chan 3</td><td>2.5 V</td></tr>
+      <tr><td>TFT MOSI/SCK/CS/DC/RST</td><td><code>32/36/26/24/25</code></td><td>SPI 40 MHz</td></tr>
+      <tr><td>FT6336U RST</td><td><code>21</code></td><td>active-low</td></tr>
+      <tr><td>FT6336U INT</td><td><code>-1</code></td><td>not connected, poll mode</td></tr>
+      <tr><td>VL53 XSHUT M1..M6</td><td><code>20/22/23/47/48/53</code></td><td>ผ่าน TCA9548A</td></tr>
+      <tr><td>Audio TX/RX</td><td><code>37/38</code></td><td>DY-HV20T UART1</td></tr>
+      <tr><td>ESP-Hosted SDIO</td><td><code>14-19</code></td><td>→ ESP32-C6</td></tr>
+    </table>
+  </details>
+</section>
+
+<section id="build">
+  <h2>11. Build / flash workflow</h2>
+  <div class="desc">Loop ปกติ: edit → build → flash → test → log</div>
+  <div class="mermaid">
+flowchart LR
+    A[Edit code] --> B[idf.py -B build build]
+    B --> C{Build OK?}
+    C -->|Compile error| A
+    C -->|OK| D[idf.py -B build -p COM6 flash]
+    D --> E{Flash OK?}
+    E -->|Could not open COM6| F[Wait, retry]
+    F --> D
+    E -->|chip stopped responding| G[Hold EN button<br/>retry flash]
+    G --> D
+    E -->|OK Hard reset| H[Test on device]
+    H --> I{Behavior OK?}
+    I -->|No| J[Check serial logs<br/>via /logs/tail]
+    J --> A
+    I -->|No, panic| K[idf.py coredump-info]
+    K --> A
+    I -->|Yes| L[Commit + push]
+  </div>
+</section>
+
+<section id="tg">
+  <h2>12. Telegram commands</h2>
+  <div class="desc">Bot polling getUpdates ทุก 3 วินาที · TG_PHOTO_MAX_INFLIGHT=2</div>
+  <div class="mermaid">
+mindmap
+  root((Telegram bot))
+    Camera
+      /photo
+        snapshot + JPEG
+    Dispense
+      /dispense N M
+        manual N pills module M
+      /return M
+        return all module M
+    Status
+      /status
+        battery heap uptime IP
+      /schedule
+        today's slot times
+    Settings
+      /lang th
+      /lang en
+    Help
+      /help
+        command list
+  </div>
+</section>
+
+<section id="logs">
+  <h2>13. Logs / TAG quick reference</h2>
+  <div class="desc">64 KB ring buffer · tail ผ่าน /logs/tail (tech auth)</div>
+  <div class="mermaid">
+flowchart LR
+    Boot[unified_cam] -.alive 60s.-> Log[/logs/tail<br/>64 KB ring]
+    I2C[i2c_mgr] -.bus init recovery.-> Log
+    Disp[dispenser] -.Drop X/N events.-> Log
+    Touch[FT6336U] -.touch state.-> Log
+    Cam[camera_init / ov5647] -.frame timeout.-> Log
+    WiFi[wifi_sta / RPC_WRAP / transport] -.connect events.-> Log
+    Mqtt[netpie_mqtt] -.shadow sync.-> Log
+    Tg[tg_poll / tg_text_wrk] -.bot commands.-> Log
+    Log -.HTTP auth.-> User[Tech panel<br/>/tech → Logs tab]
+  </div>
+</section>
+
+</main>
+
+<footer>
+  Generated for unified_cam · ESP32-P4-Nano dispenser ·
+  <a href="WORKFLOW.md" style="color: var(--accent);">Markdown source</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    themeCSS: '.label { font-family: Sarabun, sans-serif; }',
+    flowchart: { curve: 'basis', useMaxWidth: true },
+    gantt: { useMaxWidth: true },
+    sequence: { useMaxWidth: true }
+  });
+</script>
+
+</body>
+</html>

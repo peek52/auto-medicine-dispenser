@@ -576,8 +576,12 @@ void ui_setup_meds_detail_render(void)
             }
         } // Closed 'else' logic for Background Local Partial Updates!
 
-        if (ui_manual_disp_status != prev_disp_status || (!force_redraw && ui_manual_disp_status > 0)) {
-            bool is_new_status = (ui_manual_disp_status != prev_disp_status);
+        // Repaint popup ONLY when its status actually changes, or when the
+        // outer page does a full redraw. The old condition repainted the
+        // popup every frame as long as status > 0, which made the
+        // "กำลังจ่ายยา" panel visibly flicker.
+        bool is_new_status = (ui_manual_disp_status != prev_disp_status);
+        if (is_new_status || (force_redraw && ui_manual_disp_status > 0)) {
             prev_disp_status = ui_manual_disp_status;
 
             if (ui_manual_disp_status == 1) {

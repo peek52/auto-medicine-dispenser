@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>   // size_t
 #include <stdint.h>
+#include "esp_err.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  dispenser_scheduler.h — Medicine dispenser timing logic
@@ -32,6 +33,32 @@ void dispenser_skip_meds(void);
 
 /** สั่งจ่ายยาแบบ Manual ทันที (Non-blocking) */
 void dispenser_manual_dispense(int med_idx, int qty);
+
+/** Per-module IR sensor presence flag (default: all true).
+ *  When false, the dispense loop skips IR detection and trusts the
+ *  servo cycle as the pill counter — useful when only some modules
+ *  have an IR beam wired, or when the IR sensor is unreliable. The
+ *  flag is persisted in NVS. */
+bool dispenser_ir_present(int med_idx);
+void dispenser_ir_set_present(int med_idx, bool present);
+
+/** IR calibration sample — captured at high resolution during one
+ *  full servo cycle so the operator can see WHEN the pill passed
+ *  the beam. */
+typedef struct {
+    uint32_t time_ms;     // ms since cycle start
+    uint8_t  raw_byte;    // full PCF8574 read
+    uint8_t  bit_low;     // 1 if module's bit was LOW (pill blocking)
+} ir_cal_sample_t;
+
+/** Run a single calibration dispense cycle for med_idx and capture
+ *  IR samples at ~5 ms resolution. Does not update shadow/count or
+ *  send Telegram — pure diagnostic. Returns ESP_OK on success and
+ *  fills *out_count with the number of samples written. */
+esp_err_t dispenser_ir_calibrate(int med_idx,
+                                 ir_cal_sample_t *samples,
+                                 int max_samples,
+                                 int *out_count);
 
 /** Emergency stop — block all new dispense triggers (manual + scheduled)
  *  until dispenser_emergency_clear() is called. In-flight servo motion

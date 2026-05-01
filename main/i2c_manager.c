@@ -135,6 +135,32 @@ esp_err_t i2c_manager_ping(uint8_t addr)
     return ret;
 }
 
+// Wrapper that retries on the IDF v5.3.3 i2c_master state-machine bug
+// where a pure transmit() following a transmit_receive() (or interleaved
+// reads/writes from different bus clients) returns ESP_ERR_INVALID_STATE
+// even though the bus is healthy. A short busy-wait + retry clears the
+// stuck state at the driver level — same trick used in the SCCB patch.
+static esp_err_t i2c_xmit_retry(i2c_master_dev_handle_t dev, const uint8_t *data, size_t len)
+{
+    esp_err_t r = ESP_FAIL;
+    for (int i = 0; i < 4; ++i) {
+        r = i2c_master_transmit(dev, data, len, 500);
+        if (r == ESP_OK || r != ESP_ERR_INVALID_STATE) return r;
+        esp_rom_delay_us(2000);
+    }
+    return r;
+}
+static esp_err_t i2c_recv_retry(i2c_master_dev_handle_t dev, uint8_t *buf, size_t len)
+{
+    esp_err_t r = ESP_FAIL;
+    for (int i = 0; i < 4; ++i) {
+        r = i2c_master_receive(dev, buf, len, 500);
+        if (r == ESP_OK || r != ESP_ERR_INVALID_STATE) return r;
+        esp_rom_delay_us(2000);
+    }
+    return r;
+}
+
 esp_err_t i2c_manager_write(uint8_t addr, const uint8_t *data, size_t len)
 {
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
@@ -145,7 +171,7 @@ esp_err_t i2c_manager_write(uint8_t addr, const uint8_t *data, size_t len)
     esp_err_t ret = ESP_FAIL;
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
     if (dev) {
-        ret = i2c_master_transmit(dev, data, len, 500);
+        ret = i2c_xmit_retry(dev, data, len);
         i2c_master_bus_wait_all_done(s_bus_handle, 500);
     }
     xSemaphoreGive(g_i2c_mutex);
@@ -157,7 +183,7 @@ esp_err_t i2c_manager_write_locked(uint8_t addr, const uint8_t *data, size_t len
     if (!s_bus_handle) return ESP_ERR_INVALID_STATE;
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
     if (!dev) return ESP_FAIL;
-    esp_err_t ret = i2c_master_transmit(dev, data, len, 500);
+    esp_err_t ret = i2c_xmit_retry(dev, data, len);
     i2c_master_bus_wait_all_done(s_bus_handle, 500);
     return ret;
 }
@@ -172,10 +198,10 @@ esp_err_t i2c_manager_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t l
     esp_err_t ret = ESP_FAIL;
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
     if (dev) {
-        ret = i2c_master_transmit(dev, &reg, 1, 500);
+        ret = i2c_xmit_retry(dev, &reg, 1);
         if (ret == ESP_OK) {
             i2c_master_bus_wait_all_done(s_bus_handle, 500);
-            ret = i2c_master_receive(dev, buf, len, 500);
+            ret = i2c_recv_retry(dev, buf, len);
         }
         i2c_master_bus_wait_all_done(s_bus_handle, 500);
     }
@@ -193,7 +219,7 @@ esp_err_t i2c_manager_read(uint8_t addr, uint8_t *buf, size_t len)
     esp_err_t ret = ESP_FAIL;
     i2c_master_dev_handle_t dev = get_or_add_device(addr);
     if (dev) {
-        ret = i2c_master_receive(dev, buf, len, 500);
+        ret = i2c_recv_retry(dev, buf, len);
         i2c_master_bus_wait_all_done(s_bus_handle, 500);
     }
     xSemaphoreGive(g_i2c_mutex);

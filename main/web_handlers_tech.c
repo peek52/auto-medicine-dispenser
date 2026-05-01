@@ -2,6 +2,8 @@
 
 #include "web_handlers_tech.h"
 #include "web_handlers_status.h"
+#include "dispenser_scheduler.h"
+#include "config.h"
 
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -10,6 +12,7 @@
 #include "freertos/task.h"
 
 #include <string.h>
+#include <stdlib.h>
 
 static const char *TAG = "web_tech";
 
@@ -715,4 +718,222 @@ esp_err_t tech_quiet_handler(httpd_req_t *req)
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
     return httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+}
+
+/* GET  /tech/ir          → returns current per-module IR enable mask
+ * POST /tech/ir          body: m=<0..5>&v=<0|1>     → toggle one module
+ * POST /tech/ir          body: mask=<0..63>          → set all six bits
+ *
+ * "IR enabled" means the dispense loop polls the PCF8574 IR sensor
+ * for that module to count pills. "Disabled" switches that module to
+ * servo-trust mode (each servo cycle counts as one pill, capped at
+ * cartridge max for return-all). Useful when only some modules have
+ * an IR beam wired or the IR is unreliable. */
+esp_err_t tech_ir_handler(httpd_req_t *req)
+{
+    esp_err_t auth = web_require_tech_api_auth(req);
+    if (auth != ESP_OK) return auth;
+
+    if (req->method == HTTP_POST) {
+        char body[80] = {0};
+        int len = httpd_req_recv(req, body, sizeof(body) - 1);
+        if (len < 0) return ESP_FAIL;
+        body[len] = '\0';
+
+        const char *p_mask = strstr(body, "mask=");
+        const char *p_m    = strstr(body, "m=");
+        const char *p_v    = strstr(body, "v=");
+        if (p_mask) {
+            int mask = atoi(p_mask + 5) & 0x3F;
+            for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
+                dispenser_ir_set_present(i, (mask & (1 << i)) != 0);
+            }
+        } else if (p_m && p_v) {
+            int m = atoi(p_m + 2);
+            int v = atoi(p_v + 2);
+            if (m >= 0 && m < DISPENSER_MED_COUNT) {
+                dispenser_ir_set_present(m, v != 0);
+            }
+        }
+    }
+
+    int mask = 0;
+    for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
+        if (dispenser_ir_present(i)) mask |= (1 << i);
+    }
+    char out[128];
+    snprintf(out, sizeof(out),
+             "{\"ok\":true,\"mask\":%d,\"per_module\":[%d,%d,%d,%d,%d,%d]}",
+             mask,
+             dispenser_ir_present(0) ? 1 : 0,
+             dispenser_ir_present(1) ? 1 : 0,
+             dispenser_ir_present(2) ? 1 : 0,
+             dispenser_ir_present(3) ? 1 : 0,
+             dispenser_ir_present(4) ? 1 : 0,
+             dispenser_ir_present(5) ? 1 : 0);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+}
+
+/* ── IR calibration page ──────────────────────────────────────────── */
+static const char IR_CAL_PAGE[] =
+"<!doctype html><html lang='th'><head><meta charset='UTF-8'>"
+"<meta name='viewport' content='width=device-width,initial-scale=1'>"
+"<title>คาริเบรต IR · จับยาตอนไหน</title>"
+"<style>"
+"body{font-family:'Sarabun','Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:18px;line-height:1.5}"
+"h1{color:#38bdf8;margin:0 0 16px;font-size:22px}"
+".panel{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:16px;margin-bottom:14px}"
+"button{background:#38bdf8;color:#0f172a;border:none;padding:10px 18px;border-radius:6px;font-size:15px;font-weight:bold;margin:4px;cursor:pointer}"
+"button:disabled{background:#475569;color:#94a3b8;cursor:not-allowed}"
+"button.mod{min-width:90px}"
+".status{padding:8px 12px;border-radius:6px;background:#0f172a;border:1px solid #334155;font-family:monospace}"
+".chart{background:#fff;border-radius:6px;margin-top:12px;overflow:hidden}"
+"canvas{display:block;width:100%;height:140px;background:#fff}"
+".legend{display:flex;gap:18px;margin-top:8px;font-size:14px}"
+".legend span{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:middle;margin-right:6px}"
+".bar-low{background:#ef4444}.bar-high{background:#10b981}"
+".summary{font-family:monospace;background:#0f172a;border:1px solid #334155;padding:10px;border-radius:6px;margin-top:10px;white-space:pre}"
+"a{color:#38bdf8}"
+"</style></head><body>"
+"<h1>คาริเบรต IR — กดเลือกโมดูล แล้วดูว่าจับยาตอนไหน</h1>"
+"<div class='panel'>"
+"<div>เลือกโมดูลที่จะทดสอบ (servo จะหมุน 1 รอบ ~6 วินาที):</div>"
+"<div style='margin-top:8px'>"
+"<button class='mod' onclick='runCal(1)'>โมดูล 1</button>"
+"<button class='mod' onclick='runCal(2)'>โมดูล 2</button>"
+"<button class='mod' onclick='runCal(3)'>โมดูล 3</button>"
+"<button class='mod' onclick='runCal(4)'>โมดูล 4</button>"
+"<button class='mod' onclick='runCal(5)'>โมดูล 5</button>"
+"<button class='mod' onclick='runCal(6)'>โมดูล 6</button>"
+"</div>"
+"<div id='status' class='status' style='margin-top:10px'>พร้อมทดสอบ</div>"
+"</div>"
+"<div class='panel'>"
+"<div><b>Timeline (เวลา 0..5500 ms):</b></div>"
+"<div class='chart'><canvas id='chart' width='1000' height='140'></canvas></div>"
+"<div class='legend'><div><span class='bar-high'></span>คานสะอาด</div>"
+"<div><span class='bar-low'></span>คานบัง (ยาผ่าน) ← pulse</div></div>"
+"<div id='summary' class='summary'>—</div>"
+"</div>"
+"<div class='panel'><a href='/tech'>← กลับหน้า Tech</a></div>"
+"<script>"
+"const c=document.getElementById('chart');const ctx=c.getContext('2d');"
+"function draw(samples){"
+"  const W=c.width,H=c.height;ctx.clearRect(0,0,W,H);ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);"
+"  if(!samples.length)return;"
+"  const T=5500;"
+"  for(const s of samples){"
+"    const t=s[0],low=s[1];"
+"    const x=(t/T)*W;"
+"    if(low){ctx.fillStyle='#ef4444';ctx.fillRect(x-1,0,2,H);}"
+"  }"
+"  ctx.strokeStyle='#94a3b8';ctx.lineWidth=1;"
+"  for(let i=0;i<=11;i++){const x=(i*500/T)*W;ctx.beginPath();ctx.moveTo(x,H-12);ctx.lineTo(x,H);ctx.stroke();ctx.fillStyle='#475569';ctx.font='10px monospace';ctx.fillText((i*500)+'',x+2,H-2);}"
+"  ctx.strokeStyle='#0ea5e9';ctx.beginPath();ctx.moveTo((1500/T)*W,0);ctx.lineTo((1500/T)*W,H);ctx.stroke();"
+"  ctx.fillStyle='#0ea5e9';ctx.font='11px sans-serif';ctx.fillText('servo home @1500ms',(1500/T)*W+4,12);"
+"}"
+"async function runCal(m){"
+"  document.getElementById('status').textContent='กำลังจ่าย ม.'+m+' (รอ ~6 วินาที)…';"
+"  document.querySelectorAll('button.mod').forEach(b=>b.disabled=true);"
+"  try{"
+"    const r=await fetch('/tech/ir_cal/run',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'m='+m});"
+"    const j=await r.json();"
+"    if(!j.ok){document.getElementById('status').textContent='ผิดพลาด: '+(j.error||'unknown');return;}"
+"    draw(j.samples||[]);"
+"    const pulses=j.pulses||0;"
+"    const first=(j.samples||[]).find(s=>s[1]===1);"
+"    document.getElementById('status').textContent='เสร็จ! โมดูล '+m+' ตรวจเจอ '+pulses+' pulse';"
+"    document.getElementById('summary').textContent="
+"      'samples: '+j.count+'\\n'+"
+"      'pulses (pill events): '+pulses+'\\n'+"
+"      'first pill at: '+(first?first[0]+' ms':'(ไม่เจอเลย)')+'\\n'+"
+"      'IR module bit: P'+(m-1);"
+"  }catch(e){"
+"    document.getElementById('status').textContent='HTTP error: '+e;"
+"  }finally{"
+"    document.querySelectorAll('button.mod').forEach(b=>b.disabled=false);"
+"  }"
+"}"
+"</script></body></html>";
+
+esp_err_t tech_ir_cal_page_handler(httpd_req_t *req)
+{
+    esp_err_t auth = web_require_tech_page_auth(req);
+    if (auth != ESP_OK) return auth;
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+    return httpd_resp_send(req, IR_CAL_PAGE, HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t tech_ir_cal_run_handler(httpd_req_t *req)
+{
+    esp_err_t auth = web_require_tech_api_auth(req);
+    if (auth != ESP_OK) return auth;
+
+    char body[32] = {0};
+    int len = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (len < 0) return ESP_FAIL;
+    body[len] = '\0';
+
+    int m = 0;
+    const char *p_m = strstr(body, "m=");
+    if (p_m) m = atoi(p_m + 2);
+    if (m < 1 || m > DISPENSER_MED_COUNT) {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"ok\":false,\"error\":\"bad_module\"}", HTTPD_RESP_USE_STRLEN);
+    }
+
+    const int MAX_SAMPLES = 1500;
+    ir_cal_sample_t *samples = (ir_cal_sample_t *)malloc(MAX_SAMPLES * sizeof(ir_cal_sample_t));
+    if (!samples) {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"ok\":false,\"error\":\"oom\"}", HTTPD_RESP_USE_STRLEN);
+    }
+
+    int count = 0;
+    esp_err_t rc = dispenser_ir_calibrate(m - 1, samples, MAX_SAMPLES, &count);
+    if (rc != ESP_OK) {
+        free(samples);
+        httpd_resp_set_type(req, "application/json");
+        char err[64];
+        snprintf(err, sizeof(err), "{\"ok\":false,\"error\":\"%s\"}", esp_err_to_name(rc));
+        return httpd_resp_send(req, err, HTTPD_RESP_USE_STRLEN);
+    }
+
+    int pulses = 0;
+    uint8_t prev = 1;
+    for (int i = 0; i < count; ++i) {
+        uint8_t cur = samples[i].bit_low;
+        if (cur && !prev) pulses++;
+        prev = cur;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+
+    char buf[80];
+    int n = snprintf(buf, sizeof(buf), "{\"ok\":true,\"m\":%d,\"count\":%d,\"pulses\":%d,\"samples\":[",
+                     m, count, pulses);
+    if (httpd_resp_send_chunk(req, buf, n) != ESP_OK) {
+        free(samples);
+        return ESP_FAIL;
+    }
+    for (int i = 0; i < count; ++i) {
+        n = snprintf(buf, sizeof(buf), "%s[%lu,%u,%u]",
+                     i ? "," : "",
+                     (unsigned long)samples[i].time_ms,
+                     samples[i].bit_low,
+                     samples[i].raw_byte);
+        if (httpd_resp_send_chunk(req, buf, n) != ESP_OK) {
+            // Client disconnected — don't keep generating chunks.
+            free(samples);
+            return ESP_FAIL;
+        }
+    }
+    (void)httpd_resp_send_chunk(req, "]}", 2);
+    (void)httpd_resp_send_chunk(req, NULL, 0);
+
+    free(samples);
+    return ESP_OK;
 }

@@ -53,7 +53,10 @@
 
 // Camera (MIPI-CSI2 / OV5647).
 #define CAM_LDO_CHAN_ID     3
-#define CAM_LDO_VOLTAGE_MV  2500
+// 2800 mV (per OV5647 datasheet AVDD spec). 2500 mV worked on some
+// boards but caused the sensor to drop SCCB register writes / report
+// a corrupted PID (0x568f) on this unit.
+#define CAM_LDO_VOLTAGE_MV  2800
 #define CSI_HRES            800
 #define CSI_VRES            640
 #define CSI_FORMAT_NAME     "MIPI_2lane_24Minput_RAW8_800x640_50fps"

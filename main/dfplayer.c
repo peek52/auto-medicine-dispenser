@@ -81,7 +81,9 @@ void dfplayer_init(void)
         return;
     }
 
-    ret = uart_set_pin(DFPLAYER_UART_NUM, DFPLAYER_TX_PIN, DFPLAYER_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    // The DY-HV20T command path is transmit-only for this firmware. Leaving
+    // RX unassigned avoids a noisy/module-driven RX interrupt path during boot.
+    ret = uart_set_pin(DFPLAYER_UART_NUM, DFPLAYER_TX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "Failed to assign audio UART pins: %s", esp_err_to_name(ret));
         return;
@@ -97,7 +99,7 @@ void dfplayer_init(void)
 
     s_uart_ready = true;
 
-    ESP_LOGI(TAG, "DY-HV20T UART initialized on TX:%d RX:%d", DFPLAYER_TX_PIN, DFPLAYER_RX_PIN);
+    ESP_LOGI(TAG, "DY-HV20T UART initialized TX-only on TX:%d", DFPLAYER_TX_PIN);
 
     // Give the module a moment to boot before sending commands.
     vTaskDelay(pdMS_TO_TICKS(500));

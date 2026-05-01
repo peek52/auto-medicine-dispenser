@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ตั้งค่าระบบจ่ายยา</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-1: #f8fafc;
+      --bg-2: #eef2ff;
+
+      --ink: #0f172a;
+      --ink-2: #334155;
+      --muted: #64748b;
+      --muted-2: #94a3b8;
+
+      --line: #e2e8f0;
+      --line-2: #f1f5f9;
+      --surface: #ffffff;
+      --surface-alt: #f8fafc;
+
+      --pri: #2563eb;
+      --pri-soft: #dbeafe;
+      --pri-ink: #1e40af;
+
+      --ok: #16a34a;
+      --ok-soft: #dcfce7;
+      --warn: #d97706;
+      --bad: #dc2626;
+      --bad-soft: #fee2e2;
+
+      --accent-morn-1: #f59e0b;
+      --accent-morn-2: #fb923c;
+      --accent-noon-1: #0ea5e9;
+      --accent-noon-2: #2563eb;
+      --accent-eve-1:  #8b5cf6;
+      --accent-eve-2:  #6366f1;
+      --accent-bed-1:  #0f766e;
+      --accent-bed-2:  #14b8a6;
+
+      --r-sm: 10px;
+      --r-md: 14px;
+      --r-lg: 20px;
+      --r-xl: 26px;
+
+      --shadow-1: 0 1px 2px rgba(15,23,42,.04), 0 1px 1px rgba(15,23,42,.03);
+      --shadow-2: 0 4px 12px rgba(15,23,42,.06), 0 2px 4px rgba(15,23,42,.04);
+      --shadow-3: 0 12px 28px rgba(15,23,42,.10), 0 4px 8px rgba(15,23,42,.05);
+      --shadow-pri: 0 14px 32px rgba(37,99,235,.28);
+
+      --max: 760px;
+      --ease: cubic-bezier(.4,0,.2,1);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+
+    body {
+      font-family: 'IBM Plex Sans Thai', 'Inter', 'Segoe UI', sans-serif;
+      color: var(--ink);
+      padding: 24px 16px 140px;
+      min-height: 100vh;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+      background:
+        radial-gradient(1200px 600px at 8% -8%, rgba(37,99,235,.10), transparent 55%),
+        radial-gradient(900px 480px at 95% 0%, rgba(14,165,233,.10), transparent 50%),
+        linear-gradient(180deg, var(--bg-1) 0%, var(--bg-2) 100%);
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      letter-spacing: 0;
+    }
+
+    .wrap { max-width: var(--max); margin: 0 auto; width: 100%; }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted-2); }
+
+    /* ===== App header ===== */
+    .app-head {
+      display: flex; align-items: center; gap: 14px;
+      margin-bottom: 22px;
+      padding: 0 4px;
+    }
+    .app-mark {
+      width: 44px; height: 44px; border-radius: 13px;
+      display: grid; place-items: center;
+      background: linear-gradient(135deg, var(--pri) 0%, #38bdf8 100%);
+      box-shadow: var(--shadow-pri);
+      color: #fff; font-size: 22px;
+      flex-shrink: 0;
+    }
+    .app-meta { flex: 1; min-width: 0; }
+    .app-meta h1 {
+      font-size: 20px; font-weight: 700; color: var(--ink);
+      letter-spacing: -.01em; line-height: 1.25;
+    }
+    .app-meta p {
+      margin-top: 3px; font-size: 13px; color: var(--muted); font-weight: 500;
+    }
+    .app-status {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 12px; font-weight: 600;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      color: var(--muted-2);
+      box-shadow: var(--shadow-1);
+      flex-shrink: 0;
+    }
+    .app-status .dot {
+      width: 7px; height: 7px; border-radius: 999px;
+      background: var(--muted-2);
+    }
+    .app-status.online { color: var(--ok); border-color: var(--ok-soft); background: var(--ok-soft); }
+    .app-status.online .dot { background: var(--ok); box-shadow: 0 0 0 4px rgba(22,163,74,.16); animation: pulse 2s ease-in-out infinite; }
+    .app-status.offline { color: var(--bad); border-color: var(--bad-soft); background: var(--bad-soft); }
+    .app-status.offline .dot { background: var(--bad); box-shadow: 0 0 0 4px rgba(220,38,38,.14); }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 4px rgba(22,163,74,.16); }
+      50%      { box-shadow: 0 0 0 8px rgba(22,163,74,.04); }
+    }
+
+    /* ===== Card primitives ===== */
+    .card {
+      background: var(--surface);
+      border-radius: var(--r-xl);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-2);
+      overflow: hidden;
+      margin-bottom: 16px;
+      transition: box-shadow .2s var(--ease);
+    }
+    .card:hover { box-shadow: var(--shadow-3); }
+
+    .card-head {
+      padding: 20px 22px 16px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 16px; flex-wrap: wrap;
+      border-bottom: 1px solid var(--line-2);
+    }
+    .head-left { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1; }
+    .head-ico {
+      width: 40px; height: 40px; border-radius: var(--r-md);
+      display: grid; place-items: center;
+      background: var(--pri-soft); color: var(--pri-ink);
+      font-size: 18px; flex-shrink: 0;
+    }
+    .head-title { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+    .head-title b { font-size: 15px; font-weight: 700; color: var(--ink); letter-spacing: -.005em; line-height: 1.3; }
+    .head-title span { font-size: 12.5px; color: var(--muted); font-weight: 500; line-height: 1.4; }
+
+    .head-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .content { padding: 18px 22px 22px; }
+
+    /* ===== Toggle ===== */
+    .toggle { position: relative; width: 46px; height: 26px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0; cursor: pointer;
+      border-radius: 999px;
+      background: #cbd5e1;
+      transition: background .2s var(--ease);
+    }
+    .slider:before {
+      content: ""; position: absolute;
+      width: 20px; height: 20px; left: 3px; top: 3px;
+      border-radius: 999px; background: #fff;
+      box-shadow: 0 2px 4px rgba(15,23,42,.20);
+      transition: transform .2s var(--ease);
+    }
+    input:checked + .slider { background: var(--pri); }
+    input:checked + .slider:before { transform: translateX(20px); }
+
+    .master-stack { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .master-copy { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+    .master-copy b { font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+    .master-copy span { font-size: 11px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+
+    /* ===== Schedule summary ===== */
+    .schedule-summary {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    }
+    .summary-chip {
+      padding: 12px 14px; border-radius: var(--r-md);
+      background: var(--surface-alt);
+      border: 1px solid var(--line-2);
+    }
+    .summary-chip b {
+      display: block; font-size: 11px;
+      font-weight: 600; color: var(--muted-2);
+      text-transform: uppercase; letter-spacing: .05em;
+      margin-bottom: 4px;
+    }
+    .summary-chip span {
+      display: block; font-size: 13.5px;
+      font-weight: 600; color: var(--ink); line-height: 1.4;
+    }
+
+    /* ===== Dose grid (time slots) ===== */
+    .dose-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+    .dose-card {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      padding: 18px;
+      transition: transform .2s var(--ease), box-shadow .2s var(--ease), border-color .2s var(--ease);
+      overflow: hidden;
+    }
+    .dose-card:before {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: var(--accent, linear-gradient(180deg, var(--pri) 0%, #38bdf8 100%));
+    }
+    .dose-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-3);
+      border-color: var(--accent-border, var(--pri-soft));
+    }
+    .dose-card.morning  { --accent: linear-gradient(180deg, var(--accent-morn-1) 0%, var(--accent-morn-2) 100%); --accent-border: #fde68a; }
+    .dose-card.noon     { --accent: linear-gradient(180deg, var(--accent-noon-1) 0%, var(--accent-noon-2) 100%); --accent-border: #bae6fd; }
+    .dose-card.evening  { --accent: linear-gradient(180deg, var(--accent-eve-1)  0%, var(--accent-eve-2)  100%); --accent-border: #ddd6fe; }
+    .dose-card.bed      { --accent: linear-gradient(180deg, var(--accent-bed-1)  0%, var(--accent-bed-2)  100%); --accent-border: #99f6e4; }
+
+    .dose-header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 14px; margin-bottom: 14px;
+      border-bottom: 1px solid var(--line-2);
+    }
+    .dose-head-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .dose-icon {
+      width: 38px; height: 38px; border-radius: 11px;
+      display: grid; place-items: center;
+      font-size: 18px;
+      background: var(--surface-alt);
+      flex-shrink: 0;
+    }
+    .dose-copy { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+    .dose-label { font-size: 14px; font-weight: 600; color: var(--ink); line-height: 1.25; letter-spacing: -.005em; }
+    .dose-help { font-size: 11.5px; font-weight: 500; color: var(--muted); line-height: 1.4; }
+    .dose-badge {
+      padding: 5px 10px; border-radius: 999px;
+      background: var(--surface-alt);
+      color: var(--muted);
+      font-size: 11px; font-weight: 600;
+      letter-spacing: .03em;
+      white-space: nowrap;
+      border: 1px solid var(--line-2);
+    }
+
+    .dose-field {
+      display: grid; grid-template-columns: 1fr auto;
+      align-items: center; gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px dashed var(--line-2);
+    }
+    .dose-field:last-child { border-bottom: none; padding-bottom: 0; }
+    .dose-field:first-of-type { padding-top: 0; }
+    .field-copy { display: flex; flex-direction: column; gap: 2px; }
+    .field-label { font-size: 13px; font-weight: 600; color: var(--ink); }
+    .field-sub { font-size: 11px; font-weight: 500; color: var(--muted-2); letter-spacing: .01em; }
+
+    /* ===== Inputs ===== */
+    input[type="time"], input[type="text"], input[type="number"] {
+      font-family: inherit;
+      font-size: 16px;
+    }
+
+    input[type="time"] {
+      width: 130px; height: 40px;
+      padding: 0 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--ink);
+      font-weight: 600; text-align: center;
+      outline: none;
+      transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
+    }
+    input[type="time"]:hover { border-color: var(--muted-2); }
+    input[type="time"]:focus {
+      border-color: var(--pri);
+      box-shadow: 0 0 0 4px rgba(37,99,235,.12);
+    }
+
+    /* ===== Modules ===== */
+    .module-summary {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+      margin-bottom: 16px;
+    }
+    .module-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+    }
+
+    .mod-item {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      padding: 18px;
+      transition: transform .2s var(--ease), box-shadow .2s var(--ease), border-color .2s var(--ease);
+      overflow: hidden;
+    }
+    .mod-item:before {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: linear-gradient(180deg, var(--pri) 0%, #38bdf8 100%);
+    }
+    .mod-item:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-3);
+      border-color: var(--pri-soft);
+    }
+
+    .mod-header-row {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 10px;
+      padding-bottom: 14px; margin-bottom: 14px;
+      border-bottom: 1px solid var(--line-2);
+    }
+    .mod-title-wrap { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .mod-title { font-size: 14px; font-weight: 700; color: var(--ink); letter-spacing: -.005em; }
+    .mod-sub { font-size: 11.5px; font-weight: 500; color: var(--muted); line-height: 1.35; }
+    .mod-badge {
+      padding: 5px 10px; border-radius: 999px;
+      background: var(--pri-soft); color: var(--pri-ink);
+      font-size: 11px; font-weight: 600;
+      white-space: nowrap;
+    }
+    .mod-badge.idle { background: var(--surface-alt); color: var(--muted); border: 1px solid var(--line-2); }
+
+    .mod-name-wrap { margin-bottom: 14px; }
+    .mod-field-label {
+      display: block; font-size: 11px; font-weight: 600;
+      color: var(--muted-2);
+      text-transform: uppercase; letter-spacing: .05em;
+      margin-bottom: 7px;
+    }
+    .mod-name-input {
+      width: 100%; height: 42px; padding: 0 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      font-weight: 500; color: var(--ink);
+      outline: none;
+      transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
+    }
+    .mod-name-input::placeholder { color: var(--muted-2); font-weight: 400; }
+    .mod-name-input:hover { border-color: var(--muted-2); }
+    .mod-name-input:focus {
+      border-color: var(--pri);
+      box-shadow: 0 0 0 4px rgba(37,99,235,.12);
+    }
+
+    .mod-controls {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    .qty-wrap { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+    .qty-control {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--surface-alt);
+    }
+    .qty-btn {
+      width: 32px; height: 32px;
+      border: none; background: var(--surface);
+      border-radius: 8px;
+      color: var(--pri-ink); font-weight: 700; font-size: 16px;
+      cursor: pointer;
+      transition: background .12s var(--ease), transform .08s var(--ease);
+      box-shadow: var(--shadow-1);
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .qty-btn:hover { background: var(--pri-soft); }
+    .qty-btn:active { transform: scale(.93); }
+    .qty-input {
+      width: 52px; height: 32px;
+      border: none; background: transparent;
+      font-weight: 700; font-size: 16px;
+      text-align: center; color: var(--ink);
+      outline: none;
+      font-family: inherit;
+    }
+    .qty-input:focus { color: var(--pri); }
+    .qty-input::-webkit-outer-spin-button,
+    .qty-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .qty-input { -moz-appearance: textfield; appearance: textfield; }
+
+    /* ===== Slot pills ===== */
+    .slots-wrap { display: flex; flex-direction: column; gap: 8px; }
+    .slots-row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .slot-pill {
+      padding: 7px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--ink-2);
+      font-size: 12px; font-weight: 600;
+      cursor: pointer; user-select: none;
+      transition: all .15s var(--ease);
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .slot-pill:hover {
+      border-color: var(--pri);
+      color: var(--pri-ink);
+      background: var(--pri-soft);
+    }
+    .slot-pill.active {
+      background: var(--pri);
+      color: #fff;
+      border-color: var(--pri);
+      box-shadow: 0 4px 10px rgba(37,99,235,.30);
+    }
+    .slot-pill.active:hover { background: var(--pri-ink); }
+
+    /* ===== Save bar ===== */
+    .savebar {
+      position: fixed; left: 50%; bottom: 18px;
+      transform: translateX(-50%);
+      width: calc(100% - 32px); max-width: 580px;
+      z-index: 200;
+      border-radius: var(--r-xl);
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: var(--shadow-3);
+      display: flex; gap: 14px; align-items: center; justify-content: space-between;
+    }
+    .savehint { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+    .savehint b { font-size: 13.5px; font-weight: 700; color: var(--ink); letter-spacing: -.005em; }
+    .savehint span { font-size: 11.5px; color: var(--muted); font-weight: 500; }
+    .btn-save {
+      height: 44px; padding: 0 22px;
+      border-radius: 12px; border: none; cursor: pointer;
+      color: #fff;
+      font-family: inherit;
+      font-size: 14px; font-weight: 700; letter-spacing: .005em;
+      background: linear-gradient(135deg, var(--pri) 0%, #38bdf8 100%);
+      box-shadow: var(--shadow-pri);
+      display: flex; align-items: center; gap: 8px;
+      transition: transform .1s var(--ease), box-shadow .15s var(--ease);
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-save:hover { box-shadow: 0 18px 40px rgba(37,99,235,.36); }
+    .btn-save:active { transform: scale(.97); }
+    .btn-save.success { background: linear-gradient(135deg, var(--ok) 0%, #4ade80 100%); box-shadow: 0 14px 32px rgba(22,163,74,.30); }
+    .btn-save.error { background: linear-gradient(135deg, var(--bad) 0%, #f87171 100%); box-shadow: 0 14px 32px rgba(220,38,38,.30); }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 720px) {
+      body { padding: 18px 14px 132px; }
+      .app-meta h1 { font-size: 18px; }
+      .schedule-summary { grid-template-columns: 1fr; }
+      .module-summary { grid-template-columns: 1fr; }
+      .dose-grid, .module-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 540px) {
+      body { padding: 14px 12px 128px; }
+      .app-head { gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+      .app-status { order: 3; width: 100%; justify-content: center; }
+      .card-head { padding: 16px 18px 14px; }
+      .content { padding: 16px 18px 18px; }
+      .dose-card, .mod-item { padding: 16px; }
+      .dose-field { grid-template-columns: 1fr; gap: 6px; }
+      input[type="time"] { width: 100%; }
+      .savebar { width: calc(100% - 24px); bottom: 12px; padding: 10px 12px; }
+      .savehint b { font-size: 13px; }
+      .savehint span { font-size: 11px; }
+      .btn-save { height: 40px; padding: 0 18px; font-size: 13px; }
+    }
+    @media (max-width: 380px) {
+      .qty-input { width: 44px; }
+      .qty-btn { width: 30px; height: 30px; }
+      .mod-controls { flex-direction: column; align-items: stretch; gap: 12px; }
+      .mod-badge { align-self: flex-start; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <!-- App header -->
+    <div class="app-head">
+      <div class="app-mark">💊</div>
+      <div class="app-meta">
+        <h1>เครื่องจ่ายยาอัตโนมัติ</h1>
+        <p>แผงควบคุมตารางจ่ายยาและตลับยา</p>
+      </div>
+      <div class="app-status offline" id="net-status">
+        <span class="dot"></span>
+        <span id="net-status-txt">ออฟไลน์</span>
+      </div>
+    </div>
+
+    <!-- CARD 1: SCHEDULE CONTROL -->
+    <div class="card">
+      <div class="card-head">
+        <div class="head-left">
+          <div class="head-ico">🗓</div>
+          <div class="head-title">
+            <b>ควบคุมตารางจ่ายยา</b>
+            <span>เปิด/ปิดระบบ และดูภาพรวมการตั้งค่า</span>
+          </div>
+        </div>
+        <div class="head-right">
+          <div class="master-stack">
+            <div class="master-copy">
+              <b>เปิดใช้งาน</b>
+              <span>เปิดหรือปิดทั้งระบบ</span>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="master" />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="content">
+        <div class="schedule-summary">
+          <div class="summary-chip">
+            <b>ช่วงเวลา</b>
+            <span>7 รอบต่อวัน</span>
+          </div>
+          <div class="summary-chip">
+            <b>โหมดจ่ายยา</b>
+            <span>ก่อน / หลังอาหาร / ก่อนนอน</span>
+          </div>
+          <div class="summary-chip">
+            <b>การบันทึก</b>
+            <span>NETPIE Shadow Sync</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CARD 2: TIME SLOTS -->
+    <div class="card">
+      <div class="card-head">
+        <div class="head-left">
+          <div class="head-ico">⏰</div>
+          <div class="head-title">
+            <b>ตั้งเวลาแต่ละมื้อ</b>
+            <span>กำหนดเวลามื้อเช้า กลางวัน เย็น และก่อนนอน</span>
+          </div>
+        </div>
+      </div>
+      <div class="content">
+        <div class="dose-grid">
+          <div class="dose-card morning">
+            <div class="dose-header">
+              <div class="dose-head-main">
+                <span class="dose-icon">🌅</span>
+                <div class="dose-copy">
+                  <span class="dose-label">มื้อเช้า</span>
+                  <span class="dose-help">ก่อน / หลังอาหารเช้า</span>
+                </div>
+              </div>
+              <span class="dose-badge">Morning</span>
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">ก่อนอาหาร</span>
+                <span class="field-sub">Pre-meal</span>
+              </div>
+              <input type="time" id="t_morn_pre" value="08:00" />
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">หลังอาหาร</span>
+                <span class="field-sub">Post-meal</span>
+              </div>
+              <input type="time" id="t_morn_post" value="08:30" />
+            </div>
+          </div>
+
+          <div class="dose-card noon">
+            <div class="dose-header">
+              <div class="dose-head-main">
+                <span class="dose-icon">☀️</span>
+                <div class="dose-copy">
+                  <span class="dose-label">มื้อกลางวัน</span>
+                  <span class="dose-help">ก่อน / หลังอาหารกลางวัน</span>
+                </div>
+              </div>
+              <span class="dose-badge">Noon</span>
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">ก่อนอาหาร</span>
+                <span class="field-sub">Pre-meal</span>
+              </div>
+              <input type="time" id="t_noon_pre" value="12:00" />
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">หลังอาหาร</span>
+                <span class="field-sub">Post-meal</span>
+              </div>
+              <input type="time" id="t_noon_post" value="12:30" />
+            </div>
+          </div>
+
+          <div class="dose-card evening">
+            <div class="dose-header">
+              <div class="dose-head-main">
+                <span class="dose-icon">🌆</span>
+                <div class="dose-copy">
+                  <span class="dose-label">มื้อเย็น</span>
+                  <span class="dose-help">ก่อน / หลังอาหารเย็น</span>
+                </div>
+              </div>
+              <span class="dose-badge">Evening</span>
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">ก่อนอาหาร</span>
+                <span class="field-sub">Pre-meal</span>
+              </div>
+              <input type="time" id="t_eve_pre" value="17:00" />
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">หลังอาหาร</span>
+                <span class="field-sub">Post-meal</span>
+              </div>
+              <input type="time" id="t_eve_post" value="17:30" />
+            </div>
+          </div>
+
+          <div class="dose-card bed">
+            <div class="dose-header">
+              <div class="dose-head-main">
+                <span class="dose-icon">🌙</span>
+                <div class="dose-copy">
+                  <span class="dose-label">ก่อนนอน</span>
+                  <span class="dose-help">รอบสุดท้ายก่อนเข้านอน</span>
+                </div>
+              </div>
+              <span class="dose-badge">Night</span>
+            </div>
+            <div class="dose-field">
+              <div class="field-copy">
+                <span class="field-label">เวลาจ่ายยา</span>
+                <span class="field-sub">Bedtime</span>
+              </div>
+              <input type="time" id="t_bed" value="21:00" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CARD 3: MODULES -->
+    <div class="card">
+      <div class="card-head">
+        <div class="head-left">
+          <div class="head-ico">💊</div>
+          <div class="head-title">
+            <b>ตลับยา</b>
+            <span>ตั้งชื่อยา ปรับจำนวนคงเหลือ และเลือกช่วงเวลาจ่าย</span>
+          </div>
+        </div>
+      </div>
+      <div class="content">
+        <div class="module-summary">
+          <div class="summary-chip">
+            <b>จำนวนตลับ</b>
+            <span>6 ช่องบรรจุยา</span>
+          </div>
+          <div class="summary-chip">
+            <b>การเลือกเวลา</b>
+            <span>แตะเลือกช่วงเวลา</span>
+          </div>
+        </div>
+        <div class="module-grid" id="module-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SAVE FLOATING BAR -->
+  <div class="savebar">
+    <div class="savehint">
+      <b>บันทึกการตั้งค่า</b>
+      <span>เขียนค่าไปที่ NETPIE Shadow ทันที</span>
+    </div>
+    <button class="btn-save" id="save-btn" onclick="saveData()">
+      <span id="save-ico">💾</span>
+      <span id="save-txt">บันทึก</span>
+    </button>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- SCRIPT 1: Read shadow via NETPIE templating (one-time render) -->
+  <!-- ============================================================ -->
+  <script>
+    window._sh = {};
+    window._sh.scheduleEnabled = "${#["esp32cam_dispenser"]["shadow"]["scheduleEnabled"]}";
+    window._sh.t_morn_pre  = "${#["esp32cam_dispenser"]["shadow"]["t_morn_pre"]}";
+    window._sh.t_morn_post = "${#["esp32cam_dispenser"]["shadow"]["t_morn_post"]}";
+    window._sh.t_noon_pre  = "${#["esp32cam_dispenser"]["shadow"]["t_noon_pre"]}";
+    window._sh.t_noon_post = "${#["esp32cam_dispenser"]["shadow"]["t_noon_post"]}";
+    window._sh.t_eve_pre   = "${#["esp32cam_dispenser"]["shadow"]["t_eve_pre"]}";
+    window._sh.t_eve_post  = "${#["esp32cam_dispenser"]["shadow"]["t_eve_post"]}";
+    window._sh.t_bed       = "${#["esp32cam_dispenser"]["shadow"]["t_bed"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med1_name  = "${#["esp32cam_dispenser"]["shadow"]["med1_name"]}";
+    window._sh.med1_count = "${#["esp32cam_dispenser"]["shadow"]["med1_count"]}";
+    window._sh.med1_slots = "${#["esp32cam_dispenser"]["shadow"]["med1_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med2_name  = "${#["esp32cam_dispenser"]["shadow"]["med2_name"]}";
+    window._sh.med2_count = "${#["esp32cam_dispenser"]["shadow"]["med2_count"]}";
+    window._sh.med2_slots = "${#["esp32cam_dispenser"]["shadow"]["med2_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med3_name  = "${#["esp32cam_dispenser"]["shadow"]["med3_name"]}";
+    window._sh.med3_count = "${#["esp32cam_dispenser"]["shadow"]["med3_count"]}";
+    window._sh.med3_slots = "${#["esp32cam_dispenser"]["shadow"]["med3_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med4_name  = "${#["esp32cam_dispenser"]["shadow"]["med4_name"]}";
+    window._sh.med4_count = "${#["esp32cam_dispenser"]["shadow"]["med4_count"]}";
+    window._sh.med4_slots = "${#["esp32cam_dispenser"]["shadow"]["med4_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med5_name  = "${#["esp32cam_dispenser"]["shadow"]["med5_name"]}";
+    window._sh.med5_count = "${#["esp32cam_dispenser"]["shadow"]["med5_count"]}";
+    window._sh.med5_slots = "${#["esp32cam_dispenser"]["shadow"]["med5_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med6_name  = "${#["esp32cam_dispenser"]["shadow"]["med6_name"]}";
+    window._sh.med6_count = "${#["esp32cam_dispenser"]["shadow"]["med6_count"]}";
+    window._sh.med6_slots = "${#["esp32cam_dispenser"]["shadow"]["med6_slots"]}";
+  </script>
+
+  <!-- ============================================================ -->
+  <!-- SCRIPT 2: Main logic                                         -->
+  <!-- Uses NETPIE built-in #[device].writeShadow() for save.       -->
+  <!-- ============================================================ -->
+  <script>
+    var TIME_KEYS = ["t_morn_pre","t_morn_post","t_noon_pre","t_noon_post","t_eve_pre","t_eve_post","t_bed"];
+    var SLOT_LABELS = ["เช้า-ก่อน","เช้า-หลัง","เที่ยง-ก่อน","เที่ยง-หลัง","เย็น-ก่อน","เย็น-หลัง","ก่อนนอน"];
+    var MAX_PILLS = 16;
+
+    var modules = [];
+    for (var i = 0; i < 6; i++) modules.push({ id: i+1, name: "", count: 0, slots: 0 });
+
+    function safeStr(v){ if(v===undefined||v===null||v==="undefined"||v==="null"||v==="")return ""; return String(v); }
+    function safeInt(v){ var n=parseInt(v,10); return isNaN(n)?0:n; }
+    function clamp(n,a,b){ n=safeInt(n); return Math.max(a,Math.min(b,n)); }
+    function escapeHtml(v){
+      return safeStr(v)
+        .replace(/&/g,"&amp;")
+        .replace(/</g,"&lt;")
+        .replace(/>/g,"&gt;")
+        .replace(/"/g,"&quot;")
+        .replace(/'/g,"&#39;");
+    }
+    function countBits(m){ m=safeInt(m); var t=0; for(var i=0;i<7;i++) if(m&(1<<i)) t++; return t; }
+
+    function setStatus(on){
+      var el=document.getElementById('net-status'),t=document.getElementById('net-status-txt');
+      if(!el||!t) return;
+      if(on){ el.classList.remove('offline'); el.classList.add('online'); t.innerText="ออนไลน์"; }
+      else  { el.classList.remove('online');  el.classList.add('offline'); t.innerText="ออฟไลน์"; }
+    }
+
+    function initFromShadow(){
+      var sh = window._sh || {};
+      document.getElementById('master').checked = (safeInt(sh.scheduleEnabled)==1);
+
+      var d = {
+        t_morn_pre:"08:00", t_morn_post:"08:30",
+        t_noon_pre:"12:00", t_noon_post:"12:30",
+        t_eve_pre:"17:00",  t_eve_post:"17:30",
+        t_bed:"21:00"
+      };
+      for (var t=0; t<TIME_KEYS.length; t++) {
+        var k = TIME_KEYS[t], el = document.getElementById(k);
+        if (el) {
+          var v = safeStr(sh[k]);
+          el.value = (v && v.indexOf(":") !== -1) ? v : d[k];
+        }
+      }
+
+      for (var i=0; i<6; i++) {
+        var idx = i+1;
+        modules[i].name  = safeStr(sh["med"+idx+"_name"]);
+        modules[i].count = clamp(sh["med"+idx+"_count"], 0, MAX_PILLS);
+        modules[i].slots = normalizeSlotsMask(sh["med"+idx+"_slots"]);
+      }
+    }
+
+    function renderModules(){
+      var html = "";
+      for (var i=0; i<modules.length; i++) {
+        var m = modules[i];
+        var sc = countBits(m.slots);
+        var sl = sc ? (sc + " ช่วงเวลา") : "ยังไม่เลือก";
+        var badgeCls = sc ? "mod-badge" : "mod-badge idle";
+
+        html += '<div class="mod-item">';
+        html += '  <div class="mod-header-row">';
+        html += '    <div class="mod-title-wrap">';
+        html += '      <span class="mod-title">ตลับที่ '+m.id+'</span>';
+        html += '      <span class="mod-sub">ชื่อยา · จำนวน · เวลา</span>';
+        html += '    </div>';
+        html += '    <span id="slot-badge-'+m.id+'" class="'+badgeCls+'">'+sl+'</span>';
+        html += '  </div>';
+
+        html += '  <div class="mod-name-wrap">';
+        html += '    <label class="mod-field-label" for="n-'+m.id+'">ชื่อยา</label>';
+        html += '    <input type="text" id="n-'+m.id+'" class="mod-name-input" placeholder="เช่น Vitamin C" value="'+escapeHtml(m.name)+'" onchange="upd('+m.id+')">';
+        html += '  </div>';
+
+        html += '  <div class="mod-controls">';
+        html += '    <div class="qty-wrap">';
+        html += '      <span class="mod-field-label">จำนวนคงเหลือ</span>';
+        html += '      <div class="qty-control">';
+        html += '        <button class="qty-btn" onclick="step('+m.id+',-1)" aria-label="ลดจำนวน">−</button>';
+        html += '        <input class="qty-input" type="number" inputmode="numeric" min="0" max="'+MAX_PILLS+'" id="q-'+m.id+'" value="'+m.count+'" oninput="setQty('+m.id+')">';
+        html += '        <button class="qty-btn" onclick="step('+m.id+',1)" aria-label="เพิ่มจำนวน">+</button>';
+        html += '      </div>';
+        html += '    </div>';
+        html += '  </div>';
+
+        html += '  <div class="slots-wrap">';
+        html += '    <span class="mod-field-label">ช่วงเวลาที่ต้องจ่ายยา</span>';
+        html += '    <div class="slots-row">';
+        for (var j=0; j<7; j++) {
+          var a = (m.slots & (1<<j)) ? " active" : "";
+          html += '      <div id="s-'+m.id+'-'+j+'" class="slot-pill'+a+'" onclick="tog('+m.id+','+j+')">'+SLOT_LABELS[j]+'</div>';
+        }
+        html += '    </div>';
+        html += '  </div>';
+        html += '</div>';
+      }
+      document.getElementById('module-container').innerHTML = html;
+    }
+
+    function step(id, d){
+      var m = modules[id-1];
+      m.count = clamp(m.count + d, 0, MAX_PILLS);
+      var q = document.getElementById('q-'+id);
+      if (q) q.value = m.count;
+    }
+
+    function setQty(id){
+      var q = document.getElementById('q-'+id);
+      if (!q) return;
+      var v = clamp(q.value, 0, MAX_PILLS);
+      q.value = v;
+      modules[id-1].count = v;
+    }
+
+    function normalizeSlotsMask(mask){
+      mask = safeInt(mask) & 0x7F;
+      for (var b=0; b<=4; b+=2) {
+        var pm = (1<<b) | (1<<(b+1));
+        if ((mask & pm) === pm) mask &= ~(1<<(b+1));
+      }
+      return mask;
+    }
+
+    function tog(id, b){
+      var m = modules[id-1];
+      if (!m) return;
+
+      if (b === 6) {
+        m.slots ^= (1<<b);
+      } else {
+        var pb = Math.floor(b/2)*2;
+        var pm = (1<<pb) | (1<<(pb+1));
+        var tm = (1<<b);
+        if (m.slots & tm) {
+          m.slots &= ~tm;
+        } else {
+          m.slots &= ~pm;
+          m.slots |= tm;
+        }
+      }
+      m.slots = normalizeSlotsMask(m.slots);
+
+      for (var j=0; j<7; j++) {
+        var el = document.getElementById('s-'+id+'-'+j);
+        if (!el) continue;
+        if (m.slots & (1<<j)) el.classList.add('active');
+        else                  el.classList.remove('active');
+      }
+      var sc = countBits(m.slots);
+      var sb = document.getElementById('slot-badge-'+id);
+      if (sb) {
+        sb.innerText = sc ? (sc + " ช่วงเวลา") : "ยังไม่เลือก";
+        sb.className = sc ? "mod-badge" : "mod-badge idle";
+      }
+    }
+
+    function upd(id){
+      modules[id-1].name = document.getElementById('n-'+id).value;
+    }
+
+    function saveData(){
+      var btn = document.getElementById('save-btn');
+      var txt = document.getElementById('save-txt');
+      var ico = document.getElementById('save-ico');
+      var origTxt = txt.innerText;
+      var origIco = ico.innerText;
+      txt.innerText = "กำลังบันทึก…";
+      ico.innerText = "⏳";
+      btn.classList.remove('success','error');
+
+      try {
+        var p = {};
+        p.scheduleEnabled = document.getElementById('master').checked ? 1 : 0;
+
+        for (var t=0; t<TIME_KEYS.length; t++) {
+          var el = document.getElementById(TIME_KEYS[t]);
+          if (el && el.value) p[TIME_KEYS[t]] = el.value;
+        }
+
+        for (var i=0; i<modules.length; i++) {
+          upd(modules[i].id);
+          setQty(modules[i].id);
+          p["med"+modules[i].id+"_name"]  = modules[i].name;
+          p["med"+modules[i].id+"_count"] = clamp(modules[i].count, 0, MAX_PILLS);
+          p["med"+modules[i].id+"_slots"] = normalizeSlotsMask(modules[i].slots);
+        }
+
+        // NETPIE freeboard built-in: writes through the iframe's
+        // authenticated context (no CORS, no token in JS source).
+        #["esp32cam_dispenser"].writeShadow(p);
+
+        txt.innerText = "บันทึกแล้ว";
+        ico.innerText = "✓";
+        btn.classList.add('success');
+        setTimeout(function(){
+          txt.innerText = origTxt;
+          ico.innerText = origIco;
+          btn.classList.remove('success');
+        }, 2200);
+      } catch (e) {
+        txt.innerText = "ผิดพลาด";
+        ico.innerText = "⚠";
+        btn.classList.add('error');
+        console.error("Save error:", e);
+        setTimeout(function(){
+          txt.innerText = origTxt;
+          ico.innerText = origIco;
+          btn.classList.remove('error');
+        }, 3000);
+      }
+    }
+
+    // --- RUN ---
+    renderModules();
+    try {
+      initFromShadow();
+      renderModules();
+      setStatus(true);
+    } catch (e) {
+      console.warn("Shadow init:", e);
+      setStatus(false);
+    }
+  </script>
+</body>
+</html>

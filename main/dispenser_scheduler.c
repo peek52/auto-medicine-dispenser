@@ -77,6 +77,103 @@ static bool s_low_stock_alert_sent[DISPENSER_MED_COUNT] = {0};
 // NVS so an auto-restart while stopped stays stopped.
 static volatile bool s_emergency_stop = false;
 
+// Per-module IR sensor presence. Default true (assume IR wired). When
+// false, dispense skips IR polling and counts every servo cycle as one
+// pill — supports installations where only one or two modules actually
+// have an IR beam, or where the IR is too unreliable to trust.
+static bool s_ir_present[DISPENSER_MED_COUNT] = {
+    true, true, true, true, true, true,
+};
+
+bool dispenser_ir_present(int med_idx)
+{
+    if (med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return true;
+    return s_ir_present[med_idx];
+}
+
+static void dispenser_ir_save_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open("dispenser", NVS_READWRITE, &h) != ESP_OK) return;
+    uint8_t mask = 0;
+    for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
+        if (s_ir_present[i]) mask |= (1 << i);
+    }
+    nvs_set_u8(h, "ir_mask", mask);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+static void dispenser_ir_load_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open("dispenser", NVS_READONLY, &h) != ESP_OK) return;
+    uint8_t mask = 0xFF;  // default: all present
+    nvs_get_u8(h, "ir_mask", &mask);
+    nvs_close(h);
+    for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
+        s_ir_present[i] = (mask & (1 << i)) != 0;
+    }
+}
+
+void dispenser_ir_set_present(int med_idx, bool present)
+{
+    if (med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return;
+    if (s_ir_present[med_idx] == present) return;
+    s_ir_present[med_idx] = present;
+    dispenser_ir_save_nvs();
+    ESP_LOGI(TAG, "IR sensor for med%d %s",
+             med_idx + 1, present ? "ENABLED" : "DISABLED (servo-trust mode)");
+}
+
+/* ── IR calibration: run one cycle and record IR samples ── */
+esp_err_t dispenser_ir_calibrate(int med_idx,
+                                 ir_cal_sample_t *samples,
+                                 int max_samples,
+                                 int *out_count)
+{
+    if (!samples || max_samples <= 0 || !out_count) return ESP_ERR_INVALID_ARG;
+    if (med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return ESP_ERR_INVALID_ARG;
+    *out_count = 0;
+    if (!s_dispense_mutex) return ESP_ERR_INVALID_STATE;
+    if (xSemaphoreTake(s_dispense_mutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    ESP_LOGI(TAG, "IR calibrate: med%d", med_idx + 1);
+    int count = 0;
+    uint8_t bit_mask = (uint8_t)(1 << med_idx);
+    uint32_t cycle_start = esp_log_timestamp();
+
+    pca9685_go_work(med_idx);
+    while ((esp_log_timestamp() - cycle_start) < 1500) {
+        uint8_t ir = 0xFF;
+        if (pcf8574_read(&ir) == ESP_OK && count < max_samples) {
+            samples[count].time_ms  = esp_log_timestamp() - cycle_start;
+            samples[count].raw_byte = ir;
+            samples[count].bit_low  = ((ir & bit_mask) == 0) ? 1 : 0;
+            count++;
+        }
+        vTaskDelay(1);
+    }
+    pca9685_go_home(med_idx);
+    while ((esp_log_timestamp() - cycle_start) < 5500) {
+        uint8_t ir = 0xFF;
+        if (pcf8574_read(&ir) == ESP_OK && count < max_samples) {
+            samples[count].time_ms  = esp_log_timestamp() - cycle_start;
+            samples[count].raw_byte = ir;
+            samples[count].bit_low  = ((ir & bit_mask) == 0) ? 1 : 0;
+            count++;
+        }
+        vTaskDelay(1);
+    }
+
+    xSemaphoreGive(s_dispense_mutex);
+    *out_count = count;
+    ESP_LOGI(TAG, "IR calibrate done: med%d %d samples captured", med_idx + 1, count);
+    return ESP_OK;
+}
+
 // Audit ring: holds the last 32 stock-change events for /audit.json. RAM
 // only — survives normal task churn but not reboot. Entries newest-first
 // when fetched.
@@ -511,43 +608,42 @@ static void send_dispense_result_summary(int slot_idx,
                              (has_empty ? empty_meds :
                              (has_missed ? missed_meds : "-")));
 
-    if (has_dispensed && !has_empty && !has_missed) {
+    if (has_dispensed) {
+        // Always ✅ when at least one pill was actually dispensed (matches
+        // the success audio). Refill/check warnings are appended on extra
+        // lines only when applicable, so a clean dispense reads cleanly
+        // and a partial dispense still gets the success header.
         if (telegram_lang_is_th()) {
-            snprintf(msg, 768,
+            int written = snprintf(msg, 768,
                      "✅ ยืนยันการรับยาแล้ว\nเวลา: %s\nมื้อ: %s (%s)\nยาที่จ่ายออกมา: %s",
                      time_str, telegram_slot_label(slot_idx),
                      sh->slot_time[slot_idx], dispensed_meds);
+            if (has_empty && written < 768) {
+                written += snprintf(msg + written, 768 - written,
+                         "\nยาที่ควรเติม: %s", empty_meds);
+            }
+            if (has_missed && written < 768) {
+                snprintf(msg + written, 768 - written,
+                         "\nยาที่ต้องตรวจสอบการจ่าย: %s", missed_meds);
+            }
         } else {
-            snprintf(msg, 768,
+            int written = snprintf(msg, 768,
                      "Medication confirmed\nTime: %s\nDose: %s (%s)\nDispensed: %s",
                      time_str, telegram_slot_label(slot_idx),
                      sh->slot_time[slot_idx], dispensed_meds);
-        }
-        snprintf(detail, 256, "Slot %d (%s) | Out: %s",
-                 slot_idx, SLOT_LABELS[slot_idx], dispensed_meds);
-        event_name = "Dispensed";
-    } else if (has_dispensed) {
-        if (telegram_lang_is_th()) {
-            snprintf(msg, 768,
-                     "⚠️ ยืนยันการรับยาแล้ว\nเวลา: %s\nมื้อ: %s (%s)\nยาที่จ่ายออกมา: %s\nยาที่ควรเติม: %s\nยาที่ต้องตรวจสอบการจ่าย: %s",
-                     time_str, telegram_slot_label(slot_idx),
-                     sh->slot_time[slot_idx],
-                     dispensed_meds,
-                     has_empty ? empty_meds : "-",
-                     has_missed ? missed_meds : "-");
-        } else {
-            snprintf(msg, 768,
-                     "Medication confirmed with warnings\nTime: %s\nDose: %s (%s)\nDispensed: %s\nRefill: %s\nCheck dispenser: %s",
-                     time_str, telegram_slot_label(slot_idx),
-                     sh->slot_time[slot_idx],
-                     dispensed_meds,
-                     has_empty ? empty_meds : "-",
-                     has_missed ? missed_meds : "-");
+            if (has_empty && written < 768) {
+                written += snprintf(msg + written, 768 - written,
+                         "\nRefill: %s", empty_meds);
+            }
+            if (has_missed && written < 768) {
+                snprintf(msg + written, 768 - written,
+                         "\nCheck dispenser: %s", missed_meds);
+            }
         }
         snprintf(detail, 256, "Slot %d (%s) | Out: %s | Empty: %s | Check: %s",
                  slot_idx, SLOT_LABELS[slot_idx], dispensed_meds,
                  has_empty ? empty_meds : "-", has_missed ? missed_meds : "-");
-        event_name = "Partial Dispense";
+        event_name = (has_empty || has_missed) ? "Partial Dispense" : "Dispensed";
     } else {
         if (telegram_lang_is_th()) {
             snprintf(msg, 768,
@@ -688,30 +784,48 @@ static void execute_dispense(int slot_idx)
         bool pill_detected = false;
         ESP_LOGI(TAG, "      ▶️ [IR SENSOR] Start monitoring pill drop for med%d...", i+1);
 
-        pca9685_go_work(i);
-        uint32_t start_time = esp_log_timestamp();
-        while (esp_log_timestamp() - start_time < 1000) {
-            uint8_t ir_val = 0xFF;
-            if (pcf8574_read(&ir_val) == ESP_OK) {
-                if ((ir_val & (1 << i)) == 0) {
-                    if (!pill_detected) ESP_LOGI(TAG, "      >> IR sensor %d DETECTED pill (during work)!", i+1);
-                    pill_detected = true;
-                }
-            }
-            vTaskDelay(1);
+        // Warmup phase before issuing servo command: prime the
+        // PCF8574 bus + let IR sensor stabilize. Without this the
+        // very first cycle of a dispense sometimes returned stale
+        // 0xFF (no pill) for a fast-dropping pill, making the first
+        // pill detection flaky.
+        for (int w = 0; w < 8; w++) {
+            uint8_t junk = 0xFF;
+            (void)pcf8574_read(&junk);
+            vTaskDelay(pdMS_TO_TICKS(10));
         }
 
-        pca9685_go_home(i);
-        start_time = esp_log_timestamp();
-        while (esp_log_timestamp() - start_time < 3000) {
+        // Continuous IR polling: from servo work command through home
+        // and 2 s past home. pcf8574_read takes ~3-5 ms via I2C (the
+        // natural pacing); we add a tick-level vTaskDelay every 8
+        // reads so the UI/touch task on the same I2C bus gets clear
+        // shots and the screen doesn't freeze mid-dispense.
+        const uint32_t WORK_MS  = 1500;
+        const uint32_t HOME_MS  = 4000;
+        const uint32_t POST_MS  = 2000;
+        uint32_t loop_start = esp_log_timestamp();
+        pca9685_go_work(i);
+        bool home_issued = false;
+        int read_count = 0;
+        while (1) {
+            uint32_t elapsed = esp_log_timestamp() - loop_start;
+            if (!home_issued && elapsed >= WORK_MS) {
+                pca9685_go_home(i);
+                home_issued = true;
+            }
+            if (elapsed >= (WORK_MS + HOME_MS + POST_MS)) break;
+
             uint8_t ir_val = 0xFF;
             if (pcf8574_read(&ir_val) == ESP_OK) {
                 if ((ir_val & (1 << i)) == 0) {
-                    if (!pill_detected) ESP_LOGI(TAG, "      >> IR sensor %d DETECTED pill (after home)!", i+1);
+                    if (!pill_detected) {
+                        ESP_LOGI(TAG, "      >> IR sensor %d DETECTED pill at %lu ms",
+                                 i + 1, (unsigned long)elapsed);
+                    }
                     pill_detected = true;
                 }
             }
-            vTaskDelay(1);
+            if ((++read_count % 8) == 0) vTaskDelay(1);
         }
 
         if (!pill_detected) {
@@ -784,8 +898,16 @@ static void dispenser_task(void *arg)
         // timeout, something deadlocked (servo bind, I2C wedge, task
         // crashed before clearing). Force-clear so the next dispense
         // can proceed instead of permanently bricking the dispenser.
-        if (s_dispense_busy &&
-            ((now_ticks - s_dispense_busy_since) * portTICK_PERIOD_MS) > DISPENSE_BUSY_TIMEOUT_MS) {
+        // Read the (busy, since) pair atomically to avoid a torn read
+        // where busy==true but since==0 trips an instant timeout.
+        bool busy_now;
+        TickType_t busy_since;
+        taskENTER_CRITICAL(&s_dispense_state_mux);
+        busy_now = s_dispense_busy;
+        busy_since = s_dispense_busy_since;
+        taskEXIT_CRITICAL(&s_dispense_state_mux);
+        if (busy_now &&
+            ((now_ticks - busy_since) * portTICK_PERIOD_MS) > DISPENSE_BUSY_TIMEOUT_MS) {
             ESP_LOGE(TAG, "Dispense busy >%dms — forcing clear (servo hang or task crash)",
                      DISPENSE_BUSY_TIMEOUT_MS);
             dispenser_clear_busy();
@@ -802,7 +924,9 @@ static void dispenser_task(void *arg)
             uint32_t elapsed_sec = (now_ticks - s_wait_start_ticks) * portTICK_PERIOD_MS / 1000;
             if (elapsed_sec > 900) { // 15 mins
                 ESP_LOGW(TAG, "User missed medication for slot %d", s_pending_slot_idx);
-                g_missed_slots_mask |= (1 << s_pending_slot_idx);
+                if (dispenser_slot_index_valid(s_pending_slot_idx)) {
+                    g_missed_slots_mask |= (1 << s_pending_slot_idx);
+                }
                 dispenser_skip_meds();
             }
             continue; // Suspend RTC trigger checks while waiting
@@ -881,7 +1005,7 @@ static void dispenser_task(void *arg)
                 if (!has_assigned) continue;
 
                 if (strcmp(cur_hhmm, s_last_triggered) == 0) continue;
-                strncpy(s_last_triggered, cur_hhmm, sizeof(s_last_triggered));
+                snprintf(s_last_triggered, sizeof(s_last_triggered), "%s", cur_hhmm);
 
                 if (strlen(empty_meds) > 0) {
                      char msg[256];
@@ -936,7 +1060,7 @@ static void dispenser_task(void *arg)
                     char prealert_key[12];
                     snprintf(prealert_key, sizeof(prealert_key), "%s-%d", cur_hhmm, s);
                     if (strcmp(prealert_key, s_last_prealert) == 0) continue;
-                    strncpy(s_last_prealert, prealert_key, sizeof(s_last_prealert) - 1);
+                    snprintf(s_last_prealert, sizeof(s_last_prealert), "%s", prealert_key);
 
                     // Send Telegram Alert
                     char pre_msg[256];
@@ -988,12 +1112,17 @@ void dispenser_scheduler_start(void)
     }
     dispenser_emergency_load_nvs();
     quiet_hours_load_nvs();
+    dispenser_ir_load_nvs();
     if (s_emergency_stop) {
         ESP_LOGW(TAG, "Dispenser starting with emergency stop ACTIVE — "
                       "no dispense will fire until /resume or web Clear");
     }
     if (xTaskCreate(dispenser_task, "dispenser", DISPENSER_TASK_STACK_SIZE, NULL, 4, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create dispenser scheduler task");
+        if (s_dispense_mutex) {
+            vSemaphoreDelete(s_dispense_mutex);
+            s_dispense_mutex = NULL;
+        }
         return;
     }
     ESP_LOGI(TAG, "Dispenser scheduler started");
@@ -1028,7 +1157,9 @@ void dispenser_confirm_meds(void) {
 void dispenser_skip_meds(void) {
     if (s_waiting_confirm) {
         ESP_LOGI(TAG, "User SKIPPED medication drop.");
-        g_missed_slots_mask |= (1 << s_pending_slot_idx);
+        if (dispenser_slot_index_valid(s_pending_slot_idx)) {
+            g_missed_slots_mask |= (1 << s_pending_slot_idx);
+        }
         
         char msg[512];
         if (telegram_lang_is_th()) {
@@ -1090,39 +1221,150 @@ static void manual_dispense_task(void *arg) {
 
     int actually_dropped = 0;
     bool eject_all = (qty == 100);
-    int loops = eject_all ? 100 : qty; // Hard cap 100 loops
+    // Servo-trust mode (IR disabled) can't detect "empty" — cap return-all
+    // at the cartridge's physical max so we don't cycle forever.
+    int loops = eject_all
+                  ? (s_ir_present[m_idx] ? 100 : DISPENSER_MAX_PILLS)
+                  : qty;
     bool forced_empty = false;
+    int dead_ir_drops = 0;
+    int consecutive_empty_cycles = 0;
+    // Strict IR mode: any cycle where IR doesn't detect a pill stops
+    // the dispense immediately. No retry, no servo-trust fallback for
+    // modules that DO have IR enabled. For modules with no IR sensor
+    // wired, disable IR via /tech/ir (m=N&v=0) so the loop runs in
+    // servo-trust mode from the start.
+    const int EMPTY_CONFIRM_CYCLES = 1;
+    const int EMPTY_MIN_CYCLES_BEFORE_BAIL = 0;
     char requested_str[16];
     snprintf(requested_str, sizeof(requested_str), "%s", eject_all ? "ALL" : "");
     if (!eject_all) snprintf(requested_str, sizeof(requested_str), "%d", qty);
     
     const netpie_shadow_t *sh = netpie_get_shadow();
+    if (!sh) {
+        ESP_LOGE(TAG, "Shadow not loaded — aborting manual dispense");
+        ui_manual_disp_status = 3;
+        xSemaphoreGive(s_dispense_mutex);
+        dispenser_clear_busy();
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Debounce: pill must be seen LOW for at least this many consecutive
+    // polls to count. Reduced 3→1 after users reported missed pills:
+    // small/fast pills passed the IR beam in <30 ms (debounce window) so
+    // ≥3 consecutive low reads were rare. PCF8574 over I2C is digital
+    // and noise-free in practice — a single LOW read is reliable.
+    const int IR_LOW_DEBOUNCE_SAMPLES = 1;
+    // Settle time after servo returns home — let any pill in flight finish
+    // falling past IR. Then sample the beam: if it's clear, the cartridge
+    // is now ready for the next attempt; if it's STILL blocked, something
+    // is jammed in the chute (we don't issue another servo cycle).
+    const int IR_POST_HOME_SETTLE_MS  = 350;
+    const int IR_POST_HOME_SAMPLES    = 8;
+    // Per-cycle IR polling windows. Bumped from 1000/3000 ms after users
+    // reported return-all stopping early on cartridges with slow-falling
+    // pills — give every cycle a fuller chance to see a pill before the
+    // empty-streak logic decides the cartridge is done.
+    const uint32_t IR_WORK_WINDOW_MS  = 1500;
+    const uint32_t IR_HOME_WINDOW_MS  = 4000;
+
+    // Per-session IR availability — taken from the NVS-stored flag.
+    // For modules without IR wired, disable via /tech/ir to put the
+    // loop in servo-trust mode from the start. Strict IR mode otherwise.
+    bool ir_use = s_ir_present[m_idx];
+
+    // Warmup the PCF8574 bus before the first dispense cycle so a
+    // fast-falling first pill isn't missed by a stale read.
+    if (ir_use) {
+        for (int w = 0; w < 8; w++) {
+            uint8_t junk = 0xFF;
+            (void)pcf8574_read(&junk);
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+    }
 
     for (int i = 0; i < loops; i++) {
-        ESP_LOGI(TAG, "  💊 Manual Drop %d/%d for med%d", i + 1, loops, m_idx + 1);
+        ESP_LOGI(TAG, "  💊 Manual Drop %d/%d for med%d (ir_use=%d)",
+                 i + 1, loops, m_idx + 1, ir_use ? 1 : 0);
         bool pill_detected = false;
+        bool ir_alive = false;        // true if pcf8574_read ever returned ESP_OK
+        int  ok_reads = 0;            // diagnostics
+        int  fail_reads = 0;
+        uint8_t ir_min = 0xFF;        // lowest byte ever observed
+        uint8_t ir_last = 0xFF;
+        int  consecutive_low = 0;     // debounce counter
+        bool ir_present = ir_use;
+        bool post_clear = true;
 
+        // Unified continuous polling: servo work → home → 2s post.
+        // Light vTaskDelay(1) every 8 reads keeps UI/touch task fed
+        // on the shared I2C bus so the screen doesn't freeze.
+        const uint32_t POST_HOME_EXTRA_MS = 2000;
         esp_err_t err1 = pca9685_go_work(m_idx);
-        uint32_t start = esp_log_timestamp();
-        while (esp_log_timestamp() - start < 1000) {
-            uint8_t ir = 0xFF;
-            if (pcf8574_read(&ir) == ESP_OK && ((ir & (1 << m_idx)) == 0)) pill_detected = true;
-            vTaskDelay(1);
+        uint32_t loop_start = esp_log_timestamp();
+        esp_err_t err2 = ESP_OK;
+        bool home_issued = false;
+        int read_count = 0;
+        if (ir_present) {
+            while (1) {
+                uint32_t elapsed = esp_log_timestamp() - loop_start;
+                if (!home_issued && elapsed >= IR_WORK_WINDOW_MS) {
+                    err2 = pca9685_go_home(m_idx);
+                    home_issued = true;
+                }
+                if (elapsed >= (IR_WORK_WINDOW_MS + IR_HOME_WINDOW_MS + POST_HOME_EXTRA_MS)) break;
+
+                uint8_t ir = 0xFF;
+                esp_err_t r = pcf8574_read(&ir);
+                if (r == ESP_OK) {
+                    ir_alive = true;
+                    ok_reads++;
+                    if (ir < ir_min) ir_min = ir;
+                    ir_last = ir;
+                    if ((ir & (1 << m_idx)) == 0) {
+                        if (++consecutive_low >= IR_LOW_DEBOUNCE_SAMPLES) pill_detected = true;
+                    } else {
+                        consecutive_low = 0;
+                    }
+                } else {
+                    fail_reads++;
+                }
+                if ((++read_count % 8) == 0) vTaskDelay(1);
+            }
+            // Post-home clear-check: do we still see a pill jammed in beam?
+            if ((ir_last & (1 << m_idx)) == 0) post_clear = false;
+        } else {
+            // IR disabled / servo-trust mode: just dwell servo.
+            vTaskDelay(pdMS_TO_TICKS(IR_WORK_WINDOW_MS));
+            err2 = pca9685_go_home(m_idx);
+            vTaskDelay(pdMS_TO_TICKS(IR_HOME_WINDOW_MS + POST_HOME_EXTRA_MS));
+            pill_detected = true;
         }
 
-        esp_err_t err2 = pca9685_go_home(m_idx);
-        start = esp_log_timestamp();
-        while (esp_log_timestamp() - start < 3000) {
-            uint8_t ir = 0xFF;
-            if (pcf8574_read(&ir) == ESP_OK && ((ir & (1 << m_idx)) == 0)) pill_detected = true;
-            vTaskDelay(1);
+        if (ir_present) {
+            ESP_LOGI(TAG, "  Drop %d/%d IR stats: ok=%d fail=%d ir_min=0x%02X ir_last=0x%02X bit%d_low=%d detected=%d post_clear=%d",
+                     i + 1, loops, ok_reads, fail_reads, ir_min, ir_last, m_idx,
+                     (ir_min & (1 << m_idx)) ? 0 : 1, pill_detected, post_clear);
+        } else {
+            ESP_LOGI(TAG, "  Drop %d/%d servo-trust mode (IR off for med%d) — counted as 1 pill",
+                     i + 1, loops, m_idx + 1);
         }
+
+        // (Auto-fallback removed — user wants strict IR mode.)
+        // For modules with no IR wired, disable via /tech/ir endpoint
+        // so the loop starts in servo-trust mode.
 
         if (err1 != ESP_OK || err2 != ESP_OK) {
             ESP_LOGE(TAG, "Hardware I2C failure during dispense. Aborting task.");
+            // Make sure the servo is back at HOME before bailing — otherwise
+            // a cup left at WORK position blocks every future dispense until
+            // the 90 s busy watchdog clears it.
+            (void)pca9685_go_home(m_idx);
             char med_name[64];
-            snprintf(med_name, sizeof(med_name), "%s",
-                     sh->med[m_idx].name[0] ? sh->med[m_idx].name : telegram_unknown_name());
+            const char *nm = (sh && sh->med[m_idx].name[0])
+                               ? sh->med[m_idx].name : telegram_unknown_name();
+            snprintf(med_name, sizeof(med_name), "%s", nm);
             char time_str[16] = "--:--";
             ds3231_get_time_str(time_str, sizeof(time_str));
             char msg[384];
@@ -1143,7 +1385,15 @@ static void manual_dispense_task(void *arg) {
             return;
         }
 
+        // Every servo cycle physically pushes one pill (mechanical
+        // guarantee of this dispenser design). Trust the servo: count
+        // every cycle as a drop, then subtract the trailing empty
+        // cycles that prove the cartridge ran out. IR is used only as
+        // the STOP signal, not as the per-pill counter — sub-second
+        // PCF8574 backoff windows kept missing actual pill drops which
+        // produced wildly low Telegram counts (11 dispensed → 6 reported).
         if (pill_detected) {
+            consecutive_empty_cycles = 0;
             actually_dropped++;
             int current_count = sh->med[m_idx].count;
             if (current_count > 0) {
@@ -1157,25 +1407,43 @@ static void manual_dispense_task(void *arg) {
                                      false);
             }
         } else {
-            // Pill missed mid-batch (e.g. last attempt during a return).
-            // Don't play "ไม่พบยา" yet — let the end-of-task summary
-            // decide based on whether *any* pills came out. If at least
-            // one dropped, this is still a successful return / dispense.
-            ESP_LOGW(TAG, "No pill detected on attempt %d/%d (dropped so far=%d). "
-                          "Marking stock empty.", actually_dropped + 1, qty, actually_dropped);
-            int prev_count = sh->med[m_idx].count;
-            netpie_shadow_update_count(m_idx + 1, 0);
-            dispenser_audit_log(m_idx, prev_count, 0, 'M');
-            forced_empty = true;
-            send_low_stock_alert(m_idx, 0,
-                                 "ไม่พบยาผ่านเซนเซอร์ระหว่างคืนยา/จ่ายยา ระบบตั้งค่ายาคงเหลือเป็น 0 แล้ว กรุณาเติมยา",
-                                 "No pill passed the IR sensor during manual dispense/return. Stock was set to 0. Please refill.",
-                                 true);
-            break;
+            // No pill detected this cycle (IR healthy-but-empty OR IR
+            // dead). User wants IR to be the sole counter — don't count
+            // optimistic/blind drops. Bail after EMPTY_CONFIRM_CYCLES
+            // consecutive misses.
+            consecutive_empty_cycles++;
+            if (!ir_alive) dead_ir_drops++;
+            ESP_LOGW(TAG, "Drop %d/%d: no pill seen (ir_alive=%d, empty streak %d/%d)",
+                     i + 1, loops, ir_alive ? 1 : 0,
+                     consecutive_empty_cycles, EMPTY_CONFIRM_CYCLES);
+            if (consecutive_empty_cycles >= EMPTY_CONFIRM_CYCLES &&
+                (i + 1) >= EMPTY_MIN_CYCLES_BEFORE_BAIL) {
+                ESP_LOGW(TAG, "No pill detected — stopping (cartridge empty or pills not falling)");
+                netpie_shadow_update_count(m_idx + 1, 0);
+                dispenser_audit_log(m_idx, sh->med[m_idx].count, 0, 'M');
+                forced_empty = true;
+                send_low_stock_alert(m_idx, 0,
+                                     "ไม่พบยาผ่านเซนเซอร์ระหว่างคืนยา/จ่ายยา ระบบตั้งค่ายาคงเหลือเป็น 0 แล้ว กรุณาเติมยา",
+                                     "No pill passed the IR sensor during manual dispense/return. Stock was set to 0. Please refill.",
+                                     true);
+                break;
+            }
         }
     }
 
     ESP_LOGI(TAG, "Manual dispense complete. Dropped: %d pills", actually_dropped);
+
+    // Return-all (eject_all): user expects the cartridge to be empty
+    // afterward, so force shadow.count = 0 regardless of how the loop
+    // ended (IR-confirmed bail, loop cap, or auto-empty).
+    if (eject_all) {
+        int curr = sh->med[m_idx].count;
+        if (curr != 0) {
+            netpie_shadow_update_count(m_idx + 1, 0);
+            dispenser_audit_log(m_idx, curr, 0, 'M');
+        }
+    }
+
     // Result audio: pick by *what actually happened*, not by forced_empty.
     //   actually_dropped == 0  → ไม่พบยา (no pill came out at all)
     //   eject_all (return)     → คืนยาเรียบร้อย (return success, even if last
@@ -1197,17 +1465,20 @@ static void manual_dispense_task(void *arg) {
     char time_str[16] = "--:--";
     ds3231_get_time_str(time_str, sizeof(time_str));
     int remaining_count = netpie_get_shadow()->med[m_idx].count;
-    char msg[384];
+    char msg[512];
+    // Short summary: module / time / count + photo (sent below).
+    // Use IR-confirmed count only — blind/optimistic counts inflated the
+    // total when PCF8574 was intermittent (user reported "12 pills" when
+    // only 3 actually came out). Truthful undercount is better than
+    // inflated count for the user's confirmation message.
     if (telegram_lang_is_th()) {
         snprintf(msg, sizeof(msg),
-                 "คืนยาหรือจ่ายยาแบบแมนนวลเสร็จแล้ว\nเวลา: %s\nโมดูล: %d (%s)\nจำนวนที่สั่ง: %s\nจ่ายจริง: %d\nคงเหลือ: %d",
-                 time_str, m_idx + 1, med_name,
-                 requested_str, actually_dropped, remaining_count);
+                 "โมดูล: %d (%s)\nเวลา: %s\nจำนวน: %d เม็ด",
+                 m_idx + 1, med_name, time_str, actually_dropped);
     } else {
         snprintf(msg, sizeof(msg),
-                 "Manual dispense completed\nTime: %s\nModule: %d (%s)\nRequested: %s\nDropped: %d\nRemaining: %d",
-                 time_str, m_idx + 1, med_name,
-                 requested_str, actually_dropped, remaining_count);
+                 "Module: %d (%s)\nTime: %s\nCount: %d pills",
+                 m_idx + 1, med_name, time_str, actually_dropped);
     }
     send_telegram_photo_or_text(msg);
 

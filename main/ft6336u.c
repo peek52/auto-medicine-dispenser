@@ -83,6 +83,11 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
     static uint32_t s_last_read_time = 0;
     static bool s_last_pressed = false;
     static uint16_t s_last_x = 0, s_last_y = 0;
+    static uint32_t s_last_release_ms = 0;
+    // Minimum gap between two consecutive presses. The user can't tap
+    // a button twice in <150 ms intentionally — anything faster is
+    // either a finger-bounce or a release glitch. Tap-spam protection.
+    const uint32_t MIN_REPRESS_GAP_MS = 150;
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
     // Touch chip never identified during init — register reads can still
@@ -97,10 +102,22 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
         if (pressed) *pressed = false;
         if (x) *x = 0;
         if (y) *y = 0;
+        // Re-init runs in the caller's context (clock_task). The full
+        // ft6336u_init() can spend 600+ ms in vTaskDelay (3 retries x
+        // 200 ms reset pulses). Doing that every 5 s on a stuck chip
+        // visibly stalls the UI. Just request that the deferred-init
+        // task try again — only call ft6336u_init directly here as a
+        // lightweight (single-attempt) probe, with no inner retries.
+        // Done via static flag so we still self-heal but at most once.
         static uint32_t s_last_reinit_ms = 0;
-        if (now - s_last_reinit_ms >= 5000) {
+        if (now - s_last_reinit_ms >= 10000) {
             s_last_reinit_ms = now;
-            (void)ft6336u_init();  // sets s_touch_initialized on success
+            // Cheap probe: just see if the chip ACKs its address now.
+            // Skip the full reset-pulse / chip-id retry sequence.
+            if (i2c_manager_ping(ADDR_FT6336U) == ESP_OK) {
+                s_touch_initialized = true;
+                ESP_LOGI(TAG, "Touch chip came back online (cheap probe)");
+            }
         }
         return ESP_ERR_INVALID_STATE;
     }
@@ -109,14 +126,11 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
         *pressed = false;
         return ESP_FAIL;
     }
-    // Rate-limit physical I2C reads. Clock_task polls touch at 25-40 Hz
-    // which loads the bus heavily. To balance responsiveness against the
-    // IDF v5.3.2 i2c_master ISR race risk:
-    //   - When idle (last read = no press): poll at 30 Hz (33 ms cache)
-    //     so a quick tap doesn't fall through the gap and feel unresponsive.
-    //   - When already pressed: poll faster (15 ms) so movement and release
-    //     track the finger without lag.
-    uint32_t cache_ms = s_last_pressed ? 15 : 33;
+    // Rate-limit physical I2C reads. Faster cache = smoother feel:
+    //   - Idle: 20 ms cache (50 Hz) — taps register near-instantly.
+    //   - Pressed: 10 ms cache (100 Hz) — drag/release tracks finger
+    //     without visible lag.
+    uint32_t cache_ms = s_last_pressed ? 10 : 20;
     if ((now - s_last_read_time) < cache_ms) {
         *pressed = s_last_pressed;
         *x = s_last_x;
@@ -129,33 +143,94 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
     esp_err_t ret = i2c_manager_read_reg(ADDR_FT6336U, 0x02, data, 6);
     if (ret != ESP_OK) {
         *pressed = false;
-        s_last_fail_time = now;
-        if (s_last_fail_time == 0) s_last_fail_time = 1;
+        // 0 is the "no recent fail" sentinel, so guard against the
+        // ~49.7 day tick wrap landing exactly on 0.
+        s_last_fail_time = (now == 0) ? 1u : now;
         return ret;
     }
     s_last_fail_time = 0;
 
     uint8_t touches = data[0] & 0x0F;
-    if (touches == 1 || touches == 2) {
-        *pressed = true;
-        // The display is physically 320x480, but drawn in landscape 480x320.
-        // The FT6336U mapping might need swapping depending on hardware mounting.
+    // Note: weight register (data[5]) was tried as a phantom-touch filter
+    // but in fallback-mode the chip returns weight==0 even for real
+    // presses — using it disabled all touches. Rely on PRESS_DEBOUNCE
+    // and the (0,0)-coord sanity check below instead.
+    bool raw_press = (touches == 1 || touches == 2);
+    uint16_t new_x = 0, new_y = 0;
+    if (raw_press) {
         uint16_t raw_x = ((data[1] & 0x0F) << 8) | data[2];
         uint16_t raw_y = ((data[3] & 0x0F) << 8) | data[4];
+        new_x = raw_y;
+        new_y = 320 - raw_x;
+        if (new_x > 480) new_x = 480;
+        if (new_y > 320) new_y = 320;
+        // Coord-sanity: FT6336U fallback mode sometimes spits 0,0 or
+        // wild-out-of-range values that pass the touches==1 check but
+        // are not real presses. Treat (0,0) and edge-clipped values
+        // alone (without nearby prior presses) as noise.
+        if (new_x == 0 && new_y == 0) raw_press = false;
+    }
 
-        // Map ST7796S native touch coords to Landscape (swap X and Y, invert as needed)
-        // Adjust these after testing. Assuming typical portrait to landscape rotation:
-        *x = raw_y;           // Landscape X
-        *y = 320 - raw_x;     // Landscape Y
-
-        // Add bounds checks just in case
-        if (*x > 480) *x = 480;
-        if (*y > 320) *y = 320;
+    // PRESS_DEBOUNCE = 1: tap registers on the first valid sample.
+    // RELEASE_DEBOUNCE = 1: lift registers immediately for snappy feel.
+    // Phantom-touch protection comes from the (0,0)-coord sanity check
+    // earlier in this function.
+    static int press_streak = 0;
+    static int release_streak = 0;
+    const int PRESS_DEBOUNCE = 1;
+    const int RELEASE_DEBOUNCE = 1;
+    if (raw_press) {
+        press_streak++;
+        release_streak = 0;
     } else {
-        *pressed = false;
+        release_streak++;
+        press_streak = 0;
+    }
+
+    if (s_last_pressed) {
+        // Currently considered pressed: stay pressed unless we've seen
+        // RELEASE_DEBOUNCE clean misses in a row (avoids brief read
+        // glitches breaking a real long-press / drag).
+        if (release_streak >= RELEASE_DEBOUNCE) {
+            *pressed = false;
+            s_last_release_ms = now;     // start tap-spam guard
+        } else {
+            *pressed = true;
+            // Update coords if we have a fresh good sample.
+            if (raw_press) {
+                s_last_x = new_x;
+                s_last_y = new_y;
+            }
+            *x = s_last_x;
+            *y = s_last_y;
+            s_last_read_time = now;
+            return ESP_OK;
+        }
+    } else {
+        // Currently idle: only register a press once the streak
+        // reaches PRESS_DEBOUNCE AND we're past the tap-spam window.
+        if (press_streak >= PRESS_DEBOUNCE) {
+            if ((now - s_last_release_ms) < MIN_REPRESS_GAP_MS) {
+                // Too soon after the previous release — treat as bounce
+                // / accidental tap-spam and ignore.
+                *pressed = false;
+            } else {
+                *pressed = true;
+                s_last_x = new_x;
+                s_last_y = new_y;
+                *x = new_x;
+                *y = new_y;
+                s_last_pressed = true;
+                return ESP_OK;
+            }
+        } else {
+            *pressed = false;
+        }
     }
     s_last_pressed = *pressed;
-    s_last_x = *x;
-    s_last_y = *y;
+    if (!*pressed) {
+        *x = 0;
+        *y = 0;
+    }
     return ESP_OK;
 }

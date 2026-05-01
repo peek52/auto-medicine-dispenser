@@ -769,7 +769,11 @@ static void draw_standby_page(bool force, const char *hhmm, const char *ss, cons
         char ss_with_colon[8];
         snprintf(ss_with_colon, sizeof(ss_with_colon), ":%s", ss);
 
-        fill_rect(ss_x, TIME_BLOCK_Y, ss_area_w, TIME_BLOCK_H, ST_TIME_CARD);
+        // No fill_rect here — draw_string_gfx_scaled paints background
+        // pixels in the glyph bounding box itself (fg/bg pair), so the
+        // explicit pre-clear was redundant and the brief blank window
+        // between fill and draw was the visible per-second flicker on
+        // the standby clock seconds.
         draw_string_gfx_scaled(ss_x, TIME_BASELINE_Y, ss_with_colon, ST_TXT_TIME, ST_TIME_CARD, &FreeSansBold24pt7b, TIME_SCALE);
     }
 

@@ -213,6 +213,11 @@ static void cli_task(void *arg) {
 static void i2c_watchdog_task(void *arg)
 {
     (void)arg;
+#if !ENABLE_VL53_PILL_SENSORS
+    ESP_LOGW(TAG, "I2C watchdog disabled because VL53/TCA support is off");
+    vTaskDelete(NULL);
+    return;
+#endif
     const uint8_t probe_addr = ADDR_TCA9548A;
     int consecutive_fails = 0;
     int recoveries = 0;
@@ -311,7 +316,7 @@ static void deferred_init_task(void *arg)
     ESP_LOGI(TAG, "deferred_init: starting (uptime ~%lu ms)",
              (unsigned long)(xTaskGetTickCount() * portTICK_PERIOD_MS));
 
-    // 1) Audio + settings (no I/O blocking). DY-HV20T on UART1 GPIO 37/38.
+    // 1) Audio + settings (no I/O blocking). DY-HV20T on UART1 GPIO 37.
     ESP_LOGI(TAG, "deferred_init: dfplayer_init");
     dfplayer_init();
     ESP_LOGI(TAG, "deferred_init: settings_load_nvs");
@@ -723,12 +728,27 @@ void app_main(void)
         i2c_manager_disable_bus();
         s_i2c_disabled = true;
     } else {
+        // Bug history: missing[0] used to be hardcoded true, which made
+        // late_detect re-run TCA9548A + VL53 bootstrap ~30s after boot
+        // even when TCA was already initialised at boot. The duplicate
+        // init raced with the running VL53 task on the shared I2C bus
+        // and panicked the chip mid-dispense (reproducible: "return 2
+        // cartridges, board resets"). Skip the late-detect rearm for
+        // any peripheral that's already up.
         bool *missing = (bool *)malloc(3 * sizeof(bool));
         if (missing) {
-            missing[0] = true;
+#if ENABLE_VL53_PILL_SENSORS
+            missing[0] = !tca9548a_is_present();
+#else
+            missing[0] = false;
+#endif
             missing[1] = !pca_ok;
             missing[2] = !pcf_ok;
-            xTaskCreate(late_detect_task, "i2c_late", 3072, missing, 3, NULL);
+            if (missing[0] || missing[1] || missing[2]) {
+                xTaskCreate(late_detect_task, "i2c_late", 3072, missing, 3, NULL);
+            } else {
+                free(missing);
+            }
         }
     }
 

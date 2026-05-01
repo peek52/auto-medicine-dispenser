@@ -49,7 +49,7 @@ static esp_err_t monitor_handler(httpd_req_t *req)  { return redirect_to_tech(re
 httpd_handle_t start_webserver(void) {
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers   = 36;
+    config.max_uri_handlers   = 44;
     config.max_open_sockets   = 12;  /* ป้องกัน socket เต็มตอน polling */
     config.lru_purge_enable   = true;
     config.recv_wait_timeout  = 3;   /* วินาที — ปิด stale connections เร็ว */
@@ -101,6 +101,10 @@ httpd_handle_t start_webserver(void) {
         { "/tech/reboot",     HTTP_POST, tech_reboot_handler,    NULL },
         { "/tech/estop",      HTTP_POST, tech_estop_handler,     NULL },
         { "/tech/quiet",      HTTP_POST, tech_quiet_handler,     NULL },
+        { "/tech/ir",         HTTP_GET,  tech_ir_handler,        NULL },
+        { "/tech/ir",         HTTP_POST, tech_ir_handler,        NULL },
+        { "/tech/ir_cal",     HTTP_GET,  tech_ir_cal_page_handler, NULL },
+        { "/tech/ir_cal/run", HTTP_POST, tech_ir_cal_run_handler,  NULL },
     };
 
     for (int i = 0; i < sizeof(routes)/sizeof(routes[0]); i++) {

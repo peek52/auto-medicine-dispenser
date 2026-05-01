@@ -755,8 +755,17 @@ static void clock_task(void *)
              current_page == PAGE_SETUP_MEDS || current_page == PAGE_SETUP_MEDS_DETAIL);
         bool page_needs_service_loop =
             (current_page == PAGE_TIME_PICKER || current_page == PAGE_WIFI_SCAN);
+        // STANDBY needs 1 Hz to advance the seconds digit. Other live-tick
+        // pages (CONFIRM_MEDS, SETUP_MEDS, SETUP_MEDS_DETAIL) have no
+        // per-second content and were repainting their popups/status rows
+        // 60 times a minute for nothing — that's where the screen-wide
+        // flicker came from. Slow them to 4 Hz so the partial-update
+        // diff still picks up changes quickly without doing whole-region
+        // rewrites every second.
+        uint32_t periodic_interval_ticks = pdMS_TO_TICKS(
+            (current_page == PAGE_STANDBY) ? 1000 : 250);
         bool periodic_render =
-            page_needs_live_tick && ((now - last_render_ticks) >= pdMS_TO_TICKS(1000));
+            page_needs_live_tick && ((now - last_render_ticks) >= periodic_interval_ticks);
 
         static netpie_shadow_t s_last_sh_for_popup = {0};
         static bool s_popup_init = false;

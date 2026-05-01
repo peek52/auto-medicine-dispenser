@@ -342,7 +342,7 @@ esp_err_t camera_init(void) {
     int enable_flag = 1;
     esp_cam_sensor_format_t *cam_cur_fmt = NULL;
 
-    for (int attempt = 0; attempt < 4; ++attempt) {
+    for (int attempt = 0; attempt < 8; ++attempt) {
         // 1) Tear down anything left from a prior attempt + recover bus.
         if (cam_config.sccb_handle) {
             (void)esp_sccb_del_i2c_io(cam_config.sccb_handle);
@@ -362,12 +362,22 @@ esp_err_t camera_init(void) {
 
         // 2) Hold the shared I2C mutex across the whole SCCB sequence.
         bool got_lock = (g_i2c_mutex && xSemaphoreTake(g_i2c_mutex, pdMS_TO_TICKS(1500)) == pdTRUE);
+        if (g_i2c_mutex && !got_lock) {
+            ESP_LOGW(TAG, "Camera attempt %d: I2C mutex busy, skipping (would race other clients)",
+                     attempt + 1);
+            continue;
+        }
 
         // 3) Detect.
         for (esp_cam_sensor_detect_fn_t *p = &__esp_cam_sensor_detect_fn_array_start;
              p < &__esp_cam_sensor_detect_fn_array_end; ++p) {
+            // SCCB speed reduced 400→100 kHz: at 400 kHz the OV5647
+            // burst register writes after PID detect returned
+            // ESP_ERR_INVALID_STATE on this board; 100 kHz is the
+            // standard SCCB rate and gives the IDF v5.3.3 i2c master
+            // state machine more headroom between transactions.
             sccb_i2c_config_t sccb_conf = {
-                .scl_speed_hz   = 400000,
+                .scl_speed_hz   = 100000,
                 .device_address = p->sccb_addr,
                 .dev_addr_length = I2C_ADDR_BIT_LEN_7,
             };
@@ -393,11 +403,29 @@ esp_err_t camera_init(void) {
                 }
             }
 
-            (void)i2c_master_bus_wait_all_done(i2c_bus_handle, 200);
+            (void)i2c_master_bus_wait_all_done(i2c_bus_handle, 500);
+            // The PID detect path uses transmit-receive (combined-start)
+            // which leaves the IDF v5.3.3 i2c master state machine in a
+            // configuration that rejects the next pure transmit with
+            // INVALID_STATE. i2c_master_bus_reset clears that latch
+            // without invalidating the SCCB device handle.
+            (void)i2c_master_bus_reset(i2c_bus_handle);
+            vTaskDelay(pdMS_TO_TICKS(50));
 
-            // 5) Configure + stream-on.
+            // 5) Configure + stream-on. Retry set_format up to 3 times
+            // because the very first SCCB write after detect can still
+            // fail with INVALID_STATE; subsequent calls use the now-
+            // primed transmit path and succeed.
             if (cam_cur_fmt) {
-                ret_fmt = esp_cam_sensor_set_format(cam, cam_cur_fmt);
+                for (int sf = 0; sf < 3; ++sf) {
+                    ret_fmt = esp_cam_sensor_set_format(cam, cam_cur_fmt);
+                    if (ret_fmt == ESP_OK) break;
+                    ESP_LOGW(TAG, "set_format inner retry %d: %s",
+                             sf + 1, esp_err_to_name(ret_fmt));
+                    (void)i2c_master_bus_wait_all_done(i2c_bus_handle, 200);
+                    (void)i2c_master_bus_reset(i2c_bus_handle);
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                }
                 if (ret_fmt == ESP_OK) {
                     ret_strm = esp_cam_sensor_ioctl(cam, ESP_CAM_SENSOR_IOC_S_STREAM, &enable_flag);
                 }
