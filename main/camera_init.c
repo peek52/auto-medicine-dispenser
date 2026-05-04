@@ -283,7 +283,12 @@ esp_err_t camera_init(void) {
             } else {
                 ESP_LOGI(TAG, "XCLK %d Hz generated on GPIO%d",
                          CAM_XCLK_FREQ, CAM_XCLK_PIN);
-                vTaskDelay(pdMS_TO_TICKS(20));  // sensor PLL lock
+                /* Bumped 20 → 200 ms — OV5647 needs >150 ms for its
+                 * internal PLL + power-on reset to fully settle after
+                 * XCLK starts. Talking SCCB too soon leaves the sensor
+                 * in a partial-init state where transmit-receive (PID)
+                 * works but burst transmit (set_format) flakes out. */
+                vTaskDelay(pdMS_TO_TICKS(200));
             }
         }
     }
@@ -376,8 +381,13 @@ esp_err_t camera_init(void) {
             // ESP_ERR_INVALID_STATE on this board; 100 kHz is the
             // standard SCCB rate and gives the IDF v5.3.3 i2c master
             // state machine more headroom between transactions.
+            /* Dropped 100 → 50 kHz: at 100 kHz the OV5647 set_format burst
+             * (>40 register writes back-to-back) trips the IDF v5.3 i2c_master
+             * state machine into INVALID_STATE on this board. 50 kHz gives
+             * the driver enough inter-transaction headroom that it stops
+             * leaving the state in a wedged config. */
             sccb_i2c_config_t sccb_conf = {
-                .scl_speed_hz   = 100000,
+                .scl_speed_hz   = 50000,
                 .device_address = p->sccb_addr,
                 .dev_addr_length = I2C_ADDR_BIT_LEN_7,
             };
@@ -410,21 +420,34 @@ esp_err_t camera_init(void) {
             // INVALID_STATE. i2c_master_bus_reset clears that latch
             // without invalidating the SCCB device handle.
             (void)i2c_master_bus_reset(i2c_bus_handle);
-            vTaskDelay(pdMS_TO_TICKS(50));
+            vTaskDelay(pdMS_TO_TICKS(150));
 
-            // 5) Configure + stream-on. Retry set_format up to 3 times
-            // because the very first SCCB write after detect can still
-            // fail with INVALID_STATE; subsequent calls use the now-
-            // primed transmit path and succeed.
+            // 5) Configure + stream-on. Retry set_format up to 8 times.
+            // Between retries we issue an OV5647 software reset (write
+            // 0x82 to register 0x3008) which dumps the sensor's internal
+            // state machine and lets the next SCCB burst start fresh.
+            // This breaks the IDF v5.3 i2c_master INVALID_STATE loop
+            // because the sensor itself stops getting confused by
+            // half-applied burst writes.
             if (cam_cur_fmt) {
-                for (int sf = 0; sf < 3; ++sf) {
+                for (int sf = 0; sf < 8; ++sf) {
                     ret_fmt = esp_cam_sensor_set_format(cam, cam_cur_fmt);
                     if (ret_fmt == ESP_OK) break;
                     ESP_LOGW(TAG, "set_format inner retry %d: %s",
                              sf + 1, esp_err_to_name(ret_fmt));
-                    (void)i2c_master_bus_wait_all_done(i2c_bus_handle, 200);
+                    (void)i2c_master_bus_wait_all_done(i2c_bus_handle, 300);
                     (void)i2c_master_bus_reset(i2c_bus_handle);
-                    vTaskDelay(pdMS_TO_TICKS(100));
+                    vTaskDelay(pdMS_TO_TICKS(200));
+                    /* Soft-reset OV5647 via SCCB direct write — bypasses
+                     * the sensor driver's set_format path. Address 0x36,
+                     * register 0x3008 (SYSTEM CONTROL00), value 0x82. */
+                    if (cam_config.sccb_handle) {
+                        uint8_t reset_buf[3] = {0x30, 0x08, 0x82};
+                        (void)esp_sccb_transmit_reg_a16v8(cam_config.sccb_handle,
+                                                          0x3008, 0x82);
+                        (void)reset_buf;
+                        vTaskDelay(pdMS_TO_TICKS(20));
+                    }
                 }
                 if (ret_fmt == ESP_OK) {
                     ret_strm = esp_cam_sensor_ioctl(cam, ESP_CAM_SENSOR_IOC_S_STREAM, &enable_flag);

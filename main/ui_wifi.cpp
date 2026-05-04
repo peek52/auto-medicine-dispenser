@@ -296,12 +296,20 @@ void ui_wifi_status_render(void)
             draw_wifi_label((LCD_W - kThWifiStatus.width) / 2, 10, &kThWifiStatus);
         }
 
-        fill_round_rect(20, 72, LCD_W - 40, 188, 12, CARD);
+        /* Customer-facing layout: only the connected SSID and a Forget
+         * button. Tech URLs (/maint, /wifi, /cloud) and the Service Login
+         * IP were removed — they're for service technicians, not the
+         * end user, and clutter the page. */
+        const int CARD_X = 20;
+        const int CARD_Y = 80;
+        const int CARD_W = LCD_W - 40;
+        const int CARD_H = 130;
+        fill_round_rect(CARD_X, CARD_Y, CARD_W, CARD_H, 12, CARD);
 
         if (g_ui_language == UI_LANG_TH) {
-            draw_wifi_label(36, 92, &kThConnectedSsid);
+            draw_wifi_label(CARD_X + 16, CARD_Y + 14, &kThConnectedSsid);
         } else {
-            draw_string_gfx(36, 108, "Connected SSID", SUB, CARD, &FreeSans9pt7b);
+            draw_string_gfx(CARD_X + 16, CARD_Y + 30, "Connected SSID", SUB, CARD, &FreeSans9pt7b);
         }
 
         wifi_config_t conf;
@@ -314,34 +322,16 @@ void ui_wifi_status_render(void)
         }
 
         char ssid_fit[40];
-        fit_ascii_text(ssid_fit, sizeof(ssid_fit), ssid_line, LCD_W - 92, &FreeSans18pt7b);
-        draw_string_gfx(36, 136, ssid_fit, TXT, CARD, &FreeSans18pt7b);
+        fit_ascii_text(ssid_fit, sizeof(ssid_fit), ssid_line, CARD_W - 32, &FreeSans18pt7b);
+        draw_string_gfx(CARD_X + 16, CARD_Y + 80, ssid_fit, TXT, CARD, &FreeSans18pt7b);
 
-        draw_string_gfx(36, 168, "Service Login", SUB, CARD, &FreeSans9pt7b);
-
-        char root_url[64] = "Not available";
-        if (strcmp(s_ip, "0.0.0.0") != 0) {
-            snprintf(root_url, sizeof(root_url), "http://%s", s_ip);
-        }
-
-        char root_fit[64];
-        fit_ascii_text(root_fit, sizeof(root_fit), root_url, LCD_W - 92, &FreeSans9pt7b);
-        draw_string_gfx(36, 183, root_fit, 0x1A7B, CARD, &FreeSans9pt7b);
-
-        draw_string_gfx(36, 205, "Tech Dashboard", SUB, CARD, &FreeSans9pt7b);
-        draw_string_gfx(214, 205, "/maint", 0x1A7B, CARD, &FreeSans9pt7b);
-
-        draw_string_gfx(36, 226, "WiFi Setup", SUB, CARD, &FreeSans9pt7b);
-        draw_string_gfx(214, 226, "/wifi", 0x1A7B, CARD, &FreeSans9pt7b);
-
-        draw_string_gfx(36, 247, "Cloud Config", SUB, CARD, &FreeSans9pt7b);
-        draw_string_gfx(214, 247, "/cloud", 0x1A7B, CARD, &FreeSans9pt7b);
-
-        fill_round_rect(20, 268, LCD_W - 40, 44, 12, THEME_BAD);
+        const int FBTN_Y = 246;
+        const int FBTN_H = 56;
+        fill_round_rect(20, FBTN_Y, LCD_W - 40, FBTN_H, 12, THEME_BAD);
         if (g_ui_language == UI_LANG_TH) {
-            draw_wifi_label((LCD_W - kThForgetWifi.width) / 2, 277, &kThForgetWifi);
+            draw_wifi_label((LCD_W - kThForgetWifi.width) / 2, FBTN_Y + 12, &kThForgetWifi);
         } else {
-            draw_string_centered(LCD_W / 2, 298, "Forget WiFi", 0xFFFF, THEME_BAD, &FreeSans12pt7b);
+            draw_string_centered(LCD_W / 2, FBTN_Y + 36, "Forget WiFi", 0xFFFF, THEME_BAD, &FreeSans12pt7b);
         }
         
         force_redraw = false;
@@ -353,7 +343,7 @@ void ui_wifi_status_handle_touch(uint16_t tx_n, uint16_t ty_n)
     if (tx_n >= 10 && tx_n <= 90 && ty_n >= 8 && ty_n <= 34) {
         dfplayer_play_track(g_snd_button);
         pending_page = PAGE_STANDBY;
-    } else if (tx_n >= 20 && tx_n <= 460 && ty_n >= 268 && ty_n <= 312) {
+    } else if (tx_n >= 20 && tx_n <= (LCD_W - 20) && ty_n >= 246 && ty_n <= 302) {
         if (g_nav_sound_enabled) dfplayer_play_track(38); // Swapped in FAT: Forget WiFi (now 38)
         wifi_sta_forget();
         pending_page = PAGE_STANDBY;

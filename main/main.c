@@ -328,9 +328,8 @@ static void deferred_init_task(void *arg)
     //    slow leaves /tech stream and /photo dead until reboot.
     //    Web servers just open listeners — they happily wait for IP
     //    without needing WiFi up first.
-    ESP_LOGI(TAG, "deferred_init: camera_init");
-    esp_err_t cret = camera_init();
-    ESP_LOGI(TAG, "deferred_init: camera_init -> %s", esp_err_to_name(cret));
+    /* camera_init() now runs early in app_main (before silent deadlock
+     * window). Skip the duplicate call here to avoid double-init. */
 
     // lwIP + default event loop must exist before httpd_start() — otherwise
     // tcpip_send_msg_wait_sem aborts with "Invalid mbox". wifi_sta_init()
@@ -760,6 +759,18 @@ void app_main(void)
     // deterministically around the 22 s mark on every cold boot when
     // I2C devices were missing).
     display_clock_init();
+
+    /* Camera early-init in app_main — moved out of deferred_init_task
+     * because the silent UART/printf deadlock at uptime ~12 s was killing
+     * deferred_init before camera_init() ever ran, leaving /capture and
+     * Telegram /photo permanently broken. Bringing camera up here ensures
+     * the sensor + JPEG encoder are alive while UART is still healthy. */
+    if (!g_safe_mode && !g_ultra_safe_mode) {
+        ESP_LOGI(TAG, "Early camera_init");
+        esp_err_t cret_early = camera_init();
+        ESP_LOGI(TAG, "Early camera_init -> %s", esp_err_to_name(cret_early));
+    }
+
 #if ENABLE_SD_CARD
     if (sd_card_init() != ESP_OK) {
         ESP_LOGW(TAG, "SD card not available");

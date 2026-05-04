@@ -88,7 +88,10 @@ static void st7796_init(void)
     vTaskDelay(pdMS_TO_TICKS(120));
 
     { uint8_t d = 0x55; lcd_cmd(0x3A, &d, 1); }
-    { uint8_t d = 0xE8; lcd_cmd(0x36, &d, 1); }
+    /* MADCTL: landscape rotated 180° relative to original orientation.
+     *   0xE8 = MY|MX|MV|BGR (original)
+     *   0x28 = MV|BGR       (180° rotation: drop MY and MX) */
+    { uint8_t d = 0x28; lcd_cmd(0x36, &d, 1); }
 
     lcd_cmd(0x20, NULL, 0);
     lcd_cmd(0x13, NULL, 0);
@@ -535,8 +538,11 @@ void draw_top_bar_with_back(const char *title)
 ───────────────────────────────────────────────────────────── */
 void ui_map_touch(uint16_t raw_x, uint16_t raw_y, uint16_t *ux, uint16_t *uy)
 {
-    *ux = (raw_x < LCD_W) ? (LCD_W - 1 - raw_x) : 0;
-    *uy = (raw_y < LCD_H) ? (LCD_H - 1 - raw_y) : 0;
+    /* Display flipped 180° in MADCTL; the touch panel is mounted in the
+     * same orientation as the LCD, so the previous double-inversion is
+     * no longer needed — pass raw coordinates straight through. */
+    *ux = (raw_x < LCD_W) ? raw_x : (LCD_W - 1);
+    *uy = (raw_y < LCD_H) ? raw_y : (LCD_H - 1);
 }
 
 static int count_selected_slots(uint8_t slots)
