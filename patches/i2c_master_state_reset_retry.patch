@@ -1,0 +1,26 @@
+--- /c/Users/peekz/esp/esp-idf/components/esp_driver_i2c/i2c_master.c.preIDFpatch.bak	2026-05-04 12:52:33.903266300 +0700
++++ /d/project/ddddddddd/unified_cam/components/esp_driver_i2c/i2c_master.c	2026-05-04 12:59:18.699688500 +0700
+@@ -1125,7 +1125,22 @@
+     };
+ 
+     if (i2c_dev->master_bus->async_trans == false) {
+-        ESP_RETURN_ON_ERROR(s_i2c_synchronous_transaction(i2c_dev, i2c_ops, DIM(i2c_ops), xfer_timeout_ms), TAG, "I2C transaction failed");
++        /* LOCAL PATCH (state-reset retry): IDF v5.3.2 i2c_master FSM
++         * sometimes leaves status != I2C_STATUS_DONE after a successful
++         * transmit_receive() (combined-start), so the very next pure
++         * transmit() returns ESP_ERR_INVALID_STATE forever. Symptom:
++         * OV5647 set_format burst writes always fail with INVALID_STATE
++         * even with bus_reset between calls. Fix: retry up to 2 extra
++         * times, each preceded by an explicit hardware FSM reset and
++         * status-to-IDLE clear, which gives the next transmit a clean
++         * state machine. */
++        esp_err_t r = s_i2c_synchronous_transaction(i2c_dev, i2c_ops, DIM(i2c_ops), xfer_timeout_ms);
++        for (int retry = 0; retry < 2 && r == ESP_ERR_INVALID_STATE; ++retry) {
++            (void)s_i2c_hw_fsm_reset(i2c_dev->master_bus);
++            atomic_store(&i2c_dev->master_bus->status, I2C_STATUS_IDLE);
++            r = s_i2c_synchronous_transaction(i2c_dev, i2c_ops, DIM(i2c_ops), xfer_timeout_ms);
++        }
++        ESP_RETURN_ON_ERROR(r, TAG, "I2C transaction failed");
+     } else {
+         ESP_RETURN_ON_ERROR(s_i2c_asynchronous_transaction(i2c_dev, i2c_ops, DIM(i2c_ops), xfer_timeout_ms), TAG, "I2C transaction failed");
+     }
