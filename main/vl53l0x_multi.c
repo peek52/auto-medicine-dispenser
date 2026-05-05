@@ -8,6 +8,7 @@
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "esp_log.h"
+#include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "i2c_manager.h"
@@ -135,7 +136,22 @@ static esp_err_t vl53_io(int ch, esp_err_t (*fn)(i2c_master_dev_handle_t dev, vo
     if (ret == ESP_OK) {
         ret = vl53_ensure_dev_locked();
         if (ret == ESP_OK) {
+            /* Per-register retry — bus-loading + signal-integrity glitches
+             * cause occasional NACK / TIMEOUT on individual register ops.
+             * Two extra attempts with a brief delay between them masks the
+             * transient failures (the second try almost always succeeds).
+             * Safe to do here since camera is lazy-init now and won't be
+             * blocked by VL53 holding the bus a few extra ms. */
+            /* 2-attempt retry — short enough not to starve other I2C
+             * consumers (touch reads, camera SCCB), but catches the
+             * single-shot transient NACKs that the new 2.2 kΩ pull-ups
+             * still leave on individual register ops. Going higher
+             * (5x) measurably lagged touch and starved camera. */
             ret = fn(s_vl53_dev, ctx);
+            if (ret != ESP_OK) {
+                esp_rom_delay_us(200);
+                ret = fn(s_vl53_dev, ctx);
+            }
         }
     }
 
@@ -738,6 +754,23 @@ static void vl53_poll_all(void)
     }
 }
 
+/* Allow other subsystems (e.g. camera_init's SCCB burst) to temporarily
+ * silence the VL53 poll loop so the I2C bus is fully quiet. Without this,
+ * concurrent VL53 retry probes contend with SCCB and the OV5647 PID read
+ * NACKs from accumulated bus noise. Set non-zero to pause; clear to resume. */
+static volatile int s_vl53_pause_count = 0;
+
+void vl53l0x_multi_pause(void)
+{
+    /* Atomic increment is fine — only set from non-ISR contexts. */
+    s_vl53_pause_count++;
+}
+
+void vl53l0x_multi_resume(void)
+{
+    if (s_vl53_pause_count > 0) s_vl53_pause_count--;
+}
+
 static void vl53_task(void *arg)
 {
     (void)arg;
@@ -753,6 +786,11 @@ static void vl53_task(void *arg)
 
     ESP_LOGI(TAG, "Starting VL53L0X poll task");
     while (1) {
+        /* Honor pause requests from camera_init etc. */
+        if (s_vl53_pause_count > 0) {
+            vTaskDelay(pdMS_TO_TICKS(200));
+            continue;
+        }
         vl53_poll_all();
 
         const netpie_shadow_t *shadow = netpie_get_shadow();

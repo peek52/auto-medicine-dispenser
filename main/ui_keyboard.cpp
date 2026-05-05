@@ -2,6 +2,8 @@
 #include "esp_log.h"
 #include "wifi_sta.h"
 #include "netpie_mqtt.h"
+#include "dispenser_scheduler.h"
+#include "ds3231.h"
 #include "ui_utf8_text.h"
 #include "ui_keyboard_thai_labels.h"
 #include "dfplayer.h"
@@ -137,15 +139,51 @@ static void keyboard_store_med_name(void)
         publish_name[out] = '\0';
     }
 
+    /* Capture the previous name BEFORE we update the shadow so we can
+     * include it in the Telegram audit message ("Med 2: Old → New"). */
+    const netpie_shadow_t *sh = netpie_get_shadow();
+    char old_name[64] = "";
+    if (sh && edit_slot >= 0 && edit_slot < 6) {
+        snprintf(old_name, sizeof(old_name), "%s", sh->med[edit_slot].name);
+    }
+
     if (publish_name[0] == '\0') {
         netpie_shadow_update_med_name(edit_slot + 1, "");
         netpie_shadow_update_count(edit_slot + 1, 0);
         netpie_shadow_update_med_slots(edit_slot + 1, 0);
         ESP_LOGI(TAG, "Medicine slot %d cleared from keyboard", edit_slot + 1);
+
+        char tbuf[16] = "--:--";
+        ds3231_get_time_str(tbuf, sizeof(tbuf));
+        char msg[256];
+        snprintf(msg, sizeof(msg),
+                 "🗑️ ลบยาออกจากช่อง\nเวลา: %s\nโมดูล: %d (%s)",
+                 tbuf, edit_slot + 1,
+                 old_name[0] ? old_name : "ไม่มีชื่อ");
+        dispenser_telegram_photo_msg(msg);
         return;
     }
 
     netpie_shadow_update_med_name(edit_slot + 1, publish_name);
+
+    /* Notify Telegram with photo so the caregiver sees the new name AND
+     * the current state of the cartridge. Skip when the name didn't
+     * actually change (re-confirming an existing name shouldn't spam). */
+    if (strcmp(old_name, publish_name) != 0) {
+        char tbuf[16] = "--:--";
+        ds3231_get_time_str(tbuf, sizeof(tbuf));
+        char msg[256];
+        if (old_name[0]) {
+            snprintf(msg, sizeof(msg),
+                     "✏️ เปลี่ยนชื่อยา\nเวลา: %s\nโมดูล: %d\n%s → %s",
+                     tbuf, edit_slot + 1, old_name, publish_name);
+        } else {
+            snprintf(msg, sizeof(msg),
+                     "📝 ตั้งชื่อยา\nเวลา: %s\nโมดูล: %d\nชื่อ: %s",
+                     tbuf, edit_slot + 1, publish_name);
+        }
+        dispenser_telegram_photo_msg(msg);
+    }
 }
 
 static void keyboard_submit(void)

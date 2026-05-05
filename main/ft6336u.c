@@ -171,13 +171,16 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
         if (new_x == 0 && new_y == 0) raw_press = false;
     }
 
-    // PRESS_DEBOUNCE = 1: tap registers on the first valid sample.
+    // PRESS_DEBOUNCE = 2: tap registers after 2 consecutive samples
+    // report touched=true. At idle 50 Hz cache that's ~40 ms minimum
+    // hold — short enough to feel responsive (well below human tap
+    // duration ~80-150 ms) but rejects single-sample electrical noise.
+    // Started at 3 (60 ms) after phantom-touch reports, but real taps
+    // were missing on quick presses, so settled on 2.
     // RELEASE_DEBOUNCE = 1: lift registers immediately for snappy feel.
-    // Phantom-touch protection comes from the (0,0)-coord sanity check
-    // earlier in this function.
     static int press_streak = 0;
     static int release_streak = 0;
-    const int PRESS_DEBOUNCE = 1;
+    const int PRESS_DEBOUNCE = 2;
     const int RELEASE_DEBOUNCE = 1;
     if (raw_press) {
         press_streak++;

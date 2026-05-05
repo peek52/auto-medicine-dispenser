@@ -386,12 +386,29 @@ static void safe_mode_init_task(void *arg)
     (void)arg;
     dfplayer_init();
     settings_load_nvs();
+
+    /* Bring web + WiFi + Telegram up even in safe mode — without these
+     * the user can't trigger /photo, can't see status, can't recover the
+     * device remotely after a single panic. The crash source is the
+     * IDF i2c_master ISR race (VL53 path), and that path stays disabled
+     * via g_safe_mode further up. Camera is lazy now so it only fires
+     * when user asks for /photo or /capture. */
+    (void)esp_netif_init();
+    (void)esp_event_loop_create_default();
+    start_webserver();
+    start_stream_server();
+
     dispenser_scheduler_start();
     usb_mouse_start();
+
+    ESP_LOGW(TAG, "Safe mode: bringing up WiFi (~15 s)");
+    wifi_sta_init();
+    display_clock_set_ip(wifi_sta_get_ip());
+
     extern bool g_system_ready;
     g_system_ready = true;
-    ESP_LOGW(TAG, "Safe mode ready: scheduler+audio+USB+display only "
-                  "(WiFi/camera/web/MQTT disabled until power-cycle)");
+    ESP_LOGW(TAG, "Safe mode ready: full stack except VL53 sensor polling "
+                  "(VL53 stays off to avoid re-triggering the I2C race)");
     vTaskDelete(NULL);
 }
 
@@ -520,20 +537,22 @@ void app_main(void)
     } else {
         s_consec_sw_resets = 0;
     }
-    // Stop the I2C watchdog from looping if we've already done several
-    // self-restarts that didn't fix the bus — the user must power-cycle.
+    // Safe mode auto-trigger removed per user request — even after a panic
+    // we boot the FULL stack (NTP, WiFi, camera, VL53). The IDF i2c_master
+    // ISR guard + state-reset retry now catches the original race that
+    // motivated safe mode, so demoting features after a panic is no longer
+    // necessary. Without safe mode the wall-clock keeps syncing via NTP and
+    // the user sees the correct time on the display.
+    //
+    // Still throttle the I2C watchdog after several SW resets — a wedged
+    // bus that survives reboot needs a manual power-cycle to recover, not
+    // more self-restart loops.
     if (s_consec_sw_resets >= 3) {
         s_skip_i2c_restart = true;
-        g_ultra_safe_mode = true;
-    }
-    if (s_consec_sw_resets >= 1 && _early_reason == ESP_RST_PANIC) {
-        g_safe_mode = true;
     }
     esp_reset_reason_t reason = esp_reset_reason();
-    ESP_LOGW(TAG, "Boot #%lu, reset reason: %s (%d)%s",
-             (unsigned long)s_boot_count, reset_reason_str(reason), (int)reason,
-             g_ultra_safe_mode ? "  [ULTRA SAFE — all I2C off]"
-             : g_safe_mode ? "  [SAFE MODE — VL53 disabled]" : "");
+    ESP_LOGW(TAG, "Boot #%lu, reset reason: %s (%d)",
+             (unsigned long)s_boot_count, reset_reason_str(reason), (int)reason);
 
     // 1. Initialize NVS
     esp_err_t ret = nvs_flash_init();
@@ -760,16 +779,11 @@ void app_main(void)
     // I2C devices were missing).
     display_clock_init();
 
-    /* Camera early-init in app_main — moved out of deferred_init_task
-     * because the silent UART/printf deadlock at uptime ~12 s was killing
-     * deferred_init before camera_init() ever ran, leaving /capture and
-     * Telegram /photo permanently broken. Bringing camera up here ensures
-     * the sensor + JPEG encoder are alive while UART is still healthy. */
-    if (!g_safe_mode && !g_ultra_safe_mode) {
-        ESP_LOGI(TAG, "Early camera_init");
-        esp_err_t cret_early = camera_init();
-        ESP_LOGI(TAG, "Early camera_init -> %s", esp_err_to_name(cret_early));
-    }
+    /* Camera is LAZY now — no init at boot. First /capture or /photo
+     * request triggers camera_ensure_initialized(). This frees the I2C
+     * bus during boot for VL53 bootstrap (otherwise SCCB ~2 s contends
+     * with VL53 register init and BOTH fail), and saves init time when
+     * the user never asks for a photo. */
 
 #if ENABLE_SD_CARD
     if (sd_card_init() != ESP_OK) {

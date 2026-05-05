@@ -7,10 +7,10 @@
 #define WIFI_PASS_DEFAULT   "pajaroen"
 
 // Optional peripherals.
-// Set to 0 when VL53/TCA hardware is NOT physically connected — bootstrapping
-// missing VL53 sensors leaves the IDF v5.3 i2c_master state machine wedged
-// and the subsequent camera SCCB init fails with INVALID_STATE.
-#define ENABLE_VL53_PILL_SENSORS 0
+// Re-enabled after the local IDF i2c_master patch (state-reset retry on
+// INVALID_STATE). VL53 bootstrap no longer wedges the bus permanently
+// because the patched i2c_master_transmit() retries with FSM reset.
+#define ENABLE_VL53_PILL_SENSORS 1
 
 // I2C bus: shared by camera SCCB, PCF8574, PCA9685, DS3231, FT6336U, and TCA9548A.
 #define I2C_SDA_PIN         7

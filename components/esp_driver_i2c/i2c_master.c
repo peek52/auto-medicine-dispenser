@@ -623,9 +623,11 @@ IRAM_ATTR static void i2c_isr_receive_handler(i2c_master_bus_t *i2c_master)
         i2c_operation_t *i2c_operation = &i2c_master->i2c_trans.ops[i2c_master->trans_idx];
         portENTER_CRITICAL_ISR(&i2c_master->base->spinlock);
         // LOCAL PATCH: guard against the driver race where a stray receive
-        // ISR fires after the next op cleared i2c_operation->data
-        // (i2c_isr_receive_handler ptr=NULL Store Access Fault).
-        if (i2c_operation->data != NULL) {
+        // ISR fires after the next op cleared / overwrote i2c_operation->data.
+        // We've seen NULL (0x0), 0x1, and other small junk values; check
+        // for any address outside valid SRAM/PSRAM ranges. ESP32-P4 valid
+        // data pointers always live above 0x40000000.
+        if ((uintptr_t)i2c_operation->data >= 0x40000000) {
             i2c_ll_read_rxfifo(hal->dev, i2c_operation->data + i2c_operation->bytes_used, i2c_master->rx_cnt);
         }
         /* rx_cnt bytes have just been read, increment the number of bytes used from the buffer */
@@ -646,13 +648,14 @@ IRAM_ATTR static void i2c_isr_receive_handler(i2c_master_bus_t *i2c_master)
     else {
         i2c_operation_t *i2c_operation = &i2c_master->i2c_trans.ops[i2c_master->read_buf_pos];
         portENTER_CRITICAL_ISR(&i2c_master->base->spinlock);
-        // LOCAL PATCH: same NULL guard for the SOC_I2C_STOP_INDEPENDENT==0
-        // path used by ESP32-P4. Either ops[read_buf_pos] or
-        // ops[read_buf_pos+1] can have NULL data after a race.
-        if (i2c_operation->data != NULL) {
+        // LOCAL PATCH: same valid-address guard for the SOC_I2C_STOP_INDEPENDENT==0
+        // path used by ESP32-P4. Reject any pointer below 0x40000000 — those
+        // are stale junk values (we've seen 0x0, 0x1) that crash with
+        // Store Access Fault when dereferenced.
+        if ((uintptr_t)i2c_operation->data >= 0x40000000) {
             i2c_ll_read_rxfifo(hal->dev, i2c_operation->data + i2c_operation->bytes_used, i2c_master->read_len_static);
         }
-        if (i2c_master->i2c_trans.ops[i2c_master->read_buf_pos + 1].data != NULL) {
+        if ((uintptr_t)i2c_master->i2c_trans.ops[i2c_master->read_buf_pos + 1].data >= 0x40000000) {
             i2c_ll_read_rxfifo(hal->dev, i2c_master->i2c_trans.ops[i2c_master->read_buf_pos + 1].data, 1);
         }
         i2c_master->w_r_size = i2c_master->read_len_static + 1;

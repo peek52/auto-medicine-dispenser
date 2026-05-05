@@ -6,6 +6,7 @@
 #include "cloud_secrets.h"
 #include "offline_sync.h"
 #include "jpeg_encoder.h"
+#include "camera_init.h"
 #include "ds3231.h"
 #include "cJSON.h"
 #include <stdio.h>
@@ -714,6 +715,14 @@ static void telegram_report_task(void *pvParameters)
 
 static void telegram_send_snapshot_reply(const char *caption)
 {
+    /* Lazy camera init — first /photo wakes the sensor. Camera no longer
+     * runs at boot so VL53 bootstrap has the I2C bus to itself. */
+    if (camera_ensure_initialized() != ESP_OK) {
+        telegram_send_text(telegram_pick(
+            "Camera failed to initialise. Check the ribbon and try /photo again.",
+            "เริ่มต้นกล้องไม่สำเร็จ ตรวจสายแพรกล้องแล้วลอง /photo อีกครั้ง"));
+        return;
+    }
     // Tell the encoder a "client" is waiting so camera_task wakes up and
     // produces a fresh JPEG (camera_task otherwise skips work when
     // jpeg_enc_has_clients()==false). The 3 s timeout is long enough

@@ -21,6 +21,8 @@
 #include "config.h"
 #include "telegram_bot.h"
 #include "jpeg_encoder.h"
+#include "camera_init.h"
+#include "vl53l0x_multi.h"
 #include "dfplayer.h"
 #include "cloud_secrets.h"
 #include "offline_sync.h"
@@ -436,14 +438,25 @@ static bool dispenser_mark_busy_if_idle(void)
         acquired = true;
     }
     taskEXIT_CRITICAL(&s_dispense_state_mux);
+    if (acquired) {
+        /* Quiesce VL53 polling while we dispense — VL53 ops grab the
+         * shared I2C mutex with retry, which delays the IR poll's
+         * 2 kHz read cadence and makes pill detection misfire. */
+        vl53l0x_multi_pause();
+    }
     return acquired;
 }
 
 static void dispenser_clear_busy(void)
 {
+    bool was_busy = false;
     taskENTER_CRITICAL(&s_dispense_state_mux);
+    was_busy = s_dispense_busy;
     s_dispense_busy = false;
     taskEXIT_CRITICAL(&s_dispense_state_mux);
+    if (was_busy) {
+        vl53l0x_multi_resume();
+    }
 }
 
 static void send_telegram_photo_or_text(const char *msg)
@@ -454,9 +467,22 @@ static void send_telegram_photo_or_text(const char *msg)
         return;
     }
 
+    /* Camera is lazy-init now — fire it up if this is the first capture
+     * since boot. Skip the photo if init fails (broken ribbon, etc.) and
+     * fall through to plain text so the user still gets the notification. */
+    if (camera_ensure_initialized() != ESP_OK) {
+        telegram_send_text(msg);
+        return;
+    }
+
+    /* Mark a client so camera_task wakes up and encodes a fresh frame
+     * (idle-skip optimisation otherwise leaves the buffer stale). */
+    jpeg_enc_client_added();
     uint8_t *jpg_buf = NULL;
     size_t jpg_len = 0;
-    if (jpeg_enc_get_frame(&jpg_buf, &jpg_len, 2000) == ESP_OK) {
+    esp_err_t got = jpeg_enc_get_frame(&jpg_buf, &jpg_len, 3000);
+    jpeg_enc_client_removed();
+    if (got == ESP_OK) {
         uint8_t *copy_buf = (uint8_t *)malloc(jpg_len);
         if (copy_buf) {
             memcpy(copy_buf, jpg_buf, jpg_len);
@@ -1525,6 +1551,14 @@ void dispenser_manual_dispense(int med_idx, int qty) {
     } else {
         dispenser_clear_busy();
     }
+}
+
+/* Public wrapper around send_telegram_photo_or_text() so other modules
+ * (UI keyboard, settings) can fire a "with-photo" Telegram notification
+ * for events outside the dispenser scheduler proper. */
+void dispenser_telegram_photo_msg(const char *msg)
+{
+    send_telegram_photo_or_text(msg);
 }
 
 void dispenser_audit_stock_adjust(int med_idx, int old_count, int new_count)

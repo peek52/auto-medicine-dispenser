@@ -104,6 +104,13 @@ void dispenser_audit_stock_adjust(int med_idx, int old_count, int new_count);
 // Google Sheets Logger
 void google_sheets_log(const char *event, const char *meds, const char *detail);
 
+/** Send a Telegram notification with a fresh camera snapshot attached.
+ *  Lazy-inits the camera on first call, falls through to plain text if
+ *  the photo grab fails. Used for dispense-complete, return-pills,
+ *  count-adjust, name-change events so the caregiver sees what's in the
+ *  cartridge after each significant action. */
+void dispenser_telegram_photo_msg(const char *msg);
+
 #ifdef __cplusplus
 }
 #endif

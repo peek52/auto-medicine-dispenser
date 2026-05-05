@@ -20,6 +20,7 @@
 #include "config.h"
 #include "i2c_manager.h"
 #include "driver/ledc.h"
+#include "vl53l0x_multi.h"
 #include <string.h>
 
 static const char *TAG = "camera_init";
@@ -534,6 +535,67 @@ esp_err_t camera_init(void) {
 
     ESP_LOGI(TAG, "Camera + JPEG HW Encoder Initialized OK");
     return ESP_OK;
+}
+
+/* Lazy-init state — protected by a mutex so two concurrent /photo +
+ * /capture calls don't both try to init the camera. */
+static SemaphoreHandle_t s_lazy_init_mux = NULL;
+static esp_err_t          s_lazy_init_result = ESP_FAIL;
+static bool               s_lazy_init_done   = false;
+
+bool camera_is_initialized(void)
+{
+    return s_lazy_init_done && s_lazy_init_result == ESP_OK;
+}
+
+esp_err_t camera_ensure_initialized(void)
+{
+    /* Fast path: already done — return cached result without taking lock. */
+    if (s_lazy_init_done) return s_lazy_init_result;
+
+    if (!s_lazy_init_mux) {
+        /* First-time setup — race here is unlikely (handlers run on the
+         * httpd / telegram tasks which are serialised by their own queues),
+         * but use static-init helper to be safe. */
+        SemaphoreHandle_t m = xSemaphoreCreateMutex();
+        if (!m) return ESP_ERR_NO_MEM;
+        if (s_lazy_init_mux) {
+            vSemaphoreDelete(m);
+        } else {
+            s_lazy_init_mux = m;
+        }
+    }
+
+    xSemaphoreTake(s_lazy_init_mux, portMAX_DELAY);
+    if (!s_lazy_init_done) {
+        ESP_LOGI(TAG, "Lazy camera_init triggered (first /capture or /photo)");
+        /* Quiesce the VL53 poll loop so the SCCB burst has the I2C bus
+         * to itself. Otherwise concurrent VL53 retry probes contend with
+         * the OV5647 PID read and the camera detect NACKs. Calls nest, so
+         * we always resume even if camera_init returns early. */
+        vl53l0x_multi_pause();
+        /* Brief settle so any in-flight VL53 op finishes before SCCB. */
+        vTaskDelay(pdMS_TO_TICKS(250));
+        s_lazy_init_result = camera_init();
+        vl53l0x_multi_resume();
+        s_lazy_init_done   = true;
+        ESP_LOGI(TAG, "Lazy camera_init -> %s",
+                 esp_err_to_name(s_lazy_init_result));
+
+        /* Warm-up: the CSI controller starts producing frames a few
+         * hundred ms after stream-on. If the caller (Telegram /photo)
+         * grabs the JPEG immediately, the buffer is still all-zeros from
+         * heap_caps_aligned_calloc and the user gets a solid-black image.
+         * Wait long enough for camera_task to fill at least 2 frames so
+         * the buffer rotation lands on real pixel data. AE / AGC also
+         * need this time to converge to a non-clipped exposure. */
+        if (s_lazy_init_result == ESP_OK) {
+            vTaskDelay(pdMS_TO_TICKS(700));
+        }
+    }
+    esp_err_t r = s_lazy_init_result;
+    xSemaphoreGive(s_lazy_init_mux);
+    return r;
 }
 
 esp_cam_sensor_device_t *camera_get_sensor(void) {

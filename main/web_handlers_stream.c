@@ -84,6 +84,12 @@ esp_err_t capture_handler(httpd_req_t *req) {
     esp_err_t auth = web_require_tech_api_auth(req);
     if (auth != ESP_OK) return auth;
 
+    /* Lazy init — first /capture or /photo brings the camera online. */
+    if (camera_ensure_initialized() != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "camera init failed");
+    }
+
     // Briefly mark a client so the camera task encodes a fresh frame
     // (idle-skip optimization in camera_task otherwise leaves the
     // last buffer stale when nobody is streaming).
