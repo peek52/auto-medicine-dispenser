@@ -14,6 +14,12 @@ void vl53l0x_multi_bootstrap(void);
 void vl53l0x_multi_pause(void);
 void vl53l0x_multi_resume(void);
 
+// On-demand poll trigger — bypasses the normal 5 s sleep and clears all
+// retry-after timers so missing channels get re-probed immediately.
+// Call after dispense / return-pill / count-adjust events when a fresh
+// reading matters; the task otherwise idles to keep the I2C bus quiet.
+void vl53l0x_request_refresh(void);
+
 // Sensor config — ปรับได้ผ่านเว็บ (per-channel)
 void vl53l0x_set_channel_config(int ch, int full_dist_mm, int pill_height_mm, int max_pills);
 void vl53l0x_set_channel_offset(int ch, int count_offset);

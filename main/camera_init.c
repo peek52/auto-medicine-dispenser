@@ -246,8 +246,36 @@ esp_err_t camera_init(void) {
         .chan_id = CAM_LDO_CHAN_ID,
         .voltage_mv = CAM_LDO_VOLTAGE_MV,
     };
+    /* Power-cycle the camera AVDD rail explicitly: when the whole system
+     * (board + camera + I2C peripherals) was powered up simultaneously
+     * the inrush current dipped 3V3 just enough to latch OV5647 in a
+     * bad state — it would NACK every SCCB read until manually power
+     * cycled. By acquiring → releasing → reacquiring the LDO here, we
+     * force a clean cold-boot of the sensor's analog supply, mimicking
+     * the "board first, camera plugged in later" sequence that the
+     * user reported as the only working path.
+     *
+     * Acquire (LDO ON for whatever transient state)
+     *   → release (LDO OFF — camera fully powers down)
+     *     → 200 ms settle (analog rail discharges through bypass caps)
+     *       → re-acquire (LDO ON, camera cold-boots clean)
+     *         → 50 ms (sensor PLL lock + register defaults load)
+     */
     CAM_RETURN_ON_ERR(esp_ldo_acquire_channel(&ldo_config, &ldo_mipi_phy),
                       "Failed to acquire camera LDO");
+    vTaskDelay(pdMS_TO_TICKS(20));
+    esp_err_t rel = esp_ldo_release_channel(ldo_mipi_phy);
+    if (rel != ESP_OK) {
+        ESP_LOGW(TAG, "LDO release failed (%s) — skipping power-cycle",
+                 esp_err_to_name(rel));
+    } else {
+        ldo_mipi_phy = NULL;
+        vTaskDelay(pdMS_TO_TICKS(200));
+        CAM_RETURN_ON_ERR(esp_ldo_acquire_channel(&ldo_config, &ldo_mipi_phy),
+                          "Failed to re-acquire camera LDO after power cycle");
+        vTaskDelay(pdMS_TO_TICKS(50));
+        ESP_LOGI(TAG, "Camera AVDD power-cycled cleanly");
+    }
 
     //---------------XCLK Generation via LEDC------------------//
     // OV5647 needs an external clock to drive its internal logic.

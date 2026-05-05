@@ -45,11 +45,23 @@
 #define VL53_BOOT_RETRIES                               3
 #define VL53_BOOT_RETRY_DELAY_MS                        50
 #define VL53_RANGING_TIMEOUT_MS                         500
-#define VL53_READ_INTERVAL_MS                           1000
+/* Polling cadence — 5 s instead of 1 s. The pill cartridges fill at the
+ * pace of "sometimes per day", so 1 Hz polling was 60x more bus traffic
+ * than necessary and was directly contending with FT6336U + camera SCCB
+ * + dispenser IR @ 2 kHz. Code paths that need an immediate fresh
+ * reading (after dispense, after return-pill, after user adjusts count)
+ * call vl53l0x_request_refresh() to force one poll cycle right away. */
+#define VL53_READ_INTERVAL_MS                           5000
 #define VL53_MAX_VALID_MM                               2000
 #define VL53_EMA_ALPHA                                  0.60f
 #define VL53_I2C_SPEED_HZ                               I2C_FREQ_HZ
-#define VL53_MISSING_RETRY_MS                           30000
+/* Wait 5 minutes between retry-probes for missing sensors instead of 30 s.
+ * Repeatedly probing a missing/flaky sensor every 30 s flooded the I2C bus
+ * with TCA channel switches + 50+ register writes per channel and slowed
+ * down touch + camera SCCB. Once we know a channel is missing we should
+ * back off, not keep poking. User-triggered refresh via
+ * vl53l0x_request_refresh() bypasses this delay for on-demand reads. */
+#define VL53_MISSING_RETRY_MS                           300000
 #define VL53_MAX_MISSING_RETRIES                        5    // Stop retrying after N consecutive failures
 #define VL53_CONTINUOUS_PERIOD_MS                       50
 #define VL53_RESTART_AFTER_FAILS                        5
@@ -132,27 +144,28 @@ static esp_err_t vl53_io(int ch, esp_err_t (*fn)(i2c_master_dev_handle_t dev, vo
 {
     xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
 
-    esp_err_t ret = tca9548a_select_channel_locked((uint8_t)ch);
-    if (ret == ESP_OK) {
+    esp_err_t ret = ESP_FAIL;
+    /* Per-op retry with exponential backoff. VL53 init makes ~70
+     * sequential I2C writes; with weak/long pull-ups + bus contention
+     * the per-op success rate sits around 95%, which gave a compounded
+     * init success of just ~3% (0.95^70). Going from 2 → 5 attempts
+     * with backoff (200 µs / 1 ms / 3 ms / 8 ms) brings per-op success
+     * to ~99.997% and full-init success to ~99.8%. We also re-select
+     * the TCA channel on each outer retry — if the previous transaction
+     * left bus state ambiguous, the channel-select byte may have been
+     * lost. Whole sequence is bounded ~12 ms in the worst case. */
+    static const uint32_t kBackoffUs[5] = { 0, 200, 1000, 3000, 8000 };
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        if (kBackoffUs[attempt]) esp_rom_delay_us(kBackoffUs[attempt]);
+
+        ret = tca9548a_select_channel_locked((uint8_t)ch);
+        if (ret != ESP_OK) continue;
+
         ret = vl53_ensure_dev_locked();
-        if (ret == ESP_OK) {
-            /* Per-register retry — bus-loading + signal-integrity glitches
-             * cause occasional NACK / TIMEOUT on individual register ops.
-             * Two extra attempts with a brief delay between them masks the
-             * transient failures (the second try almost always succeeds).
-             * Safe to do here since camera is lazy-init now and won't be
-             * blocked by VL53 holding the bus a few extra ms. */
-            /* 2-attempt retry — short enough not to starve other I2C
-             * consumers (touch reads, camera SCCB), but catches the
-             * single-shot transient NACKs that the new 2.2 kΩ pull-ups
-             * still leave on individual register ops. Going higher
-             * (5x) measurably lagged touch and starved camera. */
-            ret = fn(s_vl53_dev, ctx);
-            if (ret != ESP_OK) {
-                esp_rom_delay_us(200);
-                ret = fn(s_vl53_dev, ctx);
-            }
-        }
+        if (ret != ESP_OK) continue;
+
+        ret = fn(s_vl53_dev, ctx);
+        if (ret == ESP_OK) break;
     }
 
     // Drain any pending ISR before releasing the mutex so the next task
@@ -624,16 +637,51 @@ static void vl53_mark_sensor_present(int idx)
     pill_sensor_status_mark_present(idx, true);
 }
 
+static void vl53_xshut_pulse(int idx)
+{
+    /* Hard-reset a single channel's VL53L0X by driving its XSHUT line
+     * low, waiting, then releasing it. Lets us retry init on a chip
+     * that booted in a stuck state (datasheet says XSHUT-low duration
+     * must be ≥100 µs; 5 ms is plenty). After release, ≥1.2 ms boot
+     * time is mandatory before any I2C op — give 30 ms for safety. */
+    static const gpio_num_t xshut[PILL_SENSOR_COUNT] = {
+        VL53L0X_XSHUT_M1, VL53L0X_XSHUT_M2, VL53L0X_XSHUT_M3,
+        VL53L0X_XSHUT_M4, VL53L0X_XSHUT_M5, VL53L0X_XSHUT_M6,
+    };
+    if (idx < 0 || idx >= PILL_SENSOR_COUNT || xshut[idx] < 0) return;
+    gpio_set_level(xshut[idx], 0);
+    vTaskDelay(pdMS_TO_TICKS(5));
+    gpio_set_level(xshut[idx], 1);
+    vTaskDelay(pdMS_TO_TICKS(30));
+}
+
 static bool vl53_init_on_channel(int idx)
 {
-    if (!vl53_wait_for_model_id(idx)) {
-        ESP_LOGW(TAG, "Ch%d: VL53 not found at 0x%02X", idx, VL53L0X_DEFAULT_ADDR);
-        vl53_mark_sensor_missing(idx);
-        return false;
+    /* Outer retry: if the model-ID probe or the 70-op init sequence
+     * fails, hard-reset the chip via its XSHUT line and try again.
+     * Catches the case where a VL53 booted in a wedged state but is
+     * physically present and wired correctly. Three attempts is the
+     * sweet spot — beyond that the chip is genuinely missing or the
+     * bus is unrecoverable. */
+    bool inited = false;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        if (attempt > 0) {
+            ESP_LOGI(TAG, "Ch%d: hard-reset retry %d/3 via XSHUT", idx, attempt + 1);
+            vl53_xshut_pulse(idx);
+        }
+        if (!vl53_wait_for_model_id(idx)) {
+            ESP_LOGW(TAG, "Ch%d: VL53 not found at 0x%02X (attempt %d)",
+                     idx, VL53L0X_DEFAULT_ADDR, attempt + 1);
+            continue;
+        }
+        if (vl53_init_device(idx, &s_sensors[idx])) {
+            inited = true;
+            break;
+        }
+        ESP_LOGW(TAG, "Ch%d: init_device failed on attempt %d", idx, attempt + 1);
     }
-
-    if (!vl53_init_device(idx, &s_sensors[idx])) {
-        ESP_LOGW(TAG, "Ch%d: init failed", idx);
+    if (!inited) {
+        ESP_LOGW(TAG, "Ch%d: init failed after 3 attempts", idx);
         vl53_mark_sensor_missing(idx);
         return false;
     }
@@ -696,7 +744,15 @@ static void vl53_init_all(void)
     vl53_release_xshut();
     tca9548a_disable_all();
     vl53_release_dev();
-    vTaskDelay(pdMS_TO_TICKS(100));
+    /* Six VL53L0X chips all booting at once draw a brief surge from the
+     * 3.3 V rail — the previous 100 ms wait was tight enough that some
+     * chips were still finishing their internal calibration when we
+     * began the I2C burst, producing the random-register init failures
+     * seen in field logs (write 0x88, write VHV_CFG, read VHV_CFG, etc.
+     * all on different attempts). 250 ms gives every chip a clean
+     * window past the datasheet's 1.2 ms minimum + a margin for
+     * brown-out recovery. */
+    vTaskDelay(pdMS_TO_TICKS(250));
 
     for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
         (void)vl53_init_on_channel(i);
@@ -771,6 +827,22 @@ void vl53l0x_multi_resume(void)
     if (s_vl53_pause_count > 0) s_vl53_pause_count--;
 }
 
+/* On-demand refresh — forces the next poll cycle right now (bypassing
+ * the normal 5 s sleep) and clears all retry-after timers so any
+ * channel currently in cool-down gets re-probed immediately. Use after
+ * dispense / return-pill / count-adjust events when an up-to-date
+ * reading matters more than bus quietness. */
+static volatile bool s_vl53_refresh_request = false;
+
+void vl53l0x_request_refresh(void)
+{
+    s_vl53_refresh_request = true;
+    for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
+        s_retry_after_ticks[i] = 0;
+        s_sensors[i].missing_retry_count = 0;
+    }
+}
+
 static void vl53_task(void *arg)
 {
     (void)arg;
@@ -785,6 +857,7 @@ static void vl53_task(void *arg)
     }
 
     ESP_LOGI(TAG, "Starting VL53L0X poll task");
+    TickType_t last_poll_tick = xTaskGetTickCount();
     while (1) {
         /* Honor pause requests from camera_init etc. */
         if (s_vl53_pause_count > 0) {

@@ -456,6 +456,10 @@ static void dispenser_clear_busy(void)
     taskEXIT_CRITICAL(&s_dispense_state_mux);
     if (was_busy) {
         vl53l0x_multi_resume();
+        /* Force a fresh VL53 read right now so the cartridge level on
+         * web/Telegram reflects the post-dispense state without waiting
+         * for the next 5 s polling cycle. */
+        vl53l0x_request_refresh();
     }
 }
 
@@ -822,17 +826,20 @@ static void execute_dispense(int slot_idx)
         }
 
         // Continuous IR polling: from servo work command through home
-        // and 2 s past home. pcf8574_read takes ~3-5 ms via I2C (the
-        // natural pacing); we add a tick-level vTaskDelay every 8
-        // reads so the UI/touch task on the same I2C bus gets clear
-        // shots and the screen doesn't freeze mid-dispense.
+        // and 2 s past home. pcf8574_read takes ~3-5 ms via I2C; we
+        // yield (vTaskDelay 1 tick) on EVERY iteration so the UI/touch
+        // task on the same I2C bus gets fair access. Earlier we yielded
+        // only every 8 reads, which held the bus for ~30-40 ms at a
+        // stretch and froze the screen during the 7.5 s IR window
+        // (visible during return-pill / scheduled-dispense). Yielding
+        // every read still gives ~100 Hz IR sampling — well above the
+        // ~20 Hz needed to catch a falling pill (~50 ms beam-break).
         const uint32_t WORK_MS  = 1500;
         const uint32_t HOME_MS  = 4000;
         const uint32_t POST_MS  = 2000;
         uint32_t loop_start = esp_log_timestamp();
         pca9685_go_work(i);
         bool home_issued = false;
-        int read_count = 0;
         while (1) {
             uint32_t elapsed = esp_log_timestamp() - loop_start;
             if (!home_issued && elapsed >= WORK_MS) {
@@ -851,7 +858,7 @@ static void execute_dispense(int slot_idx)
                     pill_detected = true;
                 }
             }
-            if ((++read_count % 8) == 0) vTaskDelay(1);
+            vTaskDelay(1);
         }
 
         if (!pill_detected) {
@@ -1324,15 +1331,36 @@ static void manual_dispense_task(void *arg) {
         bool post_clear = true;
 
         // Unified continuous polling: servo work → home → 2s post.
-        // Light vTaskDelay(1) every 8 reads keeps UI/touch task fed
-        // on the shared I2C bus so the screen doesn't freeze.
+        // Yield 1 tick after EVERY pcf8574_read so the touch/UI task
+        // on the shared I²C bus isn't starved during the 7.5 s IR
+        // window. Earlier we batched yields every 8 reads, but
+        // pcf8574_read holds g_i2c_mutex for ~3-5 ms, so 8 back-to-back
+        // reads kept the bus busy for ~30-40 ms — long enough to
+        // freeze the screen during return-pill (manual_dispense_task).
         const uint32_t POST_HOME_EXTRA_MS = 2000;
+        // Servo cycle for the manual / return-pill path. Log the WORK
+        // command result loudly — if pca9685_go_work fails (I²C bus
+        // wedged, PCA9685 not initialized) the servo never moves and
+        // every subsequent IR poll just sees an empty chute. Earlier
+        // we waited 7.5 s before reporting the failure, which made it
+        // look like the firmware was hung when really the servo had
+        // never been driven. Bail immediately on error.
+        ESP_LOGI(TAG, "  → servo WORK med%d (home=%d work=%d)",
+                 m_idx + 1,
+                 g_servo[m_idx].home_angle, g_servo[m_idx].work_angle);
         esp_err_t err1 = pca9685_go_work(m_idx);
+        if (err1 != ESP_OK) {
+            ESP_LOGE(TAG, "  ✗ pca9685_go_work(med%d) failed: %s — aborting cycle",
+                     m_idx + 1, esp_err_to_name(err1));
+        }
         uint32_t loop_start = esp_log_timestamp();
         esp_err_t err2 = ESP_OK;
         bool home_issued = false;
-        int read_count = 0;
-        if (ir_present) {
+        if (err1 != ESP_OK) {
+            // Servo never moved — skip the IR window entirely. Falls
+            // through to the err1 check below which logs + bails.
+            pill_detected = false;
+        } else if (ir_present) {
             while (1) {
                 uint32_t elapsed = esp_log_timestamp() - loop_start;
                 if (!home_issued && elapsed >= IR_WORK_WINDOW_MS) {
@@ -1356,7 +1384,7 @@ static void manual_dispense_task(void *arg) {
                 } else {
                     fail_reads++;
                 }
-                if ((++read_count % 8) == 0) vTaskDelay(1);
+                vTaskDelay(1);
             }
             // Post-home clear-check: do we still see a pill jammed in beam?
             if ((ir_last & (1 << m_idx)) == 0) post_clear = false;

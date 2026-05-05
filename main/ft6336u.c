@@ -67,13 +67,26 @@ esp_err_t ft6336u_init(void)
     // ft6336u_read_touch() applies sanity checks on the touch data
     // (touches count must be 0-2, coords in range) so genuine garbage
     // can't synthesise phantom presses.
-    if (i2c_manager_ping(ADDR_FT6336U) == ESP_OK) {
-        ESP_LOGW(TAG, "Touch chip-id check failed but I2C address ACKs — "
-                       "enabling touch in fallback mode");
-        s_touch_initialized = true;
-        return ESP_OK;
+    //
+    // Multi-attempt ping — the bus may be momentarily wedged from the
+    // earlier retry burst. Try 4× with 200 ms gap so a single transient
+    // glitch doesn't permanently disable touch (which leaves the screen
+    // unresponsive until next reboot). Touch reads have their own
+    // periodic re-init via the cheap-probe path in ft6336u_read_touch
+    // so even if this still fails the chip can come back online later.
+    for (int p = 0; p < 4; ++p) {
+        if (i2c_manager_ping(ADDR_FT6336U) == ESP_OK) {
+            ESP_LOGW(TAG, "Touch chip-id check failed but I2C address ACKs "
+                           "(ping attempt %d) — enabling touch in fallback mode",
+                     p + 1);
+            s_touch_initialized = true;
+            return ESP_OK;
+        }
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
-    ESP_LOGE(TAG, "Touch controller not responding on I2C — disabling touch");
+    ESP_LOGW(TAG, "Touch controller did not ACK after 4 ping attempts — "
+                   "starting in disabled state; ft6336u_read_touch() will "
+                   "auto-recover when the chip wakes up");
     return ESP_ERR_NOT_FOUND;
 }
 
@@ -164,26 +177,54 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
         new_y = 320 - raw_x;
         if (new_x > 480) new_x = 480;
         if (new_y > 320) new_y = 320;
-        // Coord-sanity: FT6336U fallback mode sometimes spits 0,0 or
-        // wild-out-of-range values that pass the touches==1 check but
-        // are not real presses. Treat (0,0) and edge-clipped values
-        // alone (without nearby prior presses) as noise.
         if (new_x == 0 && new_y == 0) raw_press = false;
     }
+    /* Reject any "touches" count above 2 — FT6336U hardware max is 2,
+     * so 3-15 means corrupted register read = phantom. */
+    if (touches > 2) raw_press = false;
 
-    // PRESS_DEBOUNCE = 2: tap registers after 2 consecutive samples
-    // report touched=true. At idle 50 Hz cache that's ~40 ms minimum
-    // hold — short enough to feel responsive (well below human tap
-    // duration ~80-150 ms) but rejects single-sample electrical noise.
-    // Started at 3 (60 ms) after phantom-touch reports, but real taps
-    // were missing on quick presses, so settled on 2.
-    // RELEASE_DEBOUNCE = 1: lift registers immediately for snappy feel.
+    /* Boot-time touch mute. The first 3 seconds after boot the FT6336U
+     * fallback mode often spits one or two phantom presses (visible as
+     * the standby screen jumping straight to the menu before the user
+     * touches anything). Suppress all touches during this window. */
+    static uint32_t s_boot_start_ms = 0;
+    if (s_boot_start_ms == 0) s_boot_start_ms = now;
+    if ((now - s_boot_start_ms) < 3000) {
+        raw_press = false;
+    }
+
+    /* PRESS_DEBOUNCE = 2 (40 ms hold) + LOOSE coord-stability check.
+     *   - Single random spike → press_streak resets, no trigger
+     *   - Two random spikes >150 px apart → restart streak each time
+     *   - Real tap (drift <30 px) → streak builds normally
+     * 150 px tolerance is loose enough that real swipes/drags still
+     * register (we mostly want to reject teleports, not micro-drift). */
     static int press_streak = 0;
     static int release_streak = 0;
+    static uint16_t s_streak_x = 0, s_streak_y = 0;
     const int PRESS_DEBOUNCE = 2;
     const int RELEASE_DEBOUNCE = 1;
+    const int COORD_STABILITY_PX = 150;
     if (raw_press) {
-        press_streak++;
+        if (press_streak == 0) {
+            s_streak_x = new_x;
+            s_streak_y = new_y;
+            press_streak = 1;
+        } else {
+            int dx = (int)new_x - (int)s_streak_x;
+            int dy = (int)new_y - (int)s_streak_y;
+            if (dx < 0) dx = -dx;
+            if (dy < 0) dy = -dy;
+            if (dx <= COORD_STABILITY_PX && dy <= COORD_STABILITY_PX) {
+                press_streak++;
+                s_streak_x = new_x;
+                s_streak_y = new_y;
+            } else {
+                press_streak = 1;
+                s_streak_x = new_x;
+                s_streak_y = new_y;
+            }
+        }
         release_streak = 0;
     } else {
         release_streak++;

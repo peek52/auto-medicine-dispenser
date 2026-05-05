@@ -988,9 +988,9 @@ static void ui_standby_render_modal(uint32_t now)
     char hhmm[6] = "--:--";
     char ss[3] = "--";
     if (strlen(t_str) >= 8) {
-        strncpy(hhmm, t_str, 5);
+        memcpy(hhmm, t_str, 5);
         hhmm[5] = '\0';
-        strncpy(ss, t_str + 6, 2);
+        memcpy(ss, t_str + 6, 2);
         ss[2] = '\0';
     }
 
@@ -1168,20 +1168,20 @@ static void ui_standby_render_modal(uint32_t now)
     if (s_popup_state == 4) {
         if (s_today_schedule_popup_drawn) return;
 
-        ESP_LOGI("popup4", "enter render");
+        (void)0; // ESP_LOGI("popup4", "enter render");
         int now_minutes = standby_time_to_minutes(hhmm);
-        ESP_LOGI("popup4", "time_to_min OK now=%d", now_minutes);
+        (void)0; // ESP_LOGI("popup4", "time_to_min OK now=%d", now_minutes);
 
         uint8_t missed_mask = dispenser_get_missed_slots();
         int missed_count = 0;
         for (int i = 0; i < 7; i++) {
             if (missed_mask & (1 << i)) missed_count++;
         }
-        ESP_LOGI("popup4", "missed_mask OK %d", missed_count);
+        (void)0; // ESP_LOGI("popup4", "missed_mask OK %d", missed_count);
 
         int all_slots[7] = {0};
         int count = standby_collect_today_schedule_slots(all_slots, 7);
-        ESP_LOGI("popup4", "collect_slots OK count=%d", count);
+        (void)0; // ESP_LOGI("popup4", "collect_slots OK count=%d", count);
         s_schedule_visible_count = 0;
         for (int i = 0; i < count; i++) {
             if (s_show_only_missed) {
@@ -1193,17 +1193,17 @@ static void ui_standby_render_modal(uint32_t now)
             }
         }
 
-        ESP_LOGI("popup4", "frame fill start");
+        (void)0; // ESP_LOGI("popup4", "frame fill start");
         fill_round_rect_frame(kSchedulePopupX, kSchedulePopupY, kSchedulePopupW, kSchedulePopupH, 16, THEME_PANEL, 0xFFFF);
-        ESP_LOGI("popup4", "frame fill done");
+        (void)0; // ESP_LOGI("popup4", "frame fill done");
         fill_round_rect(kScheduleCloseX, kScheduleCloseY, kScheduleCloseW, kScheduleCloseH, 8, 0xFFFF);
         draw_string_centered(kScheduleCloseX + (kScheduleCloseW / 2), kScheduleCloseY + 23, "X", THEME_PANEL, 0xFFFF, &FreeSans12pt7b);
-        ESP_LOGI("popup4", "header done");
+        (void)0; // ESP_LOGI("popup4", "header done");
 
         if (g_ui_language == UI_LANG_TH) {
-            ESP_LOGI("popup4", "TH render start");
+            (void)0; // ESP_LOGI("popup4", "TH render start");
             draw_utf8_centered_line_scaled(LCD_W / 2, 42, s_show_only_missed ? "มื้อที่พลาดไป" : "ตารางยาวันนี้", 0xFFFF, THEME_PANEL, 26);
-            ESP_LOGI("popup4", "TH title done");
+            (void)0; // ESP_LOGI("popup4", "TH title done");
             
             char toggle_str[64];
             if (s_show_only_missed) {
@@ -1241,17 +1241,17 @@ static void ui_standby_render_modal(uint32_t now)
                 draw_string_centered(240, 164, s_show_only_missed ? "No missed doses today" : "No dispensing schedule for today", THEME_TXT_MUTED, THEME_PANEL, &FreeSans12pt7b);
             }
         } else {
-            ESP_LOGI("popup4", "drawing %d rows", s_schedule_visible_count);
+            (void)0; // ESP_LOGI("popup4", "drawing %d rows", s_schedule_visible_count);
             for (int i = 0; i < s_schedule_visible_count; ++i) {
-                ESP_LOGI("popup4", "row %d slot=%d start", i, s_schedule_visible_slots[i]);
+                (void)0; // ESP_LOGI("popup4", "row %d slot=%d start", i, s_schedule_visible_slots[i]);
                 draw_schedule_summary_row(kScheduleRowX, kScheduleRowY + (i * kScheduleRowH),
                                           kScheduleRowW, kScheduleRowH,
                                           s_schedule_visible_slots[i], now_minutes, g_ui_language);
-                ESP_LOGI("popup4", "row %d done", i);
+                (void)0; // ESP_LOGI("popup4", "row %d done", i);
             }
         }
 
-        ESP_LOGI("popup4", "all done");
+        (void)0; // ESP_LOGI("popup4", "all done");
         s_today_schedule_popup_drawn = true;
         return;
     }

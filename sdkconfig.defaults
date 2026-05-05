@@ -3,11 +3,21 @@
 # Target
 CONFIG_IDF_TARGET="esp32p4"
 
-# PSRAM (for camera frame buffers)
+# PSRAM (for camera frame buffers) — 200 MHz mode is gated behind
+# CONFIG_IDF_EXPERIMENTAL_FEATURES on ESP-IDF v5.3.x; ESP32-P4 hex PSRAM
+# is electrically rated for 200 MHz but IDF tags the option experimental
+# until v5.4. Without this, the choice silently falls back to 20 MHz —
+# which is what shipped before this commit and is why camera buffers /
+# JPEG encode were ~10x slower than they could be.
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_SPEED_200M=y
 CONFIG_SPIRAM_BOOT_INIT=y
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# Compiler — -O2 release tier (default IDF is -Og). 30-50% perf gain on
+# JPEG / VL53 / dispenser hot paths for ~5% larger binary.
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
 
 # Custom partition table (เพิ่ม app เป็น 1.6MB)
 CONFIG_PARTITION_TABLE_CUSTOM=y

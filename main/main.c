@@ -8,6 +8,8 @@
 #include "esp_partition.h"
 #include "esp_netif.h"
 #include "esp_event.h"
+#include "esp_task_wdt.h"
+#include "esp_rom_sys.h"
 
 #include "config.h"
 #include "i2c_manager.h"
@@ -75,6 +77,32 @@ const char *reset_reason_str(esp_reset_reason_t reason)
 }
 
 /* â”€â”€ Interactive CLI Task â”€â”€ */
+/* Scheduler liveness canary — see app_main for rationale. Subscribes to
+ * TWDT (configured 30 s in sdkconfig). If the FreeRTOS scheduler stalls
+ * because every higher-priority task is blocked on VFS lock contention,
+ * this canary stops feeding the watchdog → ESP-IDF panic handler reboots
+ * the device → user gets back to a working screen automatically. Logs
+ * via esp_rom_printf so even with VFS jammed we still see the tick. */
+void liveness_canary_task(void *arg)
+{
+    (void)arg;
+    if (esp_task_wdt_add(NULL) != ESP_OK) {
+        ESP_LOGE("liveness", "TWDT subscribe failed");
+        vTaskDelete(NULL);
+        return;
+    }
+    esp_rom_printf("[LIVENESS] canary armed (TWDT auto-reboot if stuck)\n");
+    uint32_t tick = 0;
+    while (1) {
+        esp_task_wdt_reset();
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        if ((++tick % 30) == 0) {
+            esp_rom_printf("[LIVENESS] tick=%u uptime~%us\n",
+                           (unsigned)tick, (unsigned)(tick * 2));
+        }
+    }
+}
+
 static void cli_task(void *arg) {
     char line[128];
     int pos = 0;
@@ -723,10 +751,12 @@ void app_main(void)
     // VL53 init must not sit in deferred_init_task — that path is gated on
     // wifi_sta_init() which blocks waiting for the ESP-Hosted slave chip.
     // Sensors only need I2C + TCA, both ready here.
+    bool tca_was_up_at_boot = false;
     if (g_safe_mode) {
         ESP_LOGW(TAG, "Safe mode: skipping VL53 sensor init "
                       "(previous boot ended in PANIC)");
     } else if (tca9548a_is_present()) {
+        tca_was_up_at_boot = true;
         vl53l0x_load_calibration_from_nvs();
         vl53l0x_multi_bootstrap();
         vl53l0x_multi_start();
@@ -756,7 +786,14 @@ void app_main(void)
         bool *missing = (bool *)malloc(3 * sizeof(bool));
         if (missing) {
 #if ENABLE_VL53_PILL_SENSORS
-            missing[0] = !tca9548a_is_present();
+            // Use the cached "was up at boot" flag instead of re-pinging
+            // here. The VL53 init storm just before this point leaves the
+            // TCA9548A with a channel still selected and a fresh ping can
+            // NACK transiently — which then triggered late_detect_task to
+            // re-bootstrap VL53 ~13 s later, monopolising the I2C bus for
+            // ~10 s and freezing touch / servo / camera SCCB during that
+            // window. If TCA worked at boot we already know it's there.
+            missing[0] = !tca_was_up_at_boot;
 #else
             missing[0] = false;
 #endif
@@ -835,6 +872,17 @@ void app_main(void)
     } else {
         display_clock_start_task();
     }
+    /* Liveness canary — feeds TWDT every 2 s. If the scheduler stalls
+     * (silent UART deadlock from VFS lock contention has been chronic on
+     * this firmware), the canary stops feeding and TWDT panic-reboots
+     * within 30 s, instead of the screen staying frozen forever until
+     * the user power-cycles. Lowest possible priority so any real work
+     * still preempts it. */
+    extern void liveness_canary_task(void *arg);
+    if (xTaskCreate(liveness_canary_task, "liveness", 4096, NULL, 1, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create liveness canary task");
+    }
+
     ESP_LOGI(TAG, "app_main: init complete, entering keepalive loop");
 
     // 11. Main loop — periodic heap/uptime log to catch leaks at a glance.
