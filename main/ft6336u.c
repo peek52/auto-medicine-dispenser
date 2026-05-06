@@ -15,6 +15,13 @@ static const char *TAG = "FT6336U";
 // phantom presses (UI moving on its own — observed: "จอกดเอง").
 static bool s_touch_initialized = false;
 
+/* Boot-mute timer — first 3 seconds of touch reads are suppressed so
+ * the FT6336U fallback mode (chip-id NACK) doesn't fire phantom
+ * presses while its register state stabilises. File-static so the
+ * recovery path in ft6336u_read_touch() can re-arm it (set back to 0)
+ * after a CTP_RST hard-reset. */
+static uint32_t s_boot_start_ms = 0;
+
 esp_err_t ft6336u_init(void)
 {
     if (CTP_RST_PIN >= 0) {
@@ -152,6 +159,16 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
     }
     s_last_read_time = now;
 
+    /* Auto-recover if the I2C bus wedges. Without this, a single SDA
+     * glitch (e.g. servo current spike during dispense) leaves touch
+     * dead until the user power-cycles the board. We count consecutive
+     * read failures; after 8 in a row (~160 ms with 20 ms cache), call
+     * i2c_manager_recover_bus() to bit-bang SDA free + recreate the
+     * master bus. 30 s cool-down between recovery attempts so a truly
+     * dead bus doesn't loop forever. */
+    static uint32_t s_consec_fails = 0;
+    static uint32_t s_last_recover_ms = 0;
+
     uint8_t data[6];
     esp_err_t ret = i2c_manager_read_reg(ADDR_FT6336U, 0x02, data, 6);
     if (ret != ESP_OK) {
@@ -159,8 +176,43 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
         // 0 is the "no recent fail" sentinel, so guard against the
         // ~49.7 day tick wrap landing exactly on 0.
         s_last_fail_time = (now == 0) ? 1u : now;
+
+        s_consec_fails++;
+        if (s_consec_fails >= 8 && (now - s_last_recover_ms) > 2000) {
+            ESP_LOGW(TAG, "Touch read failed %lu times in a row — "
+                          "attempting bus + CTP_RST recovery",
+                     (unsigned long)s_consec_fails);
+            /* Toggle CTP_RST GPIO to hard-reset the FT6336U chip itself,
+             * then bit-bang SDA + recreate the I2C master bus. Bus-only
+             * recovery wasn't enough — once the chip is wedged at the
+             * register level it ignores I2C reads even on a clean bus.
+             * Cool-down 2 s (was 30 s) so the user doesn't have to wait
+             * half a minute with a frozen screen. Log spam is acceptable
+             * compared to the freeze. */
+            if (CTP_RST_PIN >= 0) {
+                gpio_set_level((gpio_num_t)CTP_RST_PIN, 0);
+                vTaskDelay(pdMS_TO_TICKS(20));
+                gpio_set_level((gpio_num_t)CTP_RST_PIN, 1);
+                vTaskDelay(pdMS_TO_TICKS(50));
+            }
+            esp_err_t r = i2c_manager_recover_bus();
+            ESP_LOGW(TAG, "Bus recovery -> %s", esp_err_to_name(r));
+            s_last_recover_ms = now;
+            s_consec_fails = 0;
+            /* Force touch re-init on next call so the chip resyncs
+             * after the bus recovery cycle. */
+            s_touch_initialized = false;
+            /* Re-arm the 3-second boot-mute so the freshly-reset chip
+             * doesn't fire phantom presses while it stabilises. Without
+             * this, the chip comes back in fallback mode and the
+             * register noise during stabilisation gets interpreted as
+             * a real tap (user reported "จอกดเอง" right after recovery). */
+            s_boot_start_ms = 0;
+        }
         return ret;
     }
+    /* Successful read — clear the failure streak. */
+    s_consec_fails = 0;
     s_last_fail_time = 0;
 
     uint8_t touches = data[0] & 0x0F;
@@ -186,8 +238,9 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
     /* Boot-time touch mute. The first 3 seconds after boot the FT6336U
      * fallback mode often spits one or two phantom presses (visible as
      * the standby screen jumping straight to the menu before the user
-     * touches anything). Suppress all touches during this window. */
-    static uint32_t s_boot_start_ms = 0;
+     * touches anything). Suppress all touches during this window.
+     * s_boot_start_ms lives at file scope (above) so the CTP_RST
+     * recovery path can re-arm the mute. */
     if (s_boot_start_ms == 0) s_boot_start_ms = now;
     if ((now - s_boot_start_ms) < 3000) {
         raw_press = false;

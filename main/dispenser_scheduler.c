@@ -837,6 +837,16 @@ static void execute_dispense(int slot_idx)
         const uint32_t WORK_MS  = 1500;
         const uint32_t HOME_MS  = 4000;
         const uint32_t POST_MS  = 2000;
+        /* Servo PWM at 50 Hz creates brief current spikes that couple
+         * onto the PCF8574 input pins (even with star-ground + decoupling
+         * caps). A single LOW read in the middle of a spike was being
+         * counted as "pill detected" → false positives. Require N
+         * consecutive LOW reads on the same bit before declaring a pill,
+         * which rejects single-sample glitches but still catches a real
+         * pill drop (~50 ms beam-break = ~5 reads at 100 Hz, well above
+         * the threshold). */
+        const int IR_DEBOUNCE_LOW_SAMPLES = 3;
+        int consec_low = 0;
         uint32_t loop_start = esp_log_timestamp();
         pca9685_go_work(i);
         bool home_issued = false;
@@ -851,11 +861,15 @@ static void execute_dispense(int slot_idx)
             uint8_t ir_val = 0xFF;
             if (pcf8574_read(&ir_val) == ESP_OK) {
                 if ((ir_val & (1 << i)) == 0) {
-                    if (!pill_detected) {
-                        ESP_LOGI(TAG, "      >> IR sensor %d DETECTED pill at %lu ms",
-                                 i + 1, (unsigned long)elapsed);
+                    if (++consec_low >= IR_DEBOUNCE_LOW_SAMPLES) {
+                        if (!pill_detected) {
+                            ESP_LOGI(TAG, "      >> IR sensor %d DETECTED pill at %lu ms",
+                                     i + 1, (unsigned long)elapsed);
+                        }
+                        pill_detected = true;
                     }
-                    pill_detected = true;
+                } else {
+                    consec_low = 0;
                 }
             }
             vTaskDelay(1);
@@ -1284,11 +1298,12 @@ static void manual_dispense_task(void *arg) {
     }
 
     // Debounce: pill must be seen LOW for at least this many consecutive
-    // polls to count. Reduced 3→1 after users reported missed pills:
-    // small/fast pills passed the IR beam in <30 ms (debounce window) so
-    // ≥3 consecutive low reads were rare. PCF8574 over I2C is digital
-    // and noise-free in practice — a single LOW read is reliable.
-    const int IR_LOW_DEBOUNCE_SAMPLES = 1;
+    // polls to count. Bumped 1 → 3 after field reports of phantom pill
+    // detections during return-pill (servo PWM 50 Hz coupling onto
+    // PCF8574 input pins gives single-shot LOW spikes mid-poll). 3
+    // consecutive LOW reads at ~100 Hz = 30 ms minimum dwell — still
+    // catches real pills (beam-break ≥50 ms) but rejects glitches.
+    const int IR_LOW_DEBOUNCE_SAMPLES = 3;
     // Settle time after servo returns home — let any pill in flight finish
     // falling past IR. Then sample the beam: if it's clear, the cartridge
     // is now ready for the next attempt; if it's STILL blocked, something

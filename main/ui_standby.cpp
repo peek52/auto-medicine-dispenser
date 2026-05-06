@@ -1408,7 +1408,15 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
         return;
     }
 
-    if (tx_n < 150 && ty_n >= 260) {
+    /* Foot card (network status / IP) tap zone — covers the entire card
+     * so a tap anywhere on the network area opens the WiFi status page.
+     * The previous tx_n<150 zone missed the right half of the IP text
+     * (e.g. "IP: 192.168.1.68" extends to ~x=248), so a finger landing
+     * on the digits silently fell through to the menu page instead of
+     * opening WiFi status. The schedule tap zone above ends at y<=256
+     * and the foot card starts at y=258, so widening to y>=256 doesn't
+     * collide. */
+    if (tx_n >= 16 && tx_n <= 320 && ty_n >= 256) {
         if (strcmp(s_ip, "0.0.0.0") != 0) pending_page = PAGE_WIFI_STATUS;
         else pending_page = PAGE_WIFI_SCAN;
     } else if (tx_n >= 16 && tx_n <= (LCD_W - 16) && ty_n >= 174 && ty_n <= 256) {

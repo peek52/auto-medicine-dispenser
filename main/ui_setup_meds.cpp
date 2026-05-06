@@ -248,8 +248,13 @@ static void draw_slot_row_group(int16_t x, int16_t y, int16_t w, int16_t h,
         draw_string_centered(x + (label_w / 2), y + 23, meal_en, SB_COLOR_PRIMARY, SB_COLOR_CARD, &FreeSans9pt7b);
     }
 
-    draw_slot_choice_button(before_x, btn_y, btn_w, btn_h, before_active, before_active ? s_blink_phase : true, "Before", "ก่อน");
-    draw_slot_choice_button(after_x,  btn_y, btn_w, btn_h, after_active,  after_active  ? s_blink_phase : true, "After",  "หลัง");
+    /* Always pass blink_lit=true so selected slots render in bright
+     * THEME_OK. The s_blink_phase animation was removed earlier (left
+     * as a static `false` constant) — passing it here meant active
+     * slots rendered in the dim-green fallback color the whole time,
+     * which combined with partial-redraw overlap looked unstable. */
+    draw_slot_choice_button(before_x, btn_y, btn_w, btn_h, before_active, true, "Before", "ก่อน");
+    draw_slot_choice_button(after_x,  btn_y, btn_w, btn_h, after_active,  true, "After",  "หลัง");
 }
 
 static void draw_bedtime_slot_card(int16_t x, int16_t y, int16_t w, int16_t h, bool active)
@@ -567,12 +572,57 @@ void ui_setup_meds_detail_render(void)
                 strncpy(tp_prev_sh.med[med_idx].name, sh->med[med_idx].name, sizeof(tp_prev_sh.med[med_idx].name));
             }
 
-            if (sh->med[med_idx].slots != tp_prev_sh.med[med_idx].slots) {
-                // Skip the 458x122 fill — draw_slot_selector_panel repaints
-                // every row's own background, so wiping the whole area first
-                // just produced a perceptible black flash on every tap.
-                draw_slot_selector_panel(sh->med[med_idx].slots);
-                tp_prev_sh.med[med_idx].slots = sh->med[med_idx].slots;
+            /* Per-button partial redraw — smoother feel. Each bit that
+             * flips redraws ONLY its 88×24 px button (or the bedtime
+             * card). The label / row background are not touched, so the
+             * user sees the tapped button transition without any flash
+             * on adjacent buttons or labels. */
+            uint8_t cur_slots = sh->med[med_idx].slots;
+            uint8_t prev_slots = tp_prev_sh.med[med_idx].slots;
+            uint8_t diff = (uint8_t)(cur_slots ^ prev_slots);
+            if (diff) {
+                /* Layout constants (must match draw_slot_row_group). */
+                const int16_t row_x   = 16;
+                const int16_t label_w = 94;
+                const int16_t gap     = 8;
+                const int16_t btn_w   = 88;
+                const int16_t btn_h   = 24;
+                const int16_t row_h   = 34;
+                const int16_t row_gap = 6;
+                const int16_t start_y = 100;
+                const int16_t before_x = row_x + label_w + gap;       /* 118 */
+                const int16_t after_x  = before_x + btn_w + gap;      /* 214 */
+                const int16_t bed_x = 314, bed_w = 150;
+                const int16_t bed_h = (row_h * 3) + (row_gap * 2);
+
+                /* Per-meal redraw (only the buttons whose bit flipped). */
+                struct { uint8_t before_bit, after_bit; int16_t row_y;
+                         const char *en, *th; } meals[3] = {
+                    { 0x01, 0x02, start_y,                        "Before", "ก่อน" },
+                    { 0x04, 0x08, start_y + row_h + row_gap,      "Before", "ก่อน" },
+                    { 0x10, 0x20, start_y + 2*(row_h + row_gap),  "Before", "ก่อน" },
+                };
+                const char *after_labels[2] = { "After", "หลัง" };
+                for (int m = 0; m < 3; ++m) {
+                    int16_t btn_y = meals[m].row_y + 5;
+                    if (diff & meals[m].before_bit) {
+                        draw_slot_choice_button(before_x, btn_y, btn_w, btn_h,
+                                                (cur_slots & meals[m].before_bit) != 0,
+                                                true,
+                                                meals[m].en, meals[m].th);
+                    }
+                    if (diff & meals[m].after_bit) {
+                        draw_slot_choice_button(after_x, btn_y, btn_w, btn_h,
+                                                (cur_slots & meals[m].after_bit) != 0,
+                                                true,
+                                                after_labels[0], after_labels[1]);
+                    }
+                }
+                if (diff & 0x40) {
+                    draw_bedtime_slot_card(bed_x, start_y, bed_w, bed_h,
+                                           (cur_slots & 0x40) != 0);
+                }
+                tp_prev_sh.med[med_idx].slots = cur_slots;
             }
         } // Closed 'else' logic for Background Local Partial Updates!
 

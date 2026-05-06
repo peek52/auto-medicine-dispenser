@@ -19,6 +19,8 @@
 #include "jpeg_encoder.h"
 #include "config.h"
 #include "i2c_manager.h"
+#include "pill_sensor_status.h"  /* PILL_SENSOR_COUNT for VL53 XSHUT quiesce */
+#include "driver/gpio.h"          /* gpio_set_level for XSHUT toggle */
 #include "driver/ledc.h"
 #include "vl53l0x_multi.h"
 #include <string.h>
@@ -152,6 +154,21 @@ static bool IRAM_ATTR camera_trans_finished(esp_cam_ctlr_handle_t handle,
     return xHigherPriorityTaskWoken == pdTRUE;
 }
 
+/* One-shot helper task spawned by the capture task when MIPI-CSI
+ * frames stop arriving. Sleeps long enough for AVDD to fully drain,
+ * then calls camera_ensure_initialized() which re-runs the entire
+ * camera_init() flow (LDO acquire, SCCB detect, CSI ctlr setup,
+ * spawn a NEW camera_task). Self-deletes after firing. */
+void camera_auto_reinit_helper(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    ESP_LOGW(TAG, "Auto re-init starting (no user trigger needed)");
+    esp_err_t r = camera_ensure_initialized();
+    ESP_LOGW(TAG, "Auto re-init -> %s", esp_err_to_name(r));
+    vTaskDelete(NULL);
+}
+
 static void camera_task(void *arg) {
     int frame_num = 0;
     ESP_LOGI(TAG, "Camera capture task started (MJPEG mode)");
@@ -169,11 +186,66 @@ static void camera_task(void *arg) {
         return;
     }
 
+    /* Track consecutive frame timeouts so we can self-recover the
+     * MIPI-CSI subsystem when it gets stuck in a non-streaming state.
+     * Field test showed `Frame wait timeout` looping forever (200+ s)
+     * even though SCCB stream-on returned OK — only a full re-init
+     * cycle (AVDD power-cycle + SCCB re-init + CSI ctlr restart) frees
+     * it up. Without this auto-recovery, the user has to power-cycle
+     * the whole board to get a photo again. */
+    int consec_timeouts = 0;
+    uint32_t last_recovery_ms = 0;
     while (1) {
         if (xSemaphoreTake(frame_ready_sem, pdMS_TO_TICKS(1000)) != pdTRUE) {
-            ESP_LOGW(TAG, "Frame wait timeout, retrying...");
+            consec_timeouts++;
+            ESP_LOGW(TAG, "Frame wait timeout, retrying... (%d/10)",
+                     consec_timeouts);
+            uint32_t now_ms = esp_log_timestamp();
+            /* After 10 consecutive 1-second timeouts (~10 s of no
+             * frames), and at least 60 s since the last recovery
+             * attempt, fully tear down the camera + MIPI controller
+             * and re-init from scratch. The 60 s cool-down stops us
+             * from looping forever on a truly dead sensor. */
+            if (consec_timeouts >= 10 && (now_ms - last_recovery_ms) > 60000) {
+                ESP_LOGE(TAG, "Camera frames stuck for 10 s — "
+                              "performing full re-init");
+                last_recovery_ms = now_ms;
+                consec_timeouts = 0;
+
+                /* Stop & free the CSI controller. */
+                if (cam_handle) {
+                    (void)esp_cam_ctlr_stop(cam_handle);
+                    (void)esp_cam_ctlr_disable(cam_handle);
+                    (void)esp_cam_ctlr_del(cam_handle);
+                    cam_handle = NULL;
+                }
+
+                /* AVDD power-cycle so the OV5647 resets cleanly. */
+                if (ldo_mipi_phy) {
+                    (void)esp_ldo_release_channel(ldo_mipi_phy);
+                    ldo_mipi_phy = NULL;
+                }
+                vTaskDelay(pdMS_TO_TICKS(800));
+
+                /* Mark camera uninitialized so a fresh init runs. */
+                camera_mark_uninitialized();
+
+                ESP_LOGW(TAG, "Capture task exiting — auto re-init "
+                              "in 2 s");
+
+                /* Auto-trigger re-init in a one-shot helper task so the
+                 * user doesn't have to send /photo again to wake the
+                 * camera. Spawn the helper BEFORE we delete ourselves
+                 * so it's alive even after this task is gone. */
+                extern void camera_auto_reinit_helper(void *arg);
+                xTaskCreate(camera_auto_reinit_helper, "cam_reinit",
+                            4096, NULL, 4, NULL);
+                vTaskDelete(NULL);
+                return;
+            }
             continue;
         }
+        consec_timeouts = 0;
         frame_num++;
         int encode_idx = ready_buf_idx;
         if (encode_idx < 0 || encode_idx >= NUM_BUFFERS) continue;
@@ -270,10 +342,17 @@ esp_err_t camera_init(void) {
                  esp_err_to_name(rel));
     } else {
         ldo_mipi_phy = NULL;
-        vTaskDelay(pdMS_TO_TICKS(200));
+        /* AVDD off-time bumped 200 → 800 ms. Field test showed 200 ms
+         * sometimes wasn't enough for the OV5647 internal capacitors
+         * to drain — chip stayed in its previous register state and
+         * SCCB read of PID returned NACK on every retry. With 800 ms
+         * off-time the chip resets cleanly and PID reads succeed. */
+        vTaskDelay(pdMS_TO_TICKS(800));
         CAM_RETURN_ON_ERR(esp_ldo_acquire_channel(&ldo_config, &ldo_mipi_phy),
                           "Failed to re-acquire camera LDO after power cycle");
-        vTaskDelay(pdMS_TO_TICKS(50));
+        /* Power-on stabilisation extended 50 → 150 ms so the sensor's
+         * internal PLL has time to lock before XCLK + SCCB sequence. */
+        vTaskDelay(pdMS_TO_TICKS(150));
         ESP_LOGI(TAG, "Camera AVDD power-cycled cleanly");
     }
 
@@ -333,6 +412,27 @@ esp_err_t camera_init(void) {
     // master bus, then refetch the handle, gives a clean state for
     // the SCCB device handle that sccb_new_i2c_io will allocate.
     {
+        /* Quiesce all 6 VL53L0X chips before SCCB detect. Symptom seen
+         * in field logs (2026-05-06): when Ch3 init fails on all 3
+         * XSHUT-toggle attempts, the residual chip state on the shared
+         * I2C bus interferes with OV5647 PID readback (every retry of
+         * sccb_i2c_transmit_receive_reg_a16v8 fails). When Ch3 happens
+         * to init OK on first try, camera detect also passes — pure
+         * race. Driving every VL53 XSHUT LOW for 20 ms drops them off
+         * the bus so SCCB has a clean field. We don't restore XSHUT
+         * here; the existing vl53_poll_all retry-probe path will bring
+         * the sensors back online within the next 5 s poll cycle (or
+         * sooner via vl53l0x_request_refresh after dispense events). */
+        static const gpio_num_t kXshut[PILL_SENSOR_COUNT] = {
+            VL53L0X_XSHUT_M1, VL53L0X_XSHUT_M2, VL53L0X_XSHUT_M3,
+            VL53L0X_XSHUT_M4, VL53L0X_XSHUT_M5, VL53L0X_XSHUT_M6,
+        };
+        for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
+            if (kXshut[i] >= 0) gpio_set_level(kXshut[i], 0);
+        }
+        ESP_LOGI(TAG, "VL53 XSHUT lowered before SCCB (chips offline)");
+        vTaskDelay(pdMS_TO_TICKS(20));
+
         esp_err_t r = i2c_manager_recover_bus();
         if (r != ESP_OK) {
             ESP_LOGW(TAG, "i2c_manager_recover_bus before SCCB: %s",
@@ -376,7 +476,24 @@ esp_err_t camera_init(void) {
     int enable_flag = 1;
     esp_cam_sensor_format_t *cam_cur_fmt = NULL;
 
-    for (int attempt = 0; attempt < 8; ++attempt) {
+    /* Retry count bumped 8 → 16. Each SCCB attempt costs ~200 ms (ping
+     * + recovery), so 16 worst-case = ~3.2 s vs old 1.6 s — small price
+     * for a much higher chance of catching the OV5647 in a wakeable
+     * state. Mid-cycle (attempt 8) we redo the AVDD power-cycle in case
+     * the first one wasn't enough. */
+    for (int attempt = 0; attempt < 16; ++attempt) {
+        if (attempt == 8 && ldo_mipi_phy) {
+            /* Halfway through retries with no success — kick the camera
+             * with a second AVDD power-cycle. This catches the case
+             * where the first power-on landed in a brown-out window. */
+            ESP_LOGW(TAG, "Camera still not detected at attempt 8 — "
+                          "doing a second AVDD power-cycle");
+            (void)esp_ldo_release_channel(ldo_mipi_phy);
+            ldo_mipi_phy = NULL;
+            vTaskDelay(pdMS_TO_TICKS(800));
+            (void)esp_ldo_acquire_channel(&ldo_config, &ldo_mipi_phy);
+            vTaskDelay(pdMS_TO_TICKS(150));
+        }
         // 1) Tear down anything left from a prior attempt + recover bus.
         if (cam_config.sccb_handle) {
             (void)esp_sccb_del_i2c_io(cam_config.sccb_handle);
@@ -498,6 +615,24 @@ esp_err_t camera_init(void) {
         ret_strm = ESP_FAIL;
     }
 
+    /* Restore VL53 XSHUT all at once (no inter-chip delay). The
+     * staggered version (400 ms × 6) interfered with the OV5647
+     * MIPI-CSI lock window during the 2.4 s stagger period, causing
+     * "Frame wait timeout" continuously. Quick simultaneous restore
+     * (~tens of µs) gets the chips out of the critical window before
+     * MIPI tries to lock its first frame. The brief 6-chip inrush is
+     * within the 5 V 10 A PSU budget verified by the user. */
+    {
+        static const gpio_num_t kXshut[PILL_SENSOR_COUNT] = {
+            VL53L0X_XSHUT_M1, VL53L0X_XSHUT_M2, VL53L0X_XSHUT_M3,
+            VL53L0X_XSHUT_M4, VL53L0X_XSHUT_M5, VL53L0X_XSHUT_M6,
+        };
+        for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
+            if (kXshut[i] >= 0) gpio_set_level(kXshut[i], 1);
+        }
+        ESP_LOGI(TAG, "VL53 XSHUT restored after SCCB");
+    }
+
     if (!cam) {
         ESP_LOGE(TAG, "Failed to detect camera sensor after retries");
         return ESP_FAIL;
@@ -520,7 +655,14 @@ esp_err_t camera_init(void) {
         .ctlr_id                = 0,
         .h_res                  = CSI_HRES,
         .v_res                  = CSI_VRES,
-        .lane_bit_rate_mbps     = 200, // Reverted to 200 (400 caused timeout)
+        /* MIPI lane bit rate dropped 200 → 150 Mbps to give the
+         * controller more eye-time per bit. Field test showed
+         * stream-on succeeded but the CSI host couldn't lock onto
+         * frames at 200 Mbps even with healthy SCCB — lowering bit
+         * rate is the standard remedy for marginal CSI signal
+         * integrity. 150 Mbps × 2 lanes = 300 Mbps still gives ample
+         * bandwidth for 800×640 RAW8 @ 5 fps (~26 Mbps actual). */
+        .lane_bit_rate_mbps     = 150,
         .input_data_color_type  = CAM_CTLR_COLOR_RAW8,
         .output_data_color_type = CAM_CTLR_COLOR_YUV422,
         .data_lane_num          = 2,
@@ -574,6 +716,23 @@ static bool               s_lazy_init_done   = false;
 bool camera_is_initialized(void)
 {
     return s_lazy_init_done && s_lazy_init_result == ESP_OK;
+}
+
+/* Force the lazy-init machinery to re-run on the next photo / dispense
+ * event. Called from the capture task when MIPI-CSI gets stuck and we
+ * tear down the controller for a fresh start. Safe to call even if
+ * the mutex hasn't been created yet (boot path) — the next
+ * camera_ensure_initialized() call will see the cleared flag. */
+void camera_mark_uninitialized(void)
+{
+    if (s_lazy_init_mux) {
+        xSemaphoreTake(s_lazy_init_mux, portMAX_DELAY);
+    }
+    s_lazy_init_done = false;
+    s_lazy_init_result = ESP_FAIL;
+    if (s_lazy_init_mux) {
+        xSemaphoreGive(s_lazy_init_mux);
+    }
 }
 
 esp_err_t camera_ensure_initialized(void)

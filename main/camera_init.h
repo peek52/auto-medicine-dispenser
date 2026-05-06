@@ -19,6 +19,11 @@ esp_err_t camera_ensure_initialized(void);
 /** True if camera_init() succeeded at least once. */
 bool      camera_is_initialized(void);
 
+/** Reset lazy-init state so the next camera_ensure_initialized() re-runs
+ * camera_init() from scratch. Called by the capture task when MIPI-CSI
+ * frames stop arriving for ≥10 s — recovers without a board reboot. */
+void      camera_mark_uninitialized(void);
+
 // เปิด/ปิดการแสดง log ของแต่ละเฟรมภาพ (เพื่อลดความรกบน monitor)
 void camera_toggle_log(bool enable);
 esp_cam_sensor_device_t *camera_get_sensor(void);
