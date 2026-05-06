@@ -816,6 +816,13 @@ static void vl53_poll_all(void)
  * NACKs from accumulated bus noise. Set non-zero to pause; clear to resume. */
 static volatile int s_vl53_pause_count = 0;
 
+/* Set true while the polling task is actively in vl53_poll_all() — i.e.
+ * holding the I2C bus and TCA channel state. Cleared while waiting on
+ * the inter-poll delay or while observing pause. Lets camera_init wait
+ * for the task to actually quiesce instead of just hoping a fixed delay
+ * is long enough. */
+static volatile bool s_vl53_io_busy = false;
+
 void vl53l0x_multi_pause(void)
 {
     /* Atomic increment is fine — only set from non-ISR contexts. */
@@ -825,6 +832,22 @@ void vl53l0x_multi_pause(void)
 void vl53l0x_multi_resume(void)
 {
     if (s_vl53_pause_count > 0) s_vl53_pause_count--;
+}
+
+/* Block until the VL53 task observes the pause flag and is no longer in
+ * vl53_poll_all(), or until timeout_ms elapses. Caller must have already
+ * called vl53l0x_multi_pause(). Used by camera_init() to ensure the
+ * shared I2C bus is genuinely quiet before issuing the SCCB burst that
+ * detects + configures the OV5647. Without this, the camera SCCB writes
+ * race against in-flight VL53 register reads and the sensor PID NACKs
+ * (= "Camera attempt N failed" looping all 16 retries). */
+void vl53l0x_multi_wait_idle(uint32_t timeout_ms)
+{
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
+    while (s_vl53_io_busy) {
+        if (xTaskGetTickCount() >= deadline) return;
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
 }
 
 /* On-demand refresh — forces the next poll cycle right now (bypassing
@@ -861,10 +884,13 @@ static void vl53_task(void *arg)
     while (1) {
         /* Honor pause requests from camera_init etc. */
         if (s_vl53_pause_count > 0) {
+            s_vl53_io_busy = false;  /* tell waiters we've parked */
             vTaskDelay(pdMS_TO_TICKS(200));
             continue;
         }
+        s_vl53_io_busy = true;
         vl53_poll_all();
+        s_vl53_io_busy = false;
 
         const netpie_shadow_t *shadow = netpie_get_shadow();
         if (shadow && shadow->loaded) {

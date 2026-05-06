@@ -29,8 +29,27 @@ CONFIG_MIPI_CSI_ISR_IRAM_SAFE=n
 
 # Camera Sensor Feature
 CONFIG_CAMERA_OV5647=y
-CONFIG_CAMERA_OV5647_MIPI_RAW8_800X800_50FPS=y
+# Sensor format MUST match CSI_HRES/VRES in main/config.h (800×640).
+# Earlier the 800×800 format was selected but CSI receiver is configured
+# for 800×640 → frame size mismatch → MIPI never locks → "Frame wait
+# timeout" forever (the actual root cause behind weeks of camera issues).
+CONFIG_CAMERA_OV5647_MIPI_RAW8_800x640_50FPS=y
+# Kconfig must remain =y so the C reference `CONFIG_CAMERA_OV5647_CSI_
+# LINESYNC_ENABLE ? true : false` in the sensor driver compiles. The
+# real LINESYNC behaviour is overridden in main/camera_init.c which
+# writes 0x4800 = 0x00 directly via SCCB after S_STREAM 1, putting the
+# MIPI link into continuous-clock no-line-sync mode. ISP must match:
+# has_line_start_packet = false in main/camera_init.c.
 CONFIG_CAMERA_OV5647_CSI_LINESYNC_ENABLE=y
+# DISABLED: AF_ENABLE writes registers 0x3002/0x3010/0x300D in S_STREAM
+# which configure pad output for the DW9714 VCM auto-focus driver. The
+# camera module on this dispenser is fixed-focus (no DW9714 wired); when
+# those pads are repurposed for VCM control they STOP driving the MIPI
+# data lanes — sensor reports streaming OK via SCCB but no MIPI bits
+# come out, producing the chronic "Frame wait timeout" symptom across
+# every lane_bit_rate sweep value. With AF_ENABLE=n the S_STREAM path
+# only writes 0x4800 + 0x0100, leaving MIPI pads alone.
+CONFIG_CAMERA_OV5647_ISP_AF_ENABLE=n
 CONFIG_CAMERA_OV5647_DEFAULT_IPA_JSON_CONFIGURATION_FILE=y
 
 # HTTP server
@@ -60,3 +79,11 @@ CONFIG_LOG_COLORS=y
 # Task Watchdog — increase timeout for WiFi scan + SPI draw (sdio_write blocks IDLE0 ~5s)
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
 CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=n
+
+# Coredump to flash — capture full stack/registers on panic so we can
+# diagnose the early-boot PANIC at ~14.8s that's been hiding behind
+# truncated UART output. `idf.py coredump-info` reads it back.
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y
+CONFIG_ESP_COREDUMP_LOGS=y

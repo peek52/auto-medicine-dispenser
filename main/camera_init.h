@@ -24,6 +24,12 @@ bool      camera_is_initialized(void);
  * frames stop arriving for ≥10 s — recovers without a board reboot. */
 void      camera_mark_uninitialized(void);
 
+/** Spawn a background task that retries camera_ensure_initialized()
+ * every 8 s for up to ~5 minutes. Used at boot when the first
+ * synchronous init attempt fails — keeps trying without blocking
+ * the main task. Does nothing if a retry task is already running. */
+void      camera_init_background_retry_start(void);
+
 // เปิด/ปิดการแสดง log ของแต่ละเฟรมภาพ (เพื่อลดความรกบน monitor)
 void camera_toggle_log(bool enable);
 esp_cam_sensor_device_t *camera_get_sensor(void);

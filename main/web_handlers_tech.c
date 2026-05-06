@@ -643,15 +643,27 @@ static void reboot_task(void *arg)
 
 esp_err_t tech_reboot_handler(httpd_req_t *req)
 {
-    esp_err_t auth = web_require_tech_api_auth(req);
-    if (auth != ESP_OK) return auth;
-
+    /* Reboot endpoint TEMPORARILY DISABLED to stop a phantom-reboot loop:
+     * something (browser tab, polling script, leftover JS on /tech page)
+     * was calling /tech/reboot every few seconds, panicking the system
+     * mid-init and leaving the I2C bus + camera in stuck states. Coredump
+     * consistently showed httpd task in esp_restart_noos. Until we find
+     * what's calling it, this endpoint returns 503 — power-cycle the
+     * board manually if a reboot is genuinely needed. */
+    httpd_resp_set_status(req, "503 Service Unavailable");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-    httpd_resp_sendstr(req, "{\"ok\":true,\"msg\":\"rebooting\"}");
-
-    xTaskCreate(reboot_task, "reboot", 2048, NULL, 5, NULL);
+    httpd_resp_sendstr(req,
+        "{\"ok\":false,\"msg\":\"reboot endpoint disabled — power-cycle manually\"}");
+    ESP_LOGW(TAG, "Reboot request DENIED (endpoint disabled to stop reboot loop)");
     return ESP_OK;
+    /* Original code kept for re-enabling later:
+     *   esp_err_t auth = web_require_tech_api_auth(req);
+     *   if (auth != ESP_OK) return auth;
+     *   httpd_resp_sendstr(req, "{\"ok\":true,\"msg\":\"rebooting\"}");
+     *   xTaskCreate(reboot_task, "reboot", 2048, NULL, 5, NULL);
+     */
+    (void)reboot_task;  /* suppress unused warning */
 }
 
 extern void dispenser_emergency_set(void);

@@ -623,6 +623,64 @@ void app_main(void)
     // Per-device pings below are enough to know what's connected.
     ESP_LOGI(TAG, "Skipping bus scan (per-device pings only)");
 
+    /* Full I²C bus scan at boot — list every address 0x08–0x77 that ACKs.
+     * Shows what's physically present on the bus (camera SCCB at 0x36
+     * shares the bus with TCA/PCA/PCF/DS3231/Touch). Useful when SCCB
+     * read of camera fails: confirms whether OV5647 is at 0x36 or
+     * has moved to a different address. Adds ~150 ms to boot. */
+    {
+        ESP_LOGW(TAG, "I2C scan begin (full bus)...");
+        char hits[80] = {0};
+        size_t pos = 0;
+        for (uint8_t a = 0x08; a <= 0x77; ++a) {
+            if (i2c_manager_ping(a) == ESP_OK) {
+                pos += snprintf(hits + pos, sizeof(hits) - pos, "0x%02X ", a);
+                if (pos >= sizeof(hits) - 6) {
+                    ESP_LOGW(TAG, "I2C ACK: %s", hits);
+                    pos = 0; hits[0] = '\0';
+                }
+            }
+        }
+        if (pos > 0) ESP_LOGW(TAG, "I2C ACK: %s", hits);
+        ESP_LOGW(TAG, "I2C scan end. Camera should be 0x36; "
+                      "TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38");
+    }
+
+    /* (Boot CAM-PROBE removed: it was a debug aid that did 8× PID
+     * readbacks via i2c_manager_write+read, and subsequent boots
+     * occasionally found the sensor stuck after these probes — most
+     * likely because the manual write-then-read pattern leaves the
+     * i2c_master state in a way the SCCB driver's transmit_receive
+     * doesn't expect. The real camera_init below has its own retry
+     * + bus recovery so we don't need a separate diag probe.) */
+
+    /* CAMERA INIT WHILE BUS IS PRISTINE — must run before FT6336U /
+     * PCA9685 / PCF8574 / TCA9548A / VL53 init touch the bus, because
+     * those leave the IDF i2c_master state machine in a configuration
+     * where compound transmit_receive (used by SCCB PID readback)
+     * intermittently fails INVALID_STATE. Running camera here while
+     * only the boot probes have run gives the cleanest possible bus
+     * for the OV5647 SCCB burst, which is the most fragile I/O the
+     * firmware ever performs. After this block the camera is in
+     * continuous-stream mode and we don't touch the OV5647 again
+     * unless the user triggers a manual reinit.
+     *
+     * If camera_ensure_initialized() returns FAIL (all 16 detect
+     * attempts failed — happens ~20 % of cold boots when the OV5647
+     * comes up in a stuck state), we spawn a background retry task
+     * that wakes every 8 s to call camera_ensure_initialized() until
+     * it succeeds. The retry doesn't block the rest of boot. */
+    {
+        ESP_LOGW(TAG, "CAMERA INIT (early, before any peripheral driver init)");
+        extern esp_err_t camera_ensure_initialized(void);
+        esp_err_t cr = camera_ensure_initialized();
+        ESP_LOGW(TAG, "Early camera init → %s", esp_err_to_name(cr));
+        if (cr != ESP_OK) {
+            extern void camera_init_background_retry_start(void);
+            camera_init_background_retry_start();
+        }
+    }
+
     // 2 s settle for modules' 3.3 V rail to come up fully — TCA + VL53
     // breakouts in particular have observed cold-start delays beyond
     // 1 s. Without this margin the very first transaction NACKs even
@@ -747,10 +805,15 @@ void app_main(void)
         }
     }
 
+    /* Camera init has already been done at the top of app_main while
+     * the I2C bus was pristine — see "CAMERA INIT WHILE BUS IS PRISTINE"
+     * block far above. We DO NOT re-init here. */
+
 #if ENABLE_VL53_PILL_SENSORS
     // VL53 init must not sit in deferred_init_task — that path is gated on
     // wifi_sta_init() which blocks waiting for the ESP-Hosted slave chip.
-    // Sensors only need I2C + TCA, both ready here.
+    // Sensors only need I2C + TCA, both ready here. Order matters: camera
+    // SCCB has already finished above so the bus is now safe for VL53.
     bool tca_was_up_at_boot = false;
     if (g_safe_mode) {
         ESP_LOGW(TAG, "Safe mode: skipping VL53 sensor init "

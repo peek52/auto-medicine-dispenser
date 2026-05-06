@@ -169,6 +169,42 @@ void camera_auto_reinit_helper(void *arg)
     vTaskDelete(NULL);
 }
 
+/* Background retry task spawned by main.c when the very first
+ * camera_ensure_initialized() at boot returns FAIL. Keeps trying every
+ * 8 s for up to 5 minutes (38 attempts). Most boards recover within
+ * 1-3 tries — the OV5647 sometimes comes up in a stuck state on
+ * cold boot but responds normally after one extra software reset
+ * cycle. Self-deletes once camera is up or the budget is exhausted.
+ * Only one instance runs at a time (handle gate). */
+static TaskHandle_t s_cam_retry_handle = NULL;
+
+static void camera_background_retry_task(void *arg)
+{
+    (void)arg;
+    for (int i = 0; i < 38; ++i) {
+        vTaskDelay(pdMS_TO_TICKS(8000));
+        if (camera_is_initialized()) break;
+        ESP_LOGW(TAG, "Background camera retry %d/38", i + 1);
+        camera_mark_uninitialized();
+        esp_err_t r = camera_ensure_initialized();
+        ESP_LOGW(TAG, "Background camera retry %d -> %s",
+                 i + 1, esp_err_to_name(r));
+        if (r == ESP_OK) break;
+    }
+    s_cam_retry_handle = NULL;
+    vTaskDelete(NULL);
+}
+
+void camera_init_background_retry_start(void)
+{
+    if (s_cam_retry_handle != NULL) return;
+    if (xTaskCreate(camera_background_retry_task, "cam_retry", 4096,
+                    NULL, 3, &s_cam_retry_handle) != pdPASS) {
+        s_cam_retry_handle = NULL;
+        ESP_LOGE(TAG, "Failed to create cam_retry task");
+    }
+}
+
 static void camera_task(void *arg) {
     int frame_num = 0;
     ESP_LOGI(TAG, "Camera capture task started (MJPEG mode)");
@@ -206,7 +242,14 @@ static void camera_task(void *arg) {
              * attempt, fully tear down the camera + MIPI controller
              * and re-init from scratch. The 60 s cool-down stops us
              * from looping forever on a truly dead sensor. */
-            if (consec_timeouts >= 10 && (now_ms - last_recovery_ms) > 60000) {
+            /* Cooldown: 15 s between recovery attempts (was 60 s — too
+             * long during boot since some boards need 2-3 recovery
+             * cycles to settle the DPHY). First-boot recovery
+             * (last_recovery_ms == 0) MUST fire on first 10 timeouts
+             * regardless of cooldown — otherwise the camera never comes
+             * up on boots where DPHY fails initial lock. */
+            bool cd_ok = (last_recovery_ms == 0) || ((now_ms - last_recovery_ms) > 15000);
+            if (consec_timeouts >= 10 && cd_ok) {
                 ESP_LOGE(TAG, "Camera frames stuck for 10 s — "
                               "performing full re-init");
                 last_recovery_ms = now_ms;
@@ -219,6 +262,34 @@ static void camera_task(void *arg) {
                     (void)esp_cam_ctlr_del(cam_handle);
                     cam_handle = NULL;
                 }
+
+                /* Free the ISP processor — ESP32-P4 only has ONE ISP
+                 * slot. Without this, the next esp_isp_new_processor()
+                 * call returns ESP_ERR_NOT_FOUND and the whole re-init
+                 * fails permanently until reboot. (This was the actual
+                 * root cause of "auto-recovery doesn't bring camera
+                 * back" reported by the user.) */
+                if (isp_proc) {
+                    (void)esp_isp_disable(isp_proc);
+                    (void)esp_isp_del_processor(isp_proc);
+                    isp_proc = NULL;
+                }
+
+                /* Drop the camera sensor handle so the next init's
+                 * esp_cam_sensor_detect probes fresh. */
+                s_cam_sensor = NULL;
+
+                /* Free the DMA frame buffers (3 × 1 MB in PSRAM).
+                 * Otherwise each recovery cycle leaks ~3 MB and after
+                 * a few rounds the heap drops below the threshold
+                 * for re-allocating during init. */
+                for (int i = 0; i < NUM_BUFFERS; ++i) {
+                    if (frame_buffers[i]) {
+                        heap_caps_free(frame_buffers[i]);
+                        frame_buffers[i] = NULL;
+                    }
+                }
+                frame_buffer_size = 0;
 
                 /* AVDD power-cycle so the OV5647 resets cleanly. */
                 if (ldo_mipi_phy) {
@@ -247,6 +318,16 @@ static void camera_task(void *arg) {
         }
         consec_timeouts = 0;
         frame_num++;
+        /* Liveness: print the very first frame (confirmation) and then a
+         * heartbeat every ~10 s (500 frames at 50fps) so the operator can
+         * see in /logs/tail that MIPI is healthy without spamming the log
+         * 50 times per second. Detailed per-frame logging is still
+         * available via the `logcam on` CLI command. */
+        if (frame_num == 1) {
+            ESP_LOGI(TAG, "MIPI first frame received — pipeline healthy");
+        } else if ((frame_num % 500) == 0) {
+            ESP_LOGI(TAG, "MIPI alive: %d frames received", frame_num);
+        }
         int encode_idx = ready_buf_idx;
         if (encode_idx < 0 || encode_idx >= NUM_BUFFERS) continue;
 
@@ -318,42 +399,27 @@ esp_err_t camera_init(void) {
         .chan_id = CAM_LDO_CHAN_ID,
         .voltage_mv = CAM_LDO_VOLTAGE_MV,
     };
-    /* Power-cycle the camera AVDD rail explicitly: when the whole system
-     * (board + camera + I2C peripherals) was powered up simultaneously
-     * the inrush current dipped 3V3 just enough to latch OV5647 in a
-     * bad state — it would NACK every SCCB read until manually power
-     * cycled. By acquiring → releasing → reacquiring the LDO here, we
-     * force a clean cold-boot of the sensor's analog supply, mimicking
-     * the "board first, camera plugged in later" sequence that the
-     * user reported as the only working path.
-     *
-     * Acquire (LDO ON for whatever transient state)
-     *   → release (LDO OFF — camera fully powers down)
-     *     → 200 ms settle (analog rail discharges through bypass caps)
-     *       → re-acquire (LDO ON, camera cold-boots clean)
-     *         → 50 ms (sensor PLL lock + register defaults load)
-     */
+    /* MIPI PHY LDO acquire with brief power-cycle. ESP32-P4 LDO chan 3
+     * powers the on-chip MIPI DPHY (NOT the OV5647 AVDD). A short
+     * cycle (acquire → release → 200 ms → acquire) ensures the DPHY
+     * registers come up at default state even if a previous boot left
+     * them in an indeterminate config. Long off-times (>500 ms) caused
+     * SCCB transmit_receive to return INVALID_STATE on subsequent
+     * boots — likely because the DPHY's internal state machine got
+     * stuck. 200 ms is the sweet spot: long enough for the rail to
+     * fully drain, short enough not to disturb sensor-side comms. */
     CAM_RETURN_ON_ERR(esp_ldo_acquire_channel(&ldo_config, &ldo_mipi_phy),
-                      "Failed to acquire camera LDO");
+                      "Failed to acquire MIPI PHY LDO");
     vTaskDelay(pdMS_TO_TICKS(20));
-    esp_err_t rel = esp_ldo_release_channel(ldo_mipi_phy);
-    if (rel != ESP_OK) {
-        ESP_LOGW(TAG, "LDO release failed (%s) — skipping power-cycle",
-                 esp_err_to_name(rel));
-    } else {
+    if (esp_ldo_release_channel(ldo_mipi_phy) == ESP_OK) {
         ldo_mipi_phy = NULL;
-        /* AVDD off-time bumped 200 → 800 ms. Field test showed 200 ms
-         * sometimes wasn't enough for the OV5647 internal capacitors
-         * to drain — chip stayed in its previous register state and
-         * SCCB read of PID returned NACK on every retry. With 800 ms
-         * off-time the chip resets cleanly and PID reads succeed. */
-        vTaskDelay(pdMS_TO_TICKS(800));
+        vTaskDelay(pdMS_TO_TICKS(200));
         CAM_RETURN_ON_ERR(esp_ldo_acquire_channel(&ldo_config, &ldo_mipi_phy),
-                          "Failed to re-acquire camera LDO after power cycle");
-        /* Power-on stabilisation extended 50 → 150 ms so the sensor's
-         * internal PLL has time to lock before XCLK + SCCB sequence. */
-        vTaskDelay(pdMS_TO_TICKS(150));
-        ESP_LOGI(TAG, "Camera AVDD power-cycled cleanly");
+                          "Failed to re-acquire MIPI PHY LDO");
+        vTaskDelay(pdMS_TO_TICKS(80));
+        ESP_LOGI(TAG, "MIPI PHY LDO power-cycled (200 ms off)");
+    } else {
+        ESP_LOGW(TAG, "MIPI PHY LDO release failed — skipping cycle");
     }
 
     //---------------XCLK Generation via LEDC------------------//
@@ -476,6 +542,36 @@ esp_err_t camera_init(void) {
     int enable_flag = 1;
     esp_cam_sensor_format_t *cam_cur_fmt = NULL;
 
+    /* I²C bus scan — list every address 0x08-0x77 that ACKs so we know
+     * what's actually on the bus right now. Helpful when SCCB read of
+     * camera fails: shows whether the OV5647 isn't there at all (no
+     * 0x36 ACK) or it moved to a different address (e.g. 0x21 / 0x3C
+     * on some clones) or the bus itself is dead (nothing ACKs). Runs
+     * once per camera_init() call. */
+    {
+        ESP_LOGW(TAG, "I2C scan begin (looking for camera + others)...");
+        char hits_line[80];
+        size_t hits_n = 0;
+        hits_line[0] = '\0';
+        for (uint8_t a = 0x08; a <= 0x77; ++a) {
+            if (i2c_manager_ping(a) == ESP_OK) {
+                hits_n += snprintf(hits_line + hits_n,
+                                   sizeof(hits_line) - hits_n,
+                                   "0x%02X ", a);
+                if (hits_n >= sizeof(hits_line) - 6) {
+                    ESP_LOGW(TAG, "I2C scan ACK: %s", hits_line);
+                    hits_n = 0;
+                    hits_line[0] = '\0';
+                }
+            }
+        }
+        if (hits_n > 0) {
+            ESP_LOGW(TAG, "I2C scan ACK: %s", hits_line);
+        }
+        ESP_LOGW(TAG, "I2C scan end. Camera should be at 0x36; "
+                      "TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38");
+    }
+
     /* Retry count bumped 8 → 16. Each SCCB attempt costs ~200 ms (ping
      * + recovery), so 16 worst-case = ~3.2 s vs old 1.6 s — small price
      * for a much higher chance of catching the OV5647 in a wakeable
@@ -496,6 +592,16 @@ esp_err_t camera_init(void) {
         }
         // 1) Tear down anything left from a prior attempt + recover bus.
         if (cam_config.sccb_handle) {
+            /* Before destroying the handle, try a sensor-level soft reset
+             * via SCCB direct write. Catches the case where the previous
+             * attempt's set_format burst left OV5647 in a half-configured
+             * state that makes subsequent PID readback fail. Register
+             * 0x0103 = 0x01 = "software reset", per OV5647 datasheet —
+             * loads default register values. We retry blindly here
+             * (best effort, no error check) since the handle is about
+             * to be torn down anyway. */
+            (void)esp_sccb_transmit_reg_a16v8(cam_config.sccb_handle, 0x0103, 0x01);
+            vTaskDelay(pdMS_TO_TICKS(20));
             (void)esp_sccb_del_i2c_io(cam_config.sccb_handle);
             cam_config.sccb_handle = NULL;
         }
@@ -508,7 +614,10 @@ esp_err_t camera_init(void) {
                 ESP_LOGE(TAG, "Lost I2C bus handle during camera retry");
                 return ESP_FAIL;
             }
-            vTaskDelay(pdMS_TO_TICKS(150));
+            /* Longer settle after retry — sensor needs ≥10 ms to come
+             * out of soft reset, then a few hundred more to be fully
+             * ready for the next register burst. */
+            vTaskDelay(pdMS_TO_TICKS(250));
         }
 
         // 2) Hold the shared I2C mutex across the whole SCCB sequence.
@@ -568,13 +677,14 @@ esp_err_t camera_init(void) {
             (void)i2c_master_bus_reset(i2c_bus_handle);
             vTaskDelay(pdMS_TO_TICKS(150));
 
-            // 5) Configure + stream-on. Retry set_format up to 8 times.
-            // Between retries we issue an OV5647 software reset (write
-            // 0x82 to register 0x3008) which dumps the sensor's internal
-            // state machine and lets the next SCCB burst start fresh.
-            // This breaks the IDF v5.3 i2c_master INVALID_STATE loop
-            // because the sensor itself stops getting confused by
-            // half-applied burst writes.
+            // 5) Configure ONLY (no stream-on yet). S_STREAM 1 must be
+            // issued AFTER the CSI controller has its DMA armed and the
+            // bridge enabled — otherwise the sensor pumps MIPI bits into
+            // a not-yet-listening PHY and the very first frame is missed,
+            // sometimes leaving the DPHY out of sync forever ("Frame wait
+            // timeout" symptom). Retry set_format up to 8 times with a
+            // soft sensor reset between failures so a corrupted SCCB
+            // burst can recover.
             if (cam_cur_fmt) {
                 for (int sf = 0; sf < 8; ++sf) {
                     ret_fmt = esp_cam_sensor_set_format(cam, cam_cur_fmt);
@@ -596,7 +706,29 @@ esp_err_t camera_init(void) {
                     }
                 }
                 if (ret_fmt == ESP_OK) {
-                    ret_strm = esp_cam_sensor_ioctl(cam, ESP_CAM_SENSOR_IOC_S_STREAM, &enable_flag);
+                    /* Verify a critical register actually applied. PCLK
+                     * period byte at 0x4837 should be 40 (= 1e9 / 25e6).
+                     * If SCCB byte loss corrupted the format burst, this
+                     * register often reads back as 0xFF, 0x00, or some
+                     * other stale value. Force a retry so we don't stream
+                     * with a half-configured sensor. */
+                    if (cam_config.sccb_handle) {
+                        uint8_t pclk_period = 0;
+                        esp_err_t rb = esp_sccb_transmit_receive_reg_a16v8(
+                            cam_config.sccb_handle, 0x4837, &pclk_period);
+                        ESP_LOGW(TAG, "set_format readback 0x4837=0x%02X (%s, expect 0x28)",
+                                 pclk_period, esp_err_to_name(rb));
+                        if (rb != ESP_OK || pclk_period != 0x28) {
+                            ESP_LOGW(TAG, "PCLK reg verify failed — forcing attempt retry");
+                            ret_fmt = ESP_FAIL;
+                        }
+                    }
+                    /* S_STREAM (sensor pumps MIPI data) is INTENTIONALLY
+                     * NOT called here — see "step 8" near the end of this
+                     * function. ret_strm is set to ESP_OK only to keep
+                     * the outer success-check happy; the actual stream
+                     * start happens after CSI is ready. */
+                    if (ret_fmt == ESP_OK) ret_strm = ESP_OK;
                 }
             }
         }
@@ -604,12 +736,13 @@ esp_err_t camera_init(void) {
         if (got_lock) xSemaphoreGive(g_i2c_mutex);
 
         if (cam && cam_cur_fmt && ret_fmt == ESP_OK && ret_strm == ESP_OK) {
-            ESP_LOGI(TAG, "Camera detect + format + stream-on OK (attempt %d)", attempt + 1);
+            ESP_LOGI(TAG, "Camera detect + format OK (attempt %d) — stream-on deferred until CSI ready",
+                     attempt + 1);
             break;
         }
-        ESP_LOGW(TAG, "Camera attempt %d failed: cam=%p fmt_match=%d set_fmt=%s strm=%s",
+        ESP_LOGW(TAG, "Camera attempt %d failed: cam=%p fmt_match=%d set_fmt=%s",
                  attempt + 1, (void *)cam, cam_cur_fmt != NULL,
-                 esp_err_to_name(ret_fmt), esp_err_to_name(ret_strm));
+                 esp_err_to_name(ret_fmt));
         // Fall through to next iteration which tears down + recovers.
         ret_fmt = ESP_FAIL;
         ret_strm = ESP_FAIL;
@@ -655,14 +788,14 @@ esp_err_t camera_init(void) {
         .ctlr_id                = 0,
         .h_res                  = CSI_HRES,
         .v_res                  = CSI_VRES,
-        /* MIPI lane bit rate dropped 200 → 150 Mbps to give the
-         * controller more eye-time per bit. Field test showed
-         * stream-on succeeded but the CSI host couldn't lock onto
-         * frames at 200 Mbps even with healthy SCCB — lowering bit
-         * rate is the standard remedy for marginal CSI signal
-         * integrity. 150 Mbps × 2 lanes = 300 Mbps still gives ample
-         * bandwidth for 800×640 RAW8 @ 5 fps (~26 Mbps actual). */
-        .lane_bit_rate_mbps     = 150,
+        /* MIPI lane bit rate locked at 400 Mbps — the spec value the
+         * OV5647 driver actually programs into the sensor at this format:
+         *   OV5647_MIPI_CSI_LINE_RATE_800x640_50FPS = 100 MHz × 4 = 400.
+         * Earlier sweeps tried 150–400 with no frames, but the real
+         * blocker turned out to be CONFIG_CAMERA_OV5647_ISP_AF_ENABLE=y
+         * muting the MIPI pads via the AF VCM register writes — see
+         * sdkconfig.defaults. With AF disabled we expect 400 to lock. */
+        .lane_bit_rate_mbps     = 400,
         .input_data_color_type  = CAM_CTLR_COLOR_RAW8,
         .output_data_color_type = CAM_CTLR_COLOR_YUV422,
         .data_lane_num          = 2,
@@ -681,13 +814,20 @@ esp_err_t camera_init(void) {
     CAM_RETURN_ON_ERR(esp_cam_ctlr_enable(cam_handle),
                       "Failed to enable camera controller");
 
+    /* Sensor 0x4800 will be set to 0x10 (LINE_SYNC=1, BUS_IDLE=0) by
+     * our override after S_STREAM. That keeps the line-start short
+     * packets the IDF camera_dsi reference flow expects, but disables
+     * the BUS_IDLE bit so the MIPI clock lane stays in HS between
+     * frames instead of dropping to LP-11. The HS→LP→HS transition
+     * was where this board's DPHY was losing lock after the very first
+     * frame. ISP must keep has_line_start_packet=true to match. */
     esp_isp_processor_cfg_t isp_config = {
-        .clk_hz                = 80 * 1000 * 1000, // Reverted to 80MHz
+        .clk_hz                = 80 * 1000 * 1000,
         .input_data_source     = ISP_INPUT_DATA_SOURCE_CSI,
         .input_data_color_type = ISP_COLOR_RAW8,
         .output_data_color_type= ISP_COLOR_YUV422,
-        .has_line_start_packet = false,
-        .has_line_end_packet   = false,
+        .has_line_start_packet = true,
+        .has_line_end_packet   = true,
         .h_res                 = CSI_HRES,
         .v_res                 = CSI_VRES,
     };
@@ -698,6 +838,45 @@ esp_err_t camera_init(void) {
 
     CAM_RETURN_ON_ERR(esp_cam_ctlr_start(cam_handle),
                       "Failed to start camera controller");
+
+    /* Step 8 — NOW that the CSI controller is started (DMA armed,
+     * bridge enabled, callback ready to provide buffers), tell the
+     * sensor to leave LP-11 and pump real MIPI bits. This is the
+     * single most important ordering fix: doing S_STREAM before
+     * esp_cam_ctlr_start() leaves the receiver missing the very first
+     * SoF on a 50 fps stream and the DPHY can lose lock permanently
+     * until full re-init. With this order the receiver is ready
+     * BEFORE the first sensor packet, matching the IDF camera_dsi
+     * reference flow. */
+    {
+        int enable_strm = 1;
+        esp_err_t r = esp_cam_sensor_ioctl(s_cam_sensor,
+                                           ESP_CAM_SENSOR_IOC_S_STREAM,
+                                           &enable_strm);
+        if (r != ESP_OK) {
+            ESP_LOGE(TAG, "Sensor S_STREAM 1 (post-CSI-start) failed: %s",
+                     esp_err_to_name(r));
+            return r;
+        }
+
+        /* OV5647 driver's S_STREAM writes 0x4800 = 0x14 (BUS_IDLE bit 2
+         * set + LINE_SYNC bit 4 set) when CONFIG_CAMERA_OV5647_CSI_
+         * LINESYNC_ENABLE=y. With BUS_IDLE the MIPI clock lane goes to
+         * LP-11 between frames; on this board the DPHY can't reliably
+         * relock at the start of frame 2, producing the "MIPI first
+         * frame received → Frame wait timeout" symptom. Override to
+         * 0x10 (LINE_SYNC bit 4 only, BUS_IDLE cleared) so the clock
+         * lane stays in HS between frames while line short packets
+         * still flow. ISP keeps has_line_start_packet=true to match. */
+        if (cam_config.sccb_handle) {
+            esp_err_t ovr = esp_sccb_transmit_reg_a16v8(
+                cam_config.sccb_handle, 0x4800, 0x10);
+            ESP_LOGI(TAG, "Override 0x4800=0x10 (continuous clock + line sync): %s",
+                     esp_err_to_name(ovr));
+        }
+        ESP_LOGI(TAG, "Sensor stream-on issued AFTER CSI ready — first frame should arrive shortly");
+    }
+
     if (xTaskCreatePinnedToCore(camera_task, "cam_task", 8192, NULL, 7, NULL, 0) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create camera task");
         return ESP_FAIL;
@@ -737,8 +916,19 @@ void camera_mark_uninitialized(void)
 
 esp_err_t camera_ensure_initialized(void)
 {
-    /* Fast path: already done — return cached result without taking lock. */
-    if (s_lazy_init_done) return s_lazy_init_result;
+    /* Fast path: only cache SUCCESS. If a previous attempt failed,
+     * retry on every call so the user can recover by sending another
+     * /photo (or by physically reseating the cable + sending /photo).
+     * Earlier behaviour cached the failure permanently — once camera
+     * init failed once, every subsequent /photo returned the cached
+     * error without retrying, so the user got "Camera failed to
+     * initialise" forever even after the underlying issue was fixed. */
+    if (s_lazy_init_done && s_lazy_init_result == ESP_OK) {
+        return ESP_OK;
+    }
+    /* Otherwise fall through and re-run camera_init. The mutex
+     * below serialises concurrent attempts. */
+    s_lazy_init_done = false;
 
     if (!s_lazy_init_mux) {
         /* First-time setup — race here is unlikely (handlers run on the
@@ -759,10 +949,18 @@ esp_err_t camera_ensure_initialized(void)
         /* Quiesce the VL53 poll loop so the SCCB burst has the I2C bus
          * to itself. Otherwise concurrent VL53 retry probes contend with
          * the OV5647 PID read and the camera detect NACKs. Calls nest, so
-         * we always resume even if camera_init returns early. */
+         * we always resume even if camera_init returns early.
+         *
+         * Race fix: a fixed delay isn't enough because vl53_poll_all()
+         * can take 1+ s when sensors are flaky (each missing channel
+         * does a 70-register init burst). vl53l0x_multi_wait_idle()
+         * blocks until the VL53 task observes the pause flag and parks,
+         * so we know SCCB is the only client of the bus before we
+         * touch it. Without this, ~50% of boots had the camera detect
+         * NACK on every retry because VL53 was mid-cycle. */
         vl53l0x_multi_pause();
-        /* Brief settle so any in-flight VL53 op finishes before SCCB. */
-        vTaskDelay(pdMS_TO_TICKS(250));
+        vl53l0x_multi_wait_idle(2500);
+        vTaskDelay(pdMS_TO_TICKS(150));
         s_lazy_init_result = camera_init();
         vl53l0x_multi_resume();
         s_lazy_init_done   = true;

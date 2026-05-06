@@ -82,7 +82,68 @@ static int clamp_jpeg_quality(int quality) {
     return quality;
 }
 
+/* Tear down everything jpeg_enc_init() allocated. Safe to call when the
+ * module is fully torn down, fully up, or in any partial state — every
+ * resource is checked before release and pointers are nulled after. */
+static void jpeg_enc_deinit_internal(void) {
+    if (s_jpeg_handle) {
+        jpeg_del_encoder_engine(s_jpeg_handle);
+        s_jpeg_handle = NULL;
+    }
+    for (int i = 0; i < JPEG_BUFS; i++) {
+        if (s_jpeg_buf[i]) {
+            heap_caps_free(s_jpeg_buf[i]);
+            s_jpeg_buf[i] = NULL;
+        }
+        s_jpeg_len[i] = 0;
+    }
+    s_jpeg_buf_size = 0;
+    if (s_rot_buf) {
+        heap_caps_free(s_rot_buf);
+        s_rot_buf = NULL;
+    }
+    s_rot_buf_size = 0;
+    if (s_swap_mutex)  { vSemaphoreDelete(s_swap_mutex);  s_swap_mutex  = NULL; }
+    if (s_read_mutex)  { vSemaphoreDelete(s_read_mutex);  s_read_mutex  = NULL; }
+    if (s_frame_ready) { vSemaphoreDelete(s_frame_ready); s_frame_ready = NULL; }
+    s_write_idx = 0;
+    s_read_idx = -1;
+    s_active_read_idx = -1;
+}
+
 esp_err_t jpeg_enc_init(int width, int height) {
+    /* DIAG-LEAK: PSRAM free at entry — compare across recovery cycles to
+     * verify the leak fix. Remove once verified. */
+    ESP_LOGW(TAG, "DIAG-LEAK entry  PSRAM free=%u largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+
+    /* Truly idempotent: every resource the rest of this module relies on
+     * must still be valid. If anything is half-torn-down (e.g. recovery
+     * freed a buffer but never re-ran init at this resolution), drop
+     * through and rebuild. Earlier guard only checked s_jpeg_handle,
+     * which let stale-buffer / null-semaphore states slip past and crash
+     * encode_frame / get_frame later. */
+    if (s_jpeg_handle && s_width == width && s_height == height &&
+        s_jpeg_buf[0] && s_jpeg_buf[1] && s_jpeg_buf[2] && s_rot_buf &&
+        s_swap_mutex && s_read_mutex && s_frame_ready) {
+        ESP_LOGI(TAG, "JPEG encoder already initialised %dx%d — reuse",
+                 width, height);
+        return ESP_OK;
+    }
+
+    /* Anything else (different resolution, partial init, post-failure
+     * remnants) means we must release whatever's still around before
+     * re-allocating. Without this, every re-init at a new size leaked
+     * the engine handle + 3× output buffer + rotation buffer + 3
+     * semaphores. */
+    jpeg_enc_deinit_internal();
+
+    /* DIAG-LEAK: PSRAM free after deinit. Should bounce back close to
+     * the post-boot baseline; if it doesn't, deinit is missing a free. */
+    ESP_LOGW(TAG, "DIAG-LEAK deinit PSRAM free=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+
     s_width = width;
     s_height = height;
 
@@ -93,10 +154,11 @@ esp_err_t jpeg_enc_init(int width, int height) {
     esp_err_t ret = jpeg_new_encoder_engine(&eng_cfg, &s_jpeg_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create JPEG encoder engine");
+        jpeg_enc_deinit_internal();
         return ret;
     }
 
-    s_jpeg_buf_size = width * height * 2;
+    s_jpeg_buf_size = (size_t)width * (size_t)height * 2;
     jpeg_encode_memory_alloc_cfg_t mem_cfg = {
         .buffer_direction = JPEG_ENC_ALLOC_OUTPUT_BUFFER,
     };
@@ -106,6 +168,7 @@ esp_err_t jpeg_enc_init(int width, int height) {
         s_jpeg_buf[i] = (uint8_t *)jpeg_alloc_encoder_mem(s_jpeg_buf_size, &mem_cfg, &allocated);
         if (!s_jpeg_buf[i]) {
             ESP_LOGE(TAG, "Failed to allocate JPEG output buffer %d", i);
+            jpeg_enc_deinit_internal();
             return ESP_ERR_NO_MEM;
         }
         if (i == 0) s_jpeg_buf_size = allocated;
@@ -114,6 +177,11 @@ esp_err_t jpeg_enc_init(int width, int height) {
     s_swap_mutex  = xSemaphoreCreateMutex();
     s_read_mutex  = xSemaphoreCreateMutex();
     s_frame_ready = xSemaphoreCreateBinary();
+    if (!s_swap_mutex || !s_read_mutex || !s_frame_ready) {
+        ESP_LOGE(TAG, "Failed to create JPEG sync primitives");
+        jpeg_enc_deinit_internal();
+        return ESP_ERR_NO_MEM;
+    }
 
     /* Allocate rotation scratch buffer in PSRAM. Same size as one source
      * frame — rotated 90° CCW the pixel count is identical, only the
@@ -125,16 +193,29 @@ esp_err_t jpeg_enc_init(int width, int height) {
     if (!s_rot_buf) {
         ESP_LOGE(TAG, "Failed to allocate rotation buffer (%u bytes)",
                  (unsigned)s_rot_buf_size);
+        jpeg_enc_deinit_internal();
         return ESP_ERR_NO_MEM;
     }
 
     ESP_LOGI(TAG, "JPEG HW encoder initialized: %dx%d, out_buf=%u bytes x2 + rot_buf=%u",
              width, height, (unsigned)s_jpeg_buf_size, (unsigned)s_rot_buf_size);
+
+    /* DIAG-LEAK: PSRAM free at successful exit. Across N recovery
+     * cycles this number must not drift downward — if it does, there's
+     * still a leak somewhere (camera frame buffers, ISP, etc). */
+    ESP_LOGW(TAG, "DIAG-LEAK exit   PSRAM free=%u largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
     return ESP_OK;
 }
 
 esp_err_t jpeg_enc_encode_frame(const uint8_t *yuv422_data, size_t yuv422_len) {
     if (!s_jpeg_handle || !yuv422_data) return ESP_ERR_INVALID_STATE;
+    /* Belt-and-braces: the sync primitives must exist before we touch the
+     * triple-buffer state. They should always be set when s_jpeg_handle
+     * is, but a partially torn-down state is possible if init failed
+     * mid-way and a caller raced ahead. */
+    if (!s_swap_mutex) return ESP_ERR_INVALID_STATE;
 
     int widx = -1;
     xSemaphoreTake(s_swap_mutex, portMAX_DELAY);
@@ -204,6 +285,11 @@ esp_err_t jpeg_enc_encode_frame(const uint8_t *yuv422_data, size_t yuv422_len) {
 }
 
 esp_err_t jpeg_enc_get_frame(uint8_t **out_buf, size_t *out_len, uint32_t timeout_ms) {
+    /* Reject if init never ran or was torn down mid-flight. Without
+     * this guard xSemaphoreTake(NULL, ...) crashes the calling task. */
+    if (!s_frame_ready || !s_swap_mutex || !s_read_mutex) {
+        return ESP_ERR_INVALID_STATE;
+    }
     if (xSemaphoreTake(s_frame_ready, pdMS_TO_TICKS(timeout_ms)) != pdTRUE)
         return ESP_ERR_TIMEOUT;
 
@@ -222,9 +308,9 @@ esp_err_t jpeg_enc_get_frame(uint8_t **out_buf, size_t *out_len, uint32_t timeou
     return ESP_OK;
 }
 
-void jpeg_enc_release_frame(void) { 
+void jpeg_enc_release_frame(void) {
     s_active_read_idx = -1;
-    xSemaphoreGive(s_read_mutex); 
+    if (s_read_mutex) xSemaphoreGive(s_read_mutex);
 }
 
 esp_err_t jpeg_enc_set_quality(int quality) {

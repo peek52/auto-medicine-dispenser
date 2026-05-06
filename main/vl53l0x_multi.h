@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -13,6 +15,11 @@ void vl53l0x_multi_bootstrap(void);
 // must be matched by a resume).
 void vl53l0x_multi_pause(void);
 void vl53l0x_multi_resume(void);
+
+// Block until the VL53 task is actually idle (parked observing pause).
+// Caller must have already called vl53l0x_multi_pause(). Used by camera
+// init to ensure SCCB doesn't race with VL53 register reads.
+void vl53l0x_multi_wait_idle(uint32_t timeout_ms);
 
 // On-demand poll trigger — bypasses the normal 5 s sleep and clears all
 // retry-after timers so missing channels get re-probed immediately.
