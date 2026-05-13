@@ -1,0 +1,186 @@
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0xc (SW_CPU_RESET),boot:0x21d (SPI_FAST_FLASH_BOOT)
+Core0 Saved PC:0x4ff00c18
+Core1 Saved PC:0x4ff04372
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x18e4
+load:0x4ff2abd0,len:0xd74
+load:0x4ff2cbd0,len:0x322c
+entry 0x4ff2abda
+I (33) boot: ESP-IDF v5.3.2-dirty 2nd stage bootloader
+I (33) boot: compile time May 10 2026 16:29:07
+I (34) boot: Multicore bootloader
+I (37) boot: chip revision: v1.3
+I (40) boot: efuse block revision: v0.3
+I (45) boot.esp32p4: SPI Speed      : 80MHz
+I (50) boot.esp32p4: SPI Mode       : DIO
+I (55) boot.esp32p4: SPI Flash Size : 16MB
+I (59) boot: Enabling RNG early entropy source...
+I (65) boot: Partition Table:
+I (68) boot: ## Label            Usage          Type ST Offset   Length
+I (76) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (83) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (91) boot:  2 factory          factory app      00 00 00010000 00300000
+I (98) boot:  3 coredump         Unknown data     01 03 00310000 00010000
+I (106) boot: End of partition table
+I (395) boot: Loaded app from partition at offset 0x10000
+I (396) boot: Disabling RNG early entropy source...
+I (462) MSPI DQS: tuning success, best phase id is 2
+I (640) MSPI DQS: tuning success, best delayline id is 11
+I (641) esp_psram: Found 32MB PSRAM device
+I (641) esp_psram: Speed: 200MHz
+I (649) cpu_start: Multicore app
+I (1558) esp_psram: SPI SRAM memory test OK
+W (1567) clk: esp_perip_clk_init() has not been implemented yet
+I (1574) cpu_start: Pro cpu start user code
+I (1574) cpu_start: cpu freq: 360000000 Hz
+I (1575) app_init: Application information:
+I (1578) app_init: Project name:     unified_cam
+I (1583) app_init: App version:      backup-camera-working-2026-05-0
+I (1590) app_init: Compile time:     May 10 2026 16:28:32
+I (1596) app_init: ELF file SHA256:  57917e52d...
+I (1601) app_init: ESP-IDF:          v5.3.2-dirty
+I (1660) esp_psram: Adding pool of 32768K of PSRAM memory to heap allocator
+I (1668) spi_flash: detected chip: generic
+I (1672) spi_flash: flash io: dio
+I (1676) host_init: ESP Hosted : Host chip_ip[18]
+I (1710) H_API: ESP-Hosted starting. Hosted_Tasks: prio:23, stack: 5120 RPC_task_stack: 5120
+sdio_mempool_create free:33711892 min-free:33711892 lfb-def:33030144 lfb-8bit:33030144
+I (1773) H_API: ** add_esp_wifi_remote_channels **
+I (1778) transport: Add ESP-Hosted channel IF[1]: S[0] Tx[0x4001093e] Rx[0x4001dc28]
+I (1786) transport: Add ESP-Hosted channel IF[2]: S[0] Tx[0x40010884] Rx[0x4001dc28]
+I (1795) esp_core_dump_flash: Init core dump to flash
+I (1800) esp_core_dump_flash: Found partition 'coredump' @ 310000 65536 bytes
+I (1839) esp_core_dump_flash: Core dump data checksum is correct
+I (1839) esp_core_dump_flash: Found core dump 35204 bytes in flash @ 0x310000
+I (1842) main_task: Started on CPU0
+I (1852) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations
+I (1852) main_task: Calling app_main()
+I (1862) unified_cam: Starting Unified Cam & Modules (ESP32-P4 Nano)
+W (1862) unified_cam: Boot #7, reset reason: PANIC (4)
+I (1882) cloud_secrets: Cloud secrets loaded from NVS (telegram=set, sheets=set)
+I (1942) i2c_mgr: I2C_NUM_0 ready — SDA=7 SCL=8 @ 50000 Hz
+I (1942) unified_cam: Skipping bus scan (per-device pings only)
+W (1952) unified_cam: I2C scan begin (full bus)...
+W (1972) unified_cam: I2C ACK: 0x20 0x36 0x38 0x40 0x56 0x68
+W (1972) unified_cam: I2C scan end. Camera should be 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (1982) unified_cam: CAMERA INIT (early, before any peripheral driver init)
+I (1982) camera_init: Lazy camera_init triggered (first /capture or /photo)
+I (2172) camera_init: Initializing JPEG encoder for 800x640
+W (2172) jpeg_enc: DIAG-LEAK entry  PSRAM free=30478208 largest=30408704
+W (2172) jpeg_enc: DIAG-LEAK deinit PSRAM free=30478208
+I (2232) jpeg_enc: JPEG HW encoder initialized: 800x640, out_buf=1024000 bytes x2 + rot_buf=1024000
+W (2232) jpeg_enc: DIAG-LEAK exit   PSRAM free=26381072 largest=26214400
+I (2532) camera_init: MIPI PHY LDO power-cycled (200 ms off)
+I (2532) camera_init: XCLK 24000000 Hz generated on GPIO33
+I (2732) camera_init: VL53 XSHUT lowered before SCCB (chips offline)
+I (2802) camera_init: Shared I2C bus recovered before SCCB init
+W (2962) camera_init: I2C scan begin (looking for camera + others)...
+W (2972) camera_init: I2C scan ACK: 0x18 0x20 0x36 0x38 0x40 0x56 0x68
+W (2972) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (3002) camera_init: Camera attempt 1 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (5312) camera_init: Camera still not detected at attempt 8 — doing a second AVDD power-cycle
+W (8882) camera_init: Camera attempt 16 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+I (8892) camera_init: VL53 XSHUT restored after SCCB
+E (8902) camera_init: Failed to detect camera sensor after retries
+I (8912) camera_init: Lazy camera_init -> ESP_FAIL
+W (8912) unified_cam: Early camera init → ESP_FAIL
+I (11992) unified_cam: FT6336U responded on initial ping
+W (13492) tca9548a: TCA9548A not found at 0x70 after retries — VL53 sensors disabled
+W (13492) unified_cam: TCA9548A not found at 0x70 — VL53 will be skipped
+I (13492) pca9685: No NVS config for servo found, using defaults
+I (13502) pca9685: PCA9685 initialized (prescale=121, ~50Hz)
+I (13502) unified_cam: PCF8574 initialized â€” all pins set to INPUT (0xFF)
+I (13522) FT6336U: Resetting touch controller
+W (13682) FT6336U: Touch chip-id 0x00 not recognised on attempt 1 — retrying
+W (15182) FT6336U: Touch chip-id check failed but I2C address ACKs (ping attempt 1) — enabling touch in fallback mode
+I (15182) vl53_multi: Bootstrapping VL53L0X sensors via TCA9548A
+W (15892) vl53_multi: Ch0: VL53 not found at 0x29 (attempt 1)
+I (15892) vl53_multi: Ch0: hard-reset retry 2/5 via XSHUT (progressive pulse)
+W (16462) vl53_multi: Ch0: VL53 not found at 0x29 (attempt 2)
+I (16462) vl53_multi: Ch0: hard-reset retry 3/5 via XSHUT (progressive pulse)
+W (17232) vl53_multi: Ch0: VL53 not found at 0x29 (attempt 3)
+I (17232) vl53_multi: Ch0: hard-reset retry 4/5 via XSHUT (progressive pulse)
+W (18422) vl53_multi: Ch0: VL53 not found at 0x29 (attempt 4)
+I (18422) vl53_multi: Ch0: hard-reset retry 5/5 via XSHUT (progressive pulse)
+W (20512) vl53_multi: Ch0: VL53 not found at 0x29 (attempt 5)
+W (20512) vl53_multi: Ch0: init failed after 5 attempts
+W (21132) vl53_multi: Ch1: VL53 not found at 0x29 (attempt 1)
+I (21132) vl53_multi: Ch1: hard-reset retry 2/5 via XSHUT (progressive pulse)
+W (21702) vl53_multi: Ch1: VL53 not found at 0x29 (attempt 2)
+I (21702) vl53_multi: Ch1: hard-reset retry 3/5 via XSHUT (progressive pulse)
+W (22472) vl53_multi: Ch1: VL53 not found at 0x29 (attempt 3)
+I (22472) vl53_multi: Ch1: hard-reset retry 4/5 via XSHUT (progressive pulse)
+W (23662) vl53_multi: Ch1: VL53 not found at 0x29 (attempt 4)
+I (23662) vl53_multi: Ch1: hard-reset retry 5/5 via XSHUT (progressive pulse)
+W (25752) vl53_multi: Ch1: VL53 not found at 0x29 (attempt 5)
+W (25752) vl53_multi: Ch1: init failed after 5 attempts
+W (26372) vl53_multi: Ch2: VL53 not found at 0x29 (attempt 1)
+I (26372) vl53_multi: Ch2: hard-reset retry 2/5 via XSHUT (progressive pulse)
+W (26942) vl53_multi: Ch2: VL53 not found at 0x29 (attempt 2)
+I (26942) vl53_multi: Ch2: hard-reset retry 3/5 via XSHUT (progressive pulse)
+W (27712) vl53_multi: Ch2: VL53 not found at 0x29 (attempt 3)
+I (27712) vl53_multi: Ch2: hard-reset retry 4/5 via XSHUT (progressive pulse)
+W (28902) vl53_multi: Ch2: VL53 not found at 0x29 (attempt 4)
+I (28902) vl53_multi: Ch2: hard-reset retry 5/5 via XSHUT (progressive pulse)
+W (30992) vl53_multi: Ch2: VL53 not found at 0x29 (attempt 5)
+W (30992) vl53_multi: Ch2: init failed after 5 attempts
+W (31612) vl53_multi: Ch3: VL53 not found at 0x29 (attempt 1)
+I (31612) vl53_multi: Ch3: hard-reset retry 2/5 via XSHUT (progressive pulse)
+W (32182) vl53_multi: Ch3: VL53 not found at 0x29 (attempt 2)
+I (32182) vl53_multi: Ch3: hard-reset retry 3/5 via XSHUT (progressive pulse)
+W (32952) vl53_multi: Ch3: VL53 not found at 0x29 (attempt 3)
+I (32952) vl53_multi: Ch3: hard-reset retry 4/5 via XSHUT (progressive pulse)
+W (34142) vl53_multi: Ch3: VL53 not found at 0x29 (attempt 4)
+I (34142) vl53_multi: Ch3: hard-reset retry 5/5 via XSHUT (progressive pulse)
+W (36232) vl53_multi: Ch3: VL53 not found at 0x29 (attempt 5)
+W (36232) vl53_multi: Ch3: init failed after 5 attempts
+W (36852) vl53_multi: Ch4: VL53 not found at 0x29 (attempt 1)
+I (36852) vl53_multi: Ch4: hard-reset retry 2/5 via XSHUT (progressive pulse)
+W (37422) vl53_multi: Ch4: VL53 not found at 0x29 (attempt 2)
+I (37422) vl53_multi: Ch4: hard-reset retry 3/5 via XSHUT (progressive pulse)
+W (38192) vl53_multi: Ch4: VL53 not found at 0x29 (attempt 3)
+I (38192) vl53_multi: Ch4: hard-reset retry 4/5 via XSHUT (progressive pulse)
+W (39382) vl53_multi: Ch4: VL53 not found at 0x29 (attempt 4)
+I (39382) vl53_multi: Ch4: hard-reset retry 5/5 via XSHUT (progressive pulse)
+W (41472) vl53_multi: Ch4: VL53 not found at 0x29 (attempt 5)
+W (41472) vl53_multi: Ch4: init failed after 5 attempts
+W (42092) vl53_multi: Ch5: VL53 not found at 0x29 (attempt 1)
+I (42092) vl53_multi: Ch5: hard-reset retry 2/5 via XSHUT (progressive pulse)
+W (42662) vl53_multi: Ch5: VL53 not found at 0x29 (attempt 2)
+I (42662) vl53_multi: Ch5: hard-reset retry 3/5 via XSHUT (progressive pulse)
+W (43432) vl53_multi: Ch5: VL53 not found at 0x29 (attempt 3)
+I (43432) vl53_multi: Ch5: hard-reset retry 4/5 via XSHUT (progressive pulse)
+W (44622) vl53_multi: Ch5: VL53 not found at 0x29 (attempt 4)
+I (44622) vl53_multi: Ch5: hard-reset retry 5/5 via XSHUT (progressive pulse)
+W (46712) vl53_multi: Ch5: VL53 not found at 0x29 (attempt 5)
+W (46712) vl53_multi: Ch5: init failed after 5 attempts
+I (46742) vl53_multi: Starting VL53L0X poll task
+I (46742) vl53_multi: vl53 raw[mm]: M1=--- M2=--- M3=--- M4=--- M5=--- M6=---
+I (46742) display_clk: Init ST7796S 480x320 - Interactive UI Layout
+I (46772) display_clk: SPI2 OK 40MHz
+I (46782) display_clk: Display SPI ready
+W (46922) camera_init: Background camera retry 1/38
+I (46922) camera_init: Lazy camera_init triggered (first /capture or /photo)
+I (47102) camera_init: Initializing JPEG encoder for 800x640
+W (47102) jpeg_enc: DIAG-LEAK entry  PSRAM free=23308912 largest=23068672
+I (47102) jpeg_enc: JPEG encoder already initialised 800x640 — reuse
+I (47292) display_clk: Display controller initialized
+I (47292) display_clk: Display initialized
+I (47292) unified_cam: SD card init disabled
+I (47412) camera_init: MIPI PHY LDO power-cycled (200 ms off)
+I (47412) camera_init: XCLK 24000000 Hz generated on GPIO33
+I (47612) camera_init: VL53 XSHUT lowered before SCCB (chips offline)
+I (47682) camera_init: Shared I2C bus recovered before SCCB init
+W (47842) camera_init: I2C scan begin (looking for camera + others)...
+W (47842) camera_init: I2C scan ACK: 0x09 0x0B 0x0D 0x0F 0x11 0x13 0x15 0x17 0x19 0x1B 0x1D 0x1F 0x21 0x23 0x25
+W (47842) camera_init: I2C scan ACK: 0x28 0x2A 0x2C 0x2E 0x30 0x32 0x34 0x35 0x37 0x39 0x3B 0x3D 0x3F 0x41 0x43
+W (47852) camera_init: I2C scan ACK: 0x46 0x48 0x4A 0x4C 0x4E 0x50 0x52 0x54 0x56 0x58 0x5A 0x5C 0x5E 0x60 0x62
+W (47872) camera_init: I2C scan ACK: 0x65 0x67 0x69 0x6B 0x6D 0x6E 0x70 0x72 0x74 0x76
+W (47872) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (47892) camera_init: Camera attempt 1 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+I (47932) display_clk: Clock task started
+[LIVENESS] canary armed (TWDT auto-reI (47992) unified_cam: app_main: init complete, entering keepalive loop
+boot if stuck)
+I (49792)�                                                                                                                                                                                                                                     

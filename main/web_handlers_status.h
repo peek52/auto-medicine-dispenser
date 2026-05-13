@@ -61,4 +61,7 @@ esp_err_t sensors_calguide_handler(httpd_req_t *req);
 /* ── GET /audit.json — ประวัติการเพิ่ม/ลด/จ่ายของยาแต่ละช่อง ── */
 esp_err_t audit_json_handler(httpd_req_t *req);
 
-/* /sensors HTML page removed — /tech "ดูเซ็นเซอร์" tab is the canonical view. */
+/* ── GET /vl53 — live HTML view of VL53 readings (auto-refreshes the
+ *    /sensors.json data every 3 s; each refresh triggers an on-demand
+ *    poll so values are current). No auth needed for read-only view. */
+esp_err_t vl53_live_handler(httpd_req_t *req);

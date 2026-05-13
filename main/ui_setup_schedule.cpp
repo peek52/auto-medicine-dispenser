@@ -7,6 +7,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+extern "C" {
+#include "dispenser_scheduler.h"
+}
+
 static void draw_schedule_label(int16_t x, int16_t y, const ui_label_bitmap_t *label)
 {
     if (!label || !label->pixels) return;
@@ -113,14 +117,14 @@ void ui_setup_schedule_render(void)
         fill_screen(THEME_BG);
         draw_top_bar_with_back(g_ui_language == UI_LANG_TH ? NULL : "Schedule Setup");
         if (g_ui_language == UI_LANG_TH) {
-            draw_schedule_label((LCD_W - kThTopSchedule.width) / 2, 6, &kThTopSchedule);
+            draw_schedule_label((LCD_W - kThTopSchedule.width) / 2, 18, &kThTopSchedule);
         }
 
         bool enabled = netpie_get_shadow()->enabled;
         prev_enabled = enabled;
-        fill_round_rect(374, 8, 88, 28, 14, enabled ? THEME_OK : THEME_INACTIVE);
+        fill_round_rect(374, 18, 88, 28, 14, enabled ? THEME_OK : THEME_INACTIVE);
         if (g_ui_language == UI_LANG_TH) {
-            draw_schedule_label(374 + ((88 - (enabled ? kThOn.width : kThOff.width)) / 2), 8, enabled ? &kThOn : &kThOff);
+            draw_schedule_label(374 + ((88 - (enabled ? kThOn.width : kThOff.width)) / 2), 18, enabled ? &kThOn : &kThOff);
         } else {
             draw_string_centered(418, 28, enabled ? "ON" : "OFF", 0xFFFF, enabled ? THEME_OK : THEME_INACTIVE, &FreeSans12pt7b);
         }
@@ -178,11 +182,11 @@ void ui_setup_schedule_render(void)
         // Partial Update for Master Toggle
         bool enabled = netpie_get_shadow()->enabled;
         if (enabled != prev_enabled) {
-            fill_round_rect(374, 8, 88, 28, 14, enabled ? THEME_OK : THEME_INACTIVE);
+            fill_round_rect(374, 18, 88, 28, 14, enabled ? THEME_OK : THEME_INACTIVE);
             if (g_ui_language == UI_LANG_TH) {
-                draw_schedule_label(374 + ((88 - (enabled ? kThOn.width : kThOff.width)) / 2), 8, enabled ? &kThOn : &kThOff);
+                draw_schedule_label(374 + ((88 - (enabled ? kThOn.width : kThOff.width)) / 2), 18, enabled ? &kThOn : &kThOff);
             } else {
-                draw_string_centered(418, 28, enabled ? "ON" : "OFF", 0xFFFF, enabled ? THEME_OK : THEME_INACTIVE, &FreeSans12pt7b);
+                draw_string_centered(418, 38, enabled ? "ON" : "OFF", 0xFFFF, enabled ? THEME_OK : THEME_INACTIVE, &FreeSans12pt7b);
             }
             prev_enabled = enabled;
         }
@@ -191,8 +195,8 @@ void ui_setup_schedule_render(void)
 
 void ui_setup_schedule_handle_touch(uint16_t tx_n, uint16_t ty_n)
 {
-    if (ty_n < 44) {
-        if (tx_n >= 14 && tx_n <= 118 && ty_n >= 8 && ty_n <= 34) {
+    if (ty_n < 56) {
+        if (tx_n >= 0 && tx_n <= 130 && ty_n >= 0 && ty_n <= 52) {
             dfplayer_play_track(g_snd_button);
             pending_page = PAGE_MENU;
             edit_slot = -1;
@@ -297,10 +301,15 @@ void ui_time_picker_render(void)
 
 void ui_time_picker_handle_touch(uint16_t tx_n, uint16_t ty_n, bool long_press)
 {
-    bool in_hour_plus  = (tx_n >= 80  && tx_n <= 240 && ty_n >= TP_PLUS_BTN_Y  && ty_n <= (TP_PLUS_BTN_Y + 40));
-    bool in_min_plus   = (tx_n >= 240 && tx_n <= 400 && ty_n >= TP_PLUS_BTN_Y  && ty_n <= (TP_PLUS_BTN_Y + 40));
-    bool in_hour_minus = (tx_n >= 80  && tx_n <= 240 && ty_n >= TP_MINUS_BTN_Y && ty_n <= (TP_MINUS_BTN_Y + 40));
-    bool in_min_minus  = (tx_n >= 240 && tx_n <= 400 && ty_n >= TP_MINUS_BTN_Y && ty_n <= (TP_MINUS_BTN_Y + 40));
+    /* Hit zones used to share the boundary x=240 — a tap right at the
+     * centre triggered whichever check ran first (hour), so users
+     * aiming for "minute" sometimes incremented "hour" instead. 40 px
+     * dead-zone (x 220..260) between the two columns ignores ambiguous
+     * taps. Visual buttons themselves stay at x=80 / x=240 (~80 px wide). */
+    bool in_hour_plus  = (tx_n >= 80  && tx_n <= 220 && ty_n >= TP_PLUS_BTN_Y  && ty_n <= (TP_PLUS_BTN_Y + 40));
+    bool in_min_plus   = (tx_n >= 260 && tx_n <= 400 && ty_n >= TP_PLUS_BTN_Y  && ty_n <= (TP_PLUS_BTN_Y + 40));
+    bool in_hour_minus = (tx_n >= 80  && tx_n <= 220 && ty_n >= TP_MINUS_BTN_Y && ty_n <= (TP_MINUS_BTN_Y + 40));
+    bool in_min_minus  = (tx_n >= 260 && tx_n <= 400 && ty_n >= TP_MINUS_BTN_Y && ty_n <= (TP_MINUS_BTN_Y + 40));
 
     if (!long_press) {
         if (in_hour_plus)  edit_hh = (edit_hh + 1) % 24;
@@ -323,6 +332,11 @@ void ui_time_picker_handle_touch(uint16_t tx_n, uint16_t ty_n, bool long_press)
         char buf[8];
         snprintf(buf, sizeof(buf), "%02d:%02d", edit_hh, edit_mm);
         netpie_shadow_update_slot(edit_slot, buf);
+        /* User just edited this slot's time — clear the 12-hour refire
+         * guard so a previous test fire today doesn't silently block the
+         * newly-scheduled time. Without this, a user testing slots back
+         * to back would see "no dispense" with no clue why. */
+        dispenser_reset_slot_refire_guard(edit_slot);
         pending_page = PAGE_SETUP_SCHEDULE;
         edit_slot = -1;
         force_redraw = true;
@@ -331,10 +345,11 @@ void ui_time_picker_handle_touch(uint16_t tx_n, uint16_t ty_n, bool long_press)
 
 void ui_time_picker_handle_hold(uint16_t tx_n, uint16_t ty_n)
 {
-    bool in_hour_plus  = (tx_n >= 80  && tx_n <= 240 && ty_n >= TP_PLUS_BTN_Y  && ty_n <= (TP_PLUS_BTN_Y + 40));
-    bool in_min_plus   = (tx_n >= 240 && tx_n <= 400 && ty_n >= TP_PLUS_BTN_Y  && ty_n <= (TP_PLUS_BTN_Y + 40));
-    bool in_hour_minus = (tx_n >= 80  && tx_n <= 240 && ty_n >= TP_MINUS_BTN_Y && ty_n <= (TP_MINUS_BTN_Y + 40));
-    bool in_min_minus  = (tx_n >= 240 && tx_n <= 400 && ty_n >= TP_MINUS_BTN_Y && ty_n <= (TP_MINUS_BTN_Y + 40));
+    /* Same dead-zone treatment as the tap handler above. */
+    bool in_hour_plus  = (tx_n >= 80  && tx_n <= 220 && ty_n >= TP_PLUS_BTN_Y  && ty_n <= (TP_PLUS_BTN_Y + 40));
+    bool in_min_plus   = (tx_n >= 260 && tx_n <= 400 && ty_n >= TP_PLUS_BTN_Y  && ty_n <= (TP_PLUS_BTN_Y + 40));
+    bool in_hour_minus = (tx_n >= 80  && tx_n <= 220 && ty_n >= TP_MINUS_BTN_Y && ty_n <= (TP_MINUS_BTN_Y + 40));
+    bool in_min_minus  = (tx_n >= 260 && tx_n <= 400 && ty_n >= TP_MINUS_BTN_Y && ty_n <= (TP_MINUS_BTN_Y + 40));
 
     if (in_hour_plus)  edit_hh = (edit_hh + 1) % 24;
     if (in_min_plus)   edit_mm = (edit_mm + 1) % 60;

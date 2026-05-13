@@ -38,40 +38,22 @@ static SemaphoreHandle_t s_read_mutex = NULL;
 static uint8_t *s_rot_buf = NULL;
 static size_t   s_rot_buf_size = 0;
 
-/* Rotate YUYV-packed YUV422 by 90° CCW.
- *   dst(dx, dy)  =  src(sx = dy, sy = src_h - 1 - dx)
- * Output dimensions are width=src_h, height=src_w (swapped).
- * Chroma is subsampled by simply reusing the U/V from each source pair —
- * acceptable because we run at 50% colour-bandwidth tolerance for snapshot
- * use; visible artifacts are limited to fine high-contrast colour edges. */
-static void rotate_yuv422_90ccw(const uint8_t *src, uint8_t *dst,
+/* Rotate RGB565 (16-bit per pixel) frame 90° CCW. RGB565 pixels are
+ * independent (no shared chroma like YUV422), so the rotation is a
+ * straight pixel-level swap: dst[dy][dx] = src[src_h-1-dx][dy]. */
+static void rotate_rgb565_90ccw(const uint8_t *src, uint8_t *dst,
                                 int src_w, int src_h)
 {
-    const int dst_w  = src_h;
-    const int dst_h  = src_w;
-    const int sstride = src_w * 2;
-    const int dstride = dst_w * 2;
+    const int dst_w = src_h;
+    const int dst_h = src_w;
+    const uint16_t *s = (const uint16_t *)src;
+    uint16_t *d = (uint16_t *)dst;
 
     for (int dy = 0; dy < dst_h; ++dy) {
-        const int sx = dy;          /* source x for this dst row */
-        for (int dx_pair = 0; dx_pair < dst_w; dx_pair += 2) {
-            const int sy0 = src_h - 1 - dx_pair;
-            const int sy1 = src_h - 2 - dx_pair;
-
-            const uint8_t y0 = src[sy0 * sstride + sx * 2];
-            const uint8_t y1 = src[sy1 * sstride + sx * 2];
-
-            /* Pull U/V from the YUYV pair containing the upper source pixel.
-             * (sx & ~1) gives the even x-coordinate that starts the pair. */
-            const int pair0 = sy0 * sstride + (sx & ~1) * 2;
-            const uint8_t u = src[pair0 + 1];
-            const uint8_t v = src[pair0 + 3];
-
-            uint8_t *p = dst + dy * dstride + dx_pair * 2;
-            p[0] = y0;
-            p[1] = u;
-            p[2] = y1;
-            p[3] = v;
+        const int sx = dy;
+        for (int dx = 0; dx < dst_w; ++dx) {
+            const int sy = src_h - 1 - dx;
+            d[dy * dst_w + dx] = s[sy * src_w + sx];
         }
     }
 }
@@ -245,21 +227,19 @@ esp_err_t jpeg_enc_encode_frame(const uint8_t *yuv422_data, size_t yuv422_len) {
         return ESP_ERR_NO_MEM;
     }
 
-    /* Rotate raw YUV422 90° CCW into scratch buffer, then encode the
+    /* Rotate RGB565 90° CCW into scratch buffer, then encode the
      * rotated buffer with swapped dimensions. Required because Telegram
      * strips EXIF orientation tags during upload, so software pixel
      * rotation is the only way to deliver an upright image. */
     if (s_rot_buf && yuv422_len <= s_rot_buf_size) {
-        rotate_yuv422_90ccw(yuv422_data, s_rot_buf, s_width, s_height);
-        /* Flush rotation buffer from CPU cache so JPEG hardware DMA sees
-         * the rotated bytes (PSRAM-backed buffer). */
+        rotate_rgb565_90ccw(yuv422_data, s_rot_buf, s_width, s_height);
         esp_cache_msync(s_rot_buf, s_rot_buf_size, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
     }
 
     jpeg_encode_cfg_t enc_cfg = {
         .width         = s_height,   /* swapped: rotated W = original H */
         .height        = s_width,    /* swapped: rotated H = original W */
-        .src_type      = JPEG_ENCODE_IN_FORMAT_YUV422,
+        .src_type      = JPEG_ENCODE_IN_FORMAT_RGB565,
         .sub_sample    = JPEG_DOWN_SAMPLING_YUV422,
         .image_quality = s_jpeg_quality,
     };

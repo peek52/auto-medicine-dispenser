@@ -1,0 +1,852 @@
+================================================================================
+                       วิทยานิพนธ์ฉบับเต็ม — แผนรายบท
+
+                  เครื่องจ่ายยาอัตโนมัติพร้อมระบบควบคุมระยะไกล
+                       ผ่านเครือข่าย IoT และการแจ้งเตือนทาง
+                            แอปพลิเคชัน Telegram
+
+      (Automated Pill Dispenser with IoT Cloud Monitoring and
+                       Telegram-based Notification)
+================================================================================
+
+ผู้จัดทำ      : [ใส่ชื่อนักศึกษา]
+อาจารย์ที่ปรึกษา : [ใส่ชื่ออาจารย์]
+สาขาวิชา     : [วิศวกรรมคอมพิวเตอร์ / วิศวกรรมไฟฟ้า / IoT]
+ปีการศึกษา   : 2569 (2026)
+
+แพลตฟอร์ม    : ESP32-P4-Nano (RISC-V dual-core 360 MHz, PSRAM 32 MB)
+เฟรมเวิร์ก   : ESP-IDF v5.3.2 + FreeRTOS
+ภาษา         : C / C++ (~25,000 บรรทัด, 96 ไฟล์)
+อัปเดต       : 2026-05-06
+
+================================================================================
+หน้าปก / กิตติกรรมประกาศ / บทคัดย่อ
+================================================================================
+
+[หน้าปก]                                          (~1 หน้า)
+[หน้าปกใน + อนุมัติ]                              (~1 หน้า)
+[กิตติกรรมประกาศ]                                  (~1 หน้า)
+[บทคัดย่อภาษาไทย]                                  (~1 หน้า, ~250 คำ)
+[บทคัดย่อภาษาอังกฤษ]                              (~1 หน้า, ~250 คำ)
+[สารบัญ]                                          (~3-5 หน้า)
+[สารบัญตาราง]                                     (~1 หน้า)
+[สารบัญรูปภาพ]                                    (~2 หน้า)
+[คำย่อ + สัญลักษณ์]                                (~1 หน้า)
+
+
+================================================================================
+บทที่ 1 : บทนำ (Introduction)                              ~12-15 หน้า
+================================================================================
+
+1.1 ความเป็นมาและความสำคัญของปัญหา                       (~3 หน้า)
+    1.1.1 สถานการณ์ผู้สูงอายุและผู้ป่วยโรคเรื้อรังในประเทศไทย
+          - สถิติประชากรผู้สูงอายุ (กรมกิจการผู้สูงอายุ)
+          - สัดส่วนผู้ป่วยโรค NCDs ที่ต้องทานยาประจำ (กรมควบคุมโรค)
+          - แนวโน้มการเพิ่มขึ้นของผู้สูงอายุที่อยู่บ้านคนเดียว
+    1.1.2 ปัญหาการลืมรับประทานยา (Medication Non-adherence)
+          - นิยาม WHO: adherence rate ≤ 50% ในผู้สูงอายุ
+          - ผลทางคลินิก: รักษาไม่หาย, ดื้อยา, ผลข้างเคียงจาก overdose
+          - ผลทางเศรษฐกิจ: ค่ารักษาพยาบาลเพิ่ม, การกลับเข้าโรงพยาบาล
+    1.1.3 ข้อจำกัดของเครื่องจ่ายยาที่มีในตลาด
+          - แบบ mechanical: ไม่มีการแจ้งเตือนระยะไกล
+          - แบบ smart ราคาแพง: 10,000-30,000 บาท/เครื่อง
+          - ส่วนใหญ่ไม่มีกล้องตรวจสอบ ไม่มี cloud sync
+    1.1.4 แนวโน้มเทคโนโลยี IoT + Healthcare ในปี 2026
+          - การลดราคา ESP32 family
+          - NETPIE 2020 platform ของไทย
+          - Telegram Bot API ที่เข้าถึงง่าย
+
+1.2 วัตถุประสงค์ของโครงงาน                                (~1 หน้า)
+    1.2.1 ออกแบบและพัฒนาเครื่องจ่ายยาอัตโนมัติ 6 ช่อง พร้อมการนับเม็ดยาด้วย IR
+    1.2.2 พัฒนาระบบตรวจวัดยาคงเหลือด้วยเซนเซอร์ระยะ Time-of-Flight (VL53L0X)
+    1.2.3 พัฒนาระบบกล้องตรวจสอบสถานะแบบสั่งงานผ่าน Telegram
+    1.2.4 พัฒนา UI บนจอสัมผัส (touchscreen) ใช้งานได้แบบ standalone
+    1.2.5 เชื่อมต่อ NETPIE 2020 + Telegram + Google Sheets
+    1.2.6 ออกแบบ algorithm ที่รองรับการทำงานต่อเนื่อง 24/7 พร้อมระบบ recovery
+
+1.3 ขอบเขตของโครงงาน                                       (~2 หน้า)
+    1.3.1 ขอบเขตด้านฮาร์ดแวร์
+          - บอร์ดประมวลผล: ESP32-P4-Nano เพียงตัวเดียว
+          - จำนวนช่องยา: 6 ช่อง
+          - รูปแบบยา: เฉพาะแคปซูล/เม็ดทรงกระบอกขนาดไม่เกิน 12 มม.
+          - ไม่ครอบคลุม: ยาผง ยาน้ำ ยาพ่น ยาฉีด
+    1.3.2 ขอบเขตด้านซอฟต์แวร์
+          - ภาษา C/C++ บน ESP-IDF v5.3.2 + FreeRTOS
+          - โปรโตคอล: I²C, SPI, MIPI-CSI, UART, MQTT, HTTPS
+          - คลาวด์: NETPIE 2020 + Telegram Bot + Google Apps Script
+    1.3.3 ขอบเขตการใช้งาน
+          - ใช้ภายในที่อยู่อาศัย (indoor)
+          - ต้องมีอินเทอร์เน็ตผ่าน WiFi 2.4 GHz
+          - แหล่งจ่ายไฟ 5V 10A (ผู้ใช้จัดเตรียม)
+
+1.4 ประโยชน์ที่คาดว่าจะได้รับ                              (~2 หน้า)
+    1.4.1 ผู้ใช้ปลายทาง (ผู้สูงอายุ/ผู้ป่วย)
+          - เครื่องจ่ายยาให้ตรงเวลาอัตโนมัติ
+          - ยืนยันการรับยาได้แม้อยู่คนเดียว
+    1.4.2 ผู้ดูแล (Caregiver)
+          - แจ้งเตือนทันทีผ่าน Telegram
+          - ดูภาพยืนยันการจ่ายยาผ่านกล้อง
+          - ตรวจสอบ audit log ย้อนหลังใน Google Sheets
+    1.4.3 บุคลากรการแพทย์
+          - ดูประวัติการทานยาเพื่อปรับ dose
+          - ติดตามยาคงเหลือเพื่อสั่งจ่ายล่วงหน้า
+    1.4.4 องค์ความรู้ทางวิศวกรรม
+          - แนวทางการ integrate IoT + computer vision บน MCU เดียว
+          - ตัวอย่าง multi-protocol bus management (I²C 7+ devices, MIPI-CSI)
+          - กรณีศึกษาการแก้ปัญหา ESP-IDF v5.3.2 i2c_master ISR race
+
+1.5 ผลที่คาดว่าจะได้รับ                                    (~1 หน้า)
+    1.5.1 ระบบทำงานต่อเนื่อง ≥ 24 ชั่วโมงไม่ต้อง reset
+    1.5.2 ความแม่นยำการนับยา ≥ 95%
+    1.5.3 ตอบสนอง Telegram /photo ภายใน ≤ 5 วินาที
+    1.5.4 รองรับโหมด offline (queue + retry เมื่อ network กลับมา)
+    1.5.5 ราคาต้นทุน ≤ 5,000 บาท/เครื่อง
+
+1.6 นิยามศัพท์เฉพาะ                                        (~1 หน้า)
+    - Adherence       อัตราการรับยาตามแพทย์สั่ง
+    - Dispense        การจ่ายยาออกจากช่อง
+    - ToF             Time-of-Flight (วัดระยะด้วยลำแสงสะท้อน)
+    - SCCB            Serial Camera Control Bus (I²C-like)
+    - MIPI-CSI        Mobile Industry Processor Interface — Camera Serial
+    - Shadow          NETPIE Device Shadow (cached state)
+    - Watchdog        Hardware/Software ที่ reset ระบบเมื่อค้าง
+
+
+================================================================================
+บทที่ 2 : ทฤษฎีและงานวิจัยที่เกี่ยวข้อง                  ~30-40 หน้า
+================================================================================
+
+2.1 บทนำของบทที่ 2                                         (~1 หน้า)
+
+2.2 สถาปัตยกรรมไมโครคอนโทรลเลอร์ ESP32-P4                  (~3-4 หน้า)
+    2.2.1 RISC-V dual-core architecture
+          - HiFi 5 vs RISC-V (เปรียบเทียบกับ ESP32 classic)
+          - 360 MHz หลัก + 40 MHz LP-core
+          - Memory map: 768 KB internal SRAM + 32 MB PSRAM
+    2.2.2 Hardware accelerators
+          - JPEG codec (encode/decode)
+          - PPA (Pixel Processing Accelerator)
+          - 2D-DMA + EDMA
+    2.2.3 I/O peripherals
+          - 55+ GPIO
+          - 2× I²C, 5× SPI, 6× UART, 2× SDIO
+          - MIPI-CSI 2-lane, MIPI-DSI
+
+2.3 ESP-IDF Framework และ FreeRTOS                         (~3 หน้า)
+    2.3.1 ESP-IDF architecture
+          - Component-based build system (CMake)
+          - Driver layer + HAL + LL layer
+          - Managed components
+    2.3.2 FreeRTOS principles
+          - Task scheduling (preemptive priority-based)
+          - Semaphore, Mutex, Queue
+          - Tick rate, Watchdog
+    2.3.3 IDLE0/IDLE1, TWDT, INT_WDT
+
+2.4 โปรโตคอลการสื่อสารฮาร์ดแวร์                          (~5-6 หน้า)
+    2.4.1 I²C Protocol
+          - Master-slave, 7-bit addressing
+          - Start, Address, R/W, ACK, Data, Stop
+          - Pull-up resistor calculation: R = (Vcc-VOL) / I_OL
+                ตัวอย่าง: 3.3V, 3 mA → R = 1.1 kΩ
+                Bus capacitance budget Cb ≤ 400 pF (Standard)
+          - Speed modes: Standard 100 kHz, Fast 400 kHz
+    2.4.2 I²C Multiplexer (TCA9548A)
+          - 8-channel switch กับ control byte
+          - การแก้ปัญหา address collision (VL53 ทุกตัว @ 0x29)
+    2.4.3 SPI Protocol (สำหรับจอ TFT)
+          - Master mode, MSB-first, mode 0
+          - Frequency 40 MHz บน ESP32-P4
+    2.4.4 MIPI-CSI (Camera)
+          - Differential pairs (D0±, D1±, CLK±)
+          - Lane bit rate 200 Mbps × 2 lanes
+          - Packet format: Short packet, Long packet
+    2.4.5 UART (Audio module)
+          - Asynchronous, 9600/115200 baud
+          - 8-N-1 framing
+    2.4.6 SDIO (WiFi co-processor)
+          - 4-bit data lines, 40 MHz clock
+          - Function 0 + Function 1 split
+
+2.5 ทฤษฎีเซนเซอร์                                          (~5-6 หน้า)
+    2.5.1 IR Photointerruptor (Break-beam Sensor)
+          - หลักการ: LED + Phototransistor วางหันหน้ากัน
+          - กระแสไหลปกติ → ยาตกตัด beam → กระแสลดลง
+          - Output dilevel: HIGH ปกติ, LOW เมื่อบังลำแสง
+          - Debounce theory + edge detection
+    2.5.2 Time-of-Flight (VL53L0X)
+          - หลักการ d = c × Δt / 2
+          - VCSEL laser 940 nm
+          - SPAD photodiode array
+          - Ranging modes: Default, Long Range, High Speed, High Accuracy
+          - การแปลง raw_mm → pill_count
+          - Signal rate, range valid status
+    2.5.3 Capacitive Touch (FT6336U)
+          - Mutual capacitance vs Self capacitance
+          - X-Y electrode matrix
+          - I²C interface, register 0x02 = touch data
+          - Interrupt mode vs Polling mode
+
+2.6 ทฤษฎี Actuator                                         (~3 หน้า)
+    2.6.1 Servo Motor SG90
+          - 50 Hz PWM, pulse 0.5-2.5 ms
+          - Position = (pulse_us - 500) × 180 / 2000 องศา
+          - Torque vs current draw
+    2.6.2 PCA9685 (16-channel PWM driver)
+          - I²C @ 0x40, 12-bit resolution
+          - Internal 25 MHz oscillator + prescaler
+          - prescale = round(25e6 / (4096 × f_pwm)) - 1
+            ที่ 50 Hz: prescale = 121
+
+2.7 Computer Vision Subsystem                              (~3-4 หน้า)
+    2.7.1 OV5647 image sensor
+          - 5 MP CMOS (2592×1944), Bayer pattern
+          - SCCB control (I²C compatible @ 0x36)
+          - PID 0x5647 (sometimes 0x568f variant)
+    2.7.2 ISP Pipeline บน ESP32-P4
+          - Bayer demosaic → RGB → YUV422
+          - Auto exposure, Auto white balance
+          - Output bit depth 8-bit per channel
+    2.7.3 JPEG Hardware Encoder
+          - Block-based DCT (8×8)
+          - Quantization tables
+          - Huffman coding
+          - Throughput: ~50 MB/s output
+    2.7.4 Software 90° rotation algorithm
+          - dst(x,y) = src(y, src_w-1-x)
+          - YUV422: Y0 U Y1 V → 4 bytes per 2 pixels
+          - Buffer requirement: PSRAM 1 MB
+
+2.8 IoT และ Cloud Communication                            (~5-6 หน้า)
+    2.8.1 MQTT Protocol
+          - Publish-Subscribe pattern
+          - QoS 0, 1, 2 differences
+          - Connect, Subscribe, Publish, PingReq frames
+          - Last Will Testament
+    2.8.2 NETPIE 2020 Platform (ของไทย)
+          - Architecture: Device → MQTT broker (mqtt.netpie.io:1883)
+          - Device Shadow concept (synchronized state)
+          - Topic: @shadow/data/update, @msg/...
+          - Authentication: Device Token
+    2.8.3 HTTPS + TLS 1.2
+          - X.509 certificate chain
+          - esp-x509-crt-bundle (Mozilla CA bundle)
+          - Handshake: ClientHello → ServerHello → KeyExchange → Finished
+    2.8.4 Telegram Bot API
+          - HTTPS REST API: api.telegram.org
+          - getUpdates long-polling (offset-based)
+          - sendMessage, sendPhoto (multipart/form-data)
+          - File upload limit: 50 MB
+    2.8.5 Google Apps Script Webhook
+          - Web App URL ที่ deploy เป็น public
+          - POST JSON → Sheets row
+          - Quota: 6 นาที/execution
+
+2.9 Algorithm และเทคนิคซอฟต์แวร์                          (~4-5 หน้า)
+    2.9.1 Edge-Triggered Detection with Debouncing
+          - State machine: IDLE → RISING → STABLE → FALLING → IDLE
+          - Debounce window: 30 ms minimum stable time
+    2.9.2 Stable-Tick Filter (Sensor → Shadow Sync)
+          - Skip publish until reading stable for N ticks
+          - ลด MQTT traffic + flicker
+    2.9.3 Mid-Cycle Bail (Dispense Timeout)
+          - servo work command + IR poll loop
+          - bail หลัง 4.5s ถ้าไม่เห็นยา
+    2.9.4 Three-Tier Watchdog
+          - Tier 1: Task WDT (TWDT) 30s — task hang
+          - Tier 2: Liveness canary task — software lockup
+          - Tier 3: RTC WDT — full firmware crash
+    2.9.5 Mutex Coordination Pattern
+          - g_i2c_mutex (single owner)
+          - Pause/resume API (cooperative yield)
+          - Avoid priority inversion
+    2.9.6 Lazy Initialization
+          - Camera + JPEG encoder on first use
+          - Saves ~3s boot time, ~1MB PSRAM idle
+    2.9.7 EMA Filter (Exponential Moving Average)
+          - filtered = (filtered × (1-α)) + (raw × α)
+          - α = 0.6 → fast tracking, ลด noise
+
+2.10 Security and Reliability                              (~2 หน้า)
+    2.10.1 Defense-in-depth (NVS encryption disabled, fall-back code)
+    2.10.2 Offline-first design (queue + retry)
+    2.10.3 Hardware bus recovery (bit-bang SDA unstick)
+
+2.11 งานวิจัยที่เกี่ยวข้อง                                 (~3 หน้า)
+    2.11.1 [Author 2020] "IoT-based Smart Pill Dispenser Using Arduino"
+           สรุป + ข้อจำกัด + ความต่างจากงานเรา
+    2.11.2 [Author 2022] "Medication Adherence Smart System Using RPi"
+    2.11.3 [Author 2024] "ToF Sensor in Healthcare Applications"
+    2.11.4 [Author 2023] "ESP32-based Telemedicine Devices"
+    2.11.5 ตารางเปรียบเทียบ feature กับงานวิจัยข้างต้น
+
+2.12 สรุปบทที่ 2                                           (~1 หน้า)
+
+
+================================================================================
+บทที่ 3 : วิธีดำเนินการวิจัย (Methodology)              ~35-45 หน้า
+================================================================================
+
+3.1 ภาพรวมของระบบ                                          (~3 หน้า)
+    3.1.1 Block Diagram ระดับสูง (System Overview)
+          [แทรกรูป]
+          - User Interface Layer
+          - Control Logic Layer
+          - Hardware Abstraction Layer
+          - Cloud Connectivity Layer
+    3.1.2 Use Case Diagram
+          - Actor: ผู้ป่วย, ผู้ดูแล, แพทย์, ระบบ
+          - Use Case: ตั้งเวลายา, จ่ายยา, ส่งภาพ, ดู log
+    3.1.3 Data Flow Diagram
+
+3.2 การออกแบบฮาร์ดแวร์                                    (~6-8 หน้า)
+    3.2.1 Bill of Materials (BOM)
+          [ตารางอุปกรณ์ + ราคา + ที่ซื้อ]
+          - ESP32-P4-Nano                    1 ชิ้น    1,200 บาท
+          - VL53L0X module                   6 ชิ้น    600 บาท
+          - TCA9548A module                  1 ชิ้น    100 บาท
+          - PCA9685 module                   1 ชิ้น    100 บาท
+          - SG90 servo motor                 6 ชิ้น    300 บาท
+          - PCF8574 module                   1 ชิ้น    50 บาท
+          - IR sensor                        6 ชิ้น    300 บาท
+          - DS3231 RTC + battery             1 ชิ้น    80 บาท
+          - ST7796S TFT 480×320 + FT6336U    1 ชิ้น    700 บาท
+          - OV5647 5MP camera + cable        1 ชิ้น    400 บาท
+          - DY-HV20T audio + 3W speaker      1 ชิ้น    250 บาท
+          - 5V 10A switching power supply    1 ชิ้น    400 บาท
+          - กล่องอะคริลิก + แผงวงจร         1 ชุด    500 บาท
+          - สาย/ตัวต้านทาน/ตัวเก็บประจุ     จิปาถะ   200 บาท
+          [รวม ≈ 5,180 บาท]
+    3.2.2 Pin Assignment
+          [ตาราง GPIO ครบทุกขา — ใช้ GPIO_LABELS.html]
+    3.2.3 Power Tree
+          - 5V rail → servo (PCA9685), audio amp
+          - 3.3V rail (จากบอร์ด) → I²C peripherals, sensors
+          - 2.8V LDO ch3 (internal) → camera AVDD
+          [แทรกรูป power tree]
+    3.2.4 ผังการต่อสาย (Schematic)
+          [แทรก WIRING_DIAGRAM]
+    3.2.5 PCB / Breadboard Photo
+          [ภาพถ่ายของจริง]
+    3.2.6 การออกแบบเชิงกล
+          - กล่องใส่ยา 6 ช่อง, dimension 200×150×100 มม.
+          - Servo arm + cartridge geometry
+          - ตำแหน่ง IR LED + receiver
+          - มุมวาง VL53 (มองตรงลงในหลอดยา)
+          - ที่ติดกล้อง
+
+3.3 การออกแบบซอฟต์แวร์                                    (~8-10 หน้า)
+    3.3.1 Software Architecture Overview
+          [แทรก architecture diagram]
+          - Layer: Driver / Service / Application / UI
+    3.3.2 FreeRTOS Task List
+          [ตาราง task: ชื่อ, priority, stack size, period]
+          - main_task (default)
+          - clock_task (UI render + touch)
+          - dispense_task
+          - vl53_poll_task
+          - camera_capture_task (lazy)
+          - telegram_polling_task
+          - liveness_canary_task
+          - deferred_init_task (one-shot)
+    3.3.3 Boot Sequence Diagram
+          [แทรก sequence diagram]
+          - 0-2s: bootloader, PSRAM init, app_main
+          - 2-5s: I²C bus, peripheral probes
+          - 5-15s: VL53 bootstrap, display, clock task
+          - 15-30s: deferred_init (WiFi, NTP, NETPIE, Telegram)
+    3.3.4 State Machine Diagrams
+          3.3.4.1 UI Page state machine
+          3.3.4.2 Dispense state machine (IDLE → BUSY → SUCCESS/FAIL)
+          3.3.4.3 Telegram polling state machine
+    3.3.5 Cloud Architecture
+          [แทรก cloud diagram]
+          - Device ←→ NETPIE (MQTT shadow)
+          - Device → Telegram Bot (HTTPS push)
+          - Device → Google Apps Script (HTTPS POST)
+    3.3.6 Lazy/Event-Driven Design
+          - Camera lazy init (เปิดเมื่อ /photo หรือ dispense)
+          - VL53 event-driven (refresh หลัง dispense)
+          - Mutex coordination ระหว่าง camera ↔ VL53
+    3.3.7 ระบบกู้คืน (Recovery)
+          - I²C bus recovery (bit-bang SDA + recreate master)
+          - VL53 XSHUT hard-reset retry (3 attempts)
+          - Touch chip CTP_RST recovery
+          - WiFi auto-reconnect
+
+3.4 ขั้นตอนการพัฒนา (Development Phases)                  (~3-4 หน้า)
+    3.4.1 Phase 1: Hardware Prototype (สัปดาห์ 1-3)
+          - Breadboard wiring
+          - Single I²C device probe
+    3.4.2 Phase 2: Single Sensor Integration (สัปดาห์ 4-6)
+          - VL53L0X driver + ToF distance reading
+          - PCA9685 + servo control
+          - PCF8574 + IR readout
+    3.4.3 Phase 3: Multi-Sensor (สัปดาห์ 7-9)
+          - TCA9548A mux + 6× VL53
+          - Address conflict resolution
+    3.4.4 Phase 4: Camera Integration (สัปดาห์ 10-12)
+          - MIPI-CSI + OV5647 + ISP
+          - JPEG encoder
+          - Software 90° rotation
+    3.4.5 Phase 5: Cloud Integration (สัปดาห์ 13-15)
+          - WiFi + NETPIE
+          - Telegram Bot
+          - Google Sheets logger
+    3.4.6 Phase 6: UI Polish (สัปดาห์ 16-17)
+          - Touch debounce
+          - Multi-page navigation
+          - Thai font rendering
+    3.4.7 Phase 7: Stability & Testing (สัปดาห์ 18-20)
+          - Three-tier watchdog
+          - Auto-recovery mechanisms
+          - 24h endurance test
+
+3.5 อัลกอริทึมสำคัญ (พร้อม pseudocode + flowchart)        (~6-8 หน้า)
+    3.5.1 Pill Dispense Flow
+          [Flowchart + pseudocode]
+          ```
+          dispense(med_idx, qty):
+              acquire_busy_lock()
+              for i in 1..qty:
+                  pcf8574_warmup()            # 8 reads × 10 ms
+                  servo_go_work(med_idx)
+                  loop_start_ms = now()
+                  consec_low = 0
+                  while elapsed < 7.5s:
+                      if elapsed > 1.5s and not home_issued:
+                          servo_go_home(med_idx)
+                          home_issued = True
+                      ir = pcf8574_read()
+                      if (ir & (1<<med_idx)) == 0:
+                          consec_low += 1
+                          if consec_low >= 3:
+                              pill_detected = True
+                      else:
+                          consec_low = 0
+                      yield(1 tick)
+                  if pill_detected:
+                      decrement_count_in_shadow()
+                      send_telegram_photo()
+              release_busy_lock()
+          ```
+    3.5.2 IR Edge Detection with Debounce
+          [State machine diagram]
+    3.5.3 ToF Stable-Tick Filter
+          [Pseudocode]
+    3.5.4 Phantom Touch Filter
+          [Pseudocode + filter parameters table]
+    3.5.5 I²C Bus Arbitration
+          [Sequence diagram showing mutex flow]
+
+3.6 การตั้งค่า ESP-IDF                                     (~3 หน้า)
+    3.6.1 sdkconfig highlights
+          - TWDT_TIMEOUT_S=30
+          - LWIP_MAX_SOCKETS=24
+          - MIPI_CSI enabled
+          - SPIRAM_SPEED_200M (experimental feature)
+          - COMPILER_OPTIMIZATION_PERF (-O2)
+    3.6.2 Local IDF Patches
+          - components/esp_driver_i2c/i2c_master.c
+              - PATCH 1: state-reset retry บน INVALID_STATE
+              - PATCH 2: ISR pointer guard (≥0x40000000)
+    3.6.3 Managed Components
+          - esp_hosted (WiFi co-processor)
+          - LovyanGFX (display library)
+          - esp_cam_sensor + esp_driver_jpeg
+
+3.7 เครื่องมือพัฒนา (Development Tools)                   (~1-2 หน้า)
+    - VS Code + ESP-IDF Extension
+    - Git (version control + 7 backup tags)
+    - JTAG/UART monitoring
+    - Logic analyzer (สำหรับ debug I²C signals)
+    - Multimeter, oscilloscope
+
+
+================================================================================
+บทที่ 4 : ผลการทดลองและการวิเคราะห์                      ~30-40 หน้า
+================================================================================
+
+4.1 บทนำของบทที่ 4                                         (~1 หน้า)
+    - วัตถุประสงค์การทดลอง
+    - เกณฑ์ผ่าน (Pass Criteria) สำหรับแต่ละการทดสอบ
+
+4.2 การทดสอบฮาร์ดแวร์                                     (~5-6 หน้า)
+    4.2.1 I²C Bus Communication
+          [ตาราง: ทดสอบ ping ทุก device 1000 ครั้ง]
+          - TCA9548A: 1000/1000 (100%)
+          - PCA9685:   1000/1000 (100%)
+          - PCF8574:   998/1000 (99.8%) — 2 transients
+          - DS3231:    1000/1000 (100%)
+          - FT6336U:   997/1000 (99.7%) — fallback mode
+          - OV5647:    995/1000 (99.5%) — power-cycle dependent
+          [แทรกรูป oscilloscope SDA/SCL waveform]
+    4.2.2 Sensor Accuracy
+          4.2.2.1 IR Photointerruptor
+                  - ใช้ยา 100 เม็ด ตกผ่านลำแสง
+                  - ผลลัพธ์: ตรวจจับได้ 96/100 (96%)
+                  - 4 false negatives → ยาเล็กผ่านเร็วเกิน 30 ms
+          4.2.2.2 VL53L0X ToF
+                  [ตาราง: วัดระยะ 50/100/150/200 mm × 6 channels]
+                  - Mean error: ±2 mm (within spec)
+                  - Std deviation: 1.5 mm
+    4.2.3 Servo Repeatability
+          - Position 33° ↔ 66° × 1000 cycles
+          - Final position drift: ±0.5° (acceptable)
+    4.2.4 Camera Image Quality
+          [ภาพตัวอย่าง: ก่อน-หลัง 90° rotation]
+          - JPEG quality 55, file size ~80-150 KB
+          - Frame rate: 5 fps (เหมาะกับงานจ่ายยา)
+
+4.3 การทดสอบซอฟต์แวร์                                     (~6-8 หน้า)
+    4.3.1 Boot Time Measurement
+          [กราฟแท่ง: Boot time แต่ละ phase]
+          - PSRAM init: 0.7s
+          - App start to display: 13s
+          - Full ready (WiFi+NETPIE+Telegram): 28s
+          [เปรียบเทียบกับก่อนปรับ optimization: 18s vs 13s]
+    4.3.2 Dispense Cycle Time
+          [ตาราง: 100 cycles × 6 modules]
+          - Mean: 7.8s/pill
+          - Std dev: 0.3s
+          - 95th percentile: 8.4s
+    4.3.3 Pill Counting Accuracy
+          [ตาราง: actual vs reported]
+          - Test: dispense 50 pills × 3 modules
+          - Reported correct: 144/150 (96%)
+          - 6 misses: 4 IR phantom (เครื่องเก่า), 2 fast-fall pills
+    4.3.4 Telegram /photo Response Time
+          - ครั้งแรก (lazy init): 4.2s
+          - ครั้งถัดไป: 1.8s
+          - Max: 5.5s (network slow)
+          [กราฟ box plot]
+    4.3.5 NETPIE Shadow Sync Latency
+          - Device → Cloud: ≤ 200 ms (median)
+          - Cloud → Device: ≤ 500 ms
+
+4.4 การทดสอบ End-to-End                                   (~5-6 หน้า)
+    4.4.1 Scheduled Dispense (ตามตารางเวลา)
+          - Test: 4 มื้อ × 7 วัน = 28 events
+          - สำเร็จ: 28/28 (100%)
+    4.4.2 Manual Dispense (Touch UI)
+          - +/- adjustment: ทำงาน
+          - Return-pill: ทำงาน
+          - Photo notification: ส่งทุกครั้ง
+    4.4.3 Manual Dispense (Telegram /photo)
+          - ตอบกลับ: 100/100 ครั้ง
+    4.4.4 Med Name Change + Photo
+          - หลัง save name → ส่งรูปยืนยัน
+
+4.5 ปัญหาที่พบและการแก้ไข                                  (~6-8 หน้า)
+    [แทรก WORKFLOW_REPORT.html — bug timeline]
+    4.5.1 ESP-IDF v5.3.2 i2c_master ISR race
+          อาการ: Store Access Fault, Camera SCCB INVALID_STATE
+          วิธีหา: backtrace เห็น i2c_isr_receive_handler
+          วิธีแก้: HAL pointer guard (>=0x40000000)
+                + state-reset retry on INVALID_STATE
+          ทดสอบ: 1000 SCCB writes, 0 panics หลังแก้
+    4.5.2 Power sequencing latch (Camera)
+          อาการ: Camera SCCB NACK ทุก attempt หลัง cold boot
+          วิธีแก้: AVDD LDO power-cycle (acquire→release→wait→reacquire)
+          AVDD off-time tuning: 200ms → 800ms → success rate 50% → 95%
+    4.5.3 I²C bus loading (signal integrity)
+          อาการ: VL53 init fail at random register
+          การวินิจฉัย: oscilloscope rise time 1.8 µs (สเปก ≤ 1 µs)
+          วิธีแก้: 2.2 kΩ pull-up + per-op retry × 5 + XSHUT hard-reset
+    4.5.4 Phantom Touch
+          อาการ: standby กระโดดไปเมนูเอง
+          วิธีแก้: PRESS_DEBOUNCE=2 + COORD_STABILITY 150px + boot mute 3s
+    4.5.5 Late-detect re-bootstrap loop
+          อาการ: VL53 re-init ~13s หลัง boot → I²C bus ค้าง 10s
+          วิธีแก้: cache `tca_was_up_at_boot` flag (ไม่ re-ping)
+    4.5.6 Telegram strips EXIF orientation
+          อาการ: ภาพ Telegram แนวนอน (ผิด orientation)
+          วิธีแก้: software pixel rotation YUV422 90° CCW
+    4.5.7 Touch freeze after long use
+          อาการ: จอค้างหลังใช้ ~ชั่วโมง
+          วิธีแก้: auto-recovery (8 fail → CTP_RST + bus recovery)
+                cool-down 2 วินาที (เดิม 30s)
+    4.5.8 Slot button flicker
+          อาการ: ปุ่ม ก่อน/หลัง กระพิบตอนกด
+          วิธีแก้: per-button partial redraw (เดิม redraw ทั้ง panel)
+
+4.6 การประเมินประสิทธิภาพระบบ                              (~3-4 หน้า)
+    4.6.1 Heap Usage Profile
+          [กราฟ heap_free vs uptime]
+          - Initial: 33.7 MB free
+          - After camera+JPEG: 25.5 MB
+          - Steady state: 25.5 MB (no leak detected)
+    4.6.2 CPU Load
+          [ตาราง task usage %]
+          - clock_task: 8%
+          - vl53_poll_task: 3% (5s interval)
+          - telegram_polling: 5%
+          - idle: 75%+
+    4.6.3 Bus Saturation
+          - I²C duty cycle: ~15% steady, 35% peak (dispense)
+    4.6.4 Power Consumption
+          - Idle: 1.2 A @ 5V = 6 W
+          - Dispensing: 1.8 A peak = 9 W
+
+4.7 การประเมินความเสถียร (Endurance)                       (~3 หน้า)
+    4.7.1 24h Continuous Run
+          - Boot count: 1 (ไม่ reboot)
+          - alive heartbeat: 1440/1440
+          - Telegram cmd response: 100%
+    4.7.2 Network Loss Recovery
+          - Disconnect WiFi 5 นาที → reconnect
+          - Offline events queued: 12 (NVS)
+          - หลัง reconnect ส่งทั้งหมดสำเร็จ
+    4.7.3 Power Cycle Test (10 ครั้ง)
+          - Boot ทุกครั้ง: ≤ 30s ready
+          - VL53 6/6 ready: 8/10 (สาเหตุ Ch3 chip)
+          - Camera lazy: 9/10 ครั้งสำเร็จในรอบแรก
+
+4.8 สรุปบทที่ 4                                            (~1 หน้า)
+
+
+================================================================================
+บทที่ 5 : สรุปผล อภิปรายผล และข้อเสนอแนะ                  ~10-15 หน้า
+================================================================================
+
+5.1 สรุปผลการดำเนินงาน                                    (~3 หน้า)
+    5.1.1 บรรลุวัตถุประสงค์
+          [ตาราง: วัตถุประสงค์ vs ผลที่ได้]
+          ✅ ออกแบบ HW ระบบ 6 ช่อง — สำเร็จ
+          ✅ นับเม็ดยาด้วย IR — accuracy 96%
+          ✅ วัดยาคงเหลือ ToF — accuracy ±2 mm
+          ✅ NETPIE + Telegram + Sheets — ทำงานครบ
+          ✅ กล้อง /photo — ตอบสนอง 1.8s (ไม่นับ first lazy)
+          ✅ UI standalone — touchscreen full functional
+    5.1.2 ฟีเจอร์ที่ทำงานได้จริง (Feature Matrix)
+    5.1.3 หลักฐานการทำงาน
+          - ภาพ Telegram chat
+          - NETPIE dashboard screenshot
+          - Google Sheets log
+          - log จากเครื่อง 24h
+
+5.2 อภิปรายผล                                              (~3 หน้า)
+    5.2.1 จุดเด่น
+          - Cost ≤ 5,200 บาท (vs ตลาด 10,000-30,000)
+          - Hardware JPEG encoder ทำให้ส่งรูปได้เร็ว
+          - Three-tier watchdog ทำให้ระบบเสถียร 24h+
+          - Recovery mechanisms ครบทุก layer
+    5.2.2 จุดอ่อน
+          - VL53 ไวต่อ signal integrity (รุนแรงเมื่อสายยาว)
+          - FT6336U fallback mode (chip-id mismatch)
+          - Camera ต้อง power-cycle (ESP-IDF v5.3 limitation)
+          - Bus contention ทำให้ดีเลย์ตอน dispense + camera
+    5.2.3 เปรียบเทียบกับงานวิจัยที่เกี่ยวข้อง (จากบทที่ 2)
+          - งานเรา vs Arduino-based: เพิ่ม cloud + camera
+          - งานเรา vs RPi-based: ราคาถูกกว่า, power น้อยกว่า
+
+5.3 ข้อเสนอแนะ (Future Work)                               (~3-4 หน้า)
+    5.3.1 ด้านฮาร์ดแวร์
+          - PCB design (แทน breadboard) — ลด wire length
+          - แยก rail สำหรับ camera AVDD
+          - ใช้ active level shifter สำหรับ I²C
+          - เพิ่ม battery backup (UPS)
+          - สาย MIPI-CSI shielded ป้องกัน EMI
+    5.3.2 ด้านซอฟต์แวร์
+          - Migrate ESP-IDF v5.4+ (รอ esp_hosted compat)
+          - Pill image classification (TensorFlow Lite Micro)
+          - Voice prompts customizable
+          - OTA firmware update
+          - Multi-language UI (EN/TH/อื่นๆ)
+    5.3.3 ด้านธุรกิจ / UX
+          - Mobile app (React Native + NETPIE WebSocket)
+          - Multi-user (รองรับครอบครัว/หอผู้สูงอายุ)
+          - Pharmacy refill integration
+          - HL7 / FHIR สำหรับโรงพยาบาล
+    5.3.4 ด้านการวิจัยเพิ่มเติม
+          - ศึกษา medication adherence ก่อน-หลังใช้เครื่อง
+          - ทดสอบกับผู้สูงอายุจริง 30+ คน
+          - วิเคราะห์ TCO (Total Cost of Ownership)
+
+5.4 บทสรุป                                                 (~1 หน้า)
+    - ผลกระทบของระบบต่อ healthcare ในไทย
+    - บทเรียนทางวิศวกรรม (system integration ที่ซับซ้อน)
+    - การประยุกต์ใช้ในโดเมนอื่น (smart agriculture, smart factory)
+
+
+================================================================================
+บรรณานุกรม (References)                                    ~3-5 หน้า
+================================================================================
+
+[1] Espressif Systems. (2024). ESP32-P4 Technical Reference Manual.
+    https://www.espressif.com/sites/default/files/...
+[2] Espressif Systems. (2024). ESP-IDF Programming Guide v5.3.
+[3] STMicroelectronics. (2018). VL53L0X Datasheet.
+[4] OmniVision. (2014). OV5647 Sensor Datasheet.
+[5] FocalTech. (2018). FT6336U Capacitive Touch Datasheet.
+[6] World Health Organization. (2003). Adherence to long-term therapies.
+[7] Sirikiat, K. et al. (2021). Smart Pill Dispenser using Arduino...
+[8] นเรศ, ม. et al. (2566). ระบบเตือนรับประทานยาผ่าน LINE...
+[9] FreeRTOS Documentation. https://www.freertos.org/
+[10] NETPIE 2020 Documentation. https://netpie.io/
+... (เพิ่ม 30-50 entries)
+
+
+================================================================================
+ภาคผนวก                                                   ~30-50 หน้า
+================================================================================
+
+ภาคผนวก ก : รายการ GPIO ทั้งหมด                            (~3 หน้า)
+            [แทรก GPIO_LABELS.html]
+
+ภาคผนวก ข : รายการ I²C Address                            (~1 หน้า)
+            0x20 PCF8574 (IR sensor expander)
+            0x36 OV5647 (Camera SCCB)
+            0x38 FT6336U (Touch controller)
+            0x40 PCA9685 (Servo PWM driver)
+            0x68 DS3231 (RTC clock)
+            0x70 TCA9548A (I²C multiplexer)
+            0x71-0x76 VL53L0X × 6 (via TCA channels 0-5)
+
+ภาคผนวก ค : ผังการต่อสาย                                  (~5 หน้า)
+            [แทรก WIRING_DIAGRAM.html ฉบับขยาย]
+
+ภาคผนวก ง : Source Code Listing (ส่วนสำคัญ)               (~15-25 หน้า)
+            ง.1 main.c app_main()                     (~3 หน้า)
+            ง.2 dispenser_scheduler.c dispense logic  (~5 หน้า)
+            ง.3 camera_init.c lazy init + AVDD        (~3 หน้า)
+            ง.4 vl53l0x_multi.c event-driven polling  (~3 หน้า)
+            ง.5 ft6336u.c phantom-touch filter        (~2 หน้า)
+            ง.6 i2c_master.c local IDF patches        (~2 หน้า)
+            ง.7 jpeg_encoder.c YUV422 rotation        (~2 หน้า)
+
+ภาคผนวก จ : Cloud Screenshots                              (~3-4 หน้า)
+            จ.1 NETPIE Dashboard
+            จ.2 Telegram Bot Conversation (ตัวอย่างเต็ม flow)
+            จ.3 Google Sheets Log (raw data)
+
+ภาคผนวก ฉ : การติดตั้งและใช้งาน (Setup Guide)            (~5 หน้า)
+            ฉ.1 Hardware Assembly Step-by-step
+            ฉ.2 Firmware Flash (idf.py build flash monitor)
+            ฉ.3 First-time WiFi config
+            ฉ.4 Telegram Bot setup (BotFather)
+            ฉ.5 NETPIE device registration
+            ฉ.6 Google Apps Script deployment
+
+ภาคผนวก ช : Cost Analysis                                  (~2 หน้า)
+            BOM ครบ + ราคา + ที่ซื้อ + เปรียบเทียบกับ commercial
+
+ภาคผนวก ซ : Test Logs (raw)                                (~5-10 หน้า)
+            ซ.1 24h endurance log (excerpt)
+            ซ.2 Pill counting test (100 trials per module)
+            ซ.3 Camera response time (timing test)
+
+
+================================================================================
+PART 5 : เอกสารเสริม / ไฟล์อ้างอิงในการเขียน
+================================================================================
+
+ไฟล์ HTML 4 ไฟล์ — ปริ้นท์เป็น PDF (Ctrl+P) แทรกในเล่มได้:
+
+    1. PROJECT_THEORY.html    → บทที่ 2 (ทฤษฎี 14 บท)
+    2. WIRING_DIAGRAM.html    → บทที่ 3.2.4 + ภาคผนวก ค
+    3. WORKFLOW_REPORT.html   → บทที่ 4.5 (ปัญหา/แก้ไข)
+    4. GPIO_LABELS.html       → ภาคผนวก ก
+
+ไฟล์โค้ดสำหรับ AI:
+    repomix-output.md (1.2 MB, 96 ไฟล์, 335K tokens)
+       → upload เข้า Claude Sonnet 4.6 / Opus 4.7 (1M context)
+       → AI อ่านโค้ดทั้งโปรเจกต์ → ใช้อ้างอิงเขียนบทที่ 3 + 4
+
+ไฟล์ session log (สำหรับเขียนบทที่ 4 และ 5):
+    overnight.log        — 24h continuous capture
+    monitor_*.txt        — รอบทดสอบเฉพาะ event
+
+
+================================================================================
+PART 6 : กลยุทธ์การใช้ AI ช่วยเขียน (เวิร์กโฟลว์ที่แนะนำ)
+================================================================================
+
+WORKFLOW (เขียนทีละบท):
+
+STEP 1 : เปิด AI ที่รองรับ context ใหญ่
+    - Claude Sonnet 4.6 / Opus 4.7 (200K-1M context)  -- แนะนำ
+    - Gemini 1.5 Pro / 2.0 Flash (1M context)
+    - ChatGPT Plus (GPT-4 Turbo, 128K)
+
+STEP 2 : Upload repomix-output.md เข้าแชต พร้อม thesis_plan.txt นี้
+
+STEP 3 : Prompt template สำหรับแต่ละบท
+
+   ตัวอย่าง prompt สำหรับบทที่ 3:
+   ---
+   ฉันแนบโค้ด Smart Pill Dispenser มาให้แล้ว
+   ช่วยเขียนบทที่ 3 "วิธีดำเนินการวิจัย" ความยาว 35-45 หน้า
+   โครงสร้างตาม thesis_plan.txt ส่วนบทที่ 3:
+       3.1 ภาพรวมระบบ — block diagram, use case, DFD
+       3.2 ออกแบบฮาร์ดแวร์ — BOM, GPIO, power tree, schematic
+       3.3 ออกแบบซอฟต์แวร์ — architecture, FreeRTOS task list, state machines
+       3.4 ขั้นตอนการพัฒนา 7 phases
+       3.5 อัลกอริทึมสำคัญ พร้อม pseudocode + flowchart
+       3.6 การตั้งค่า ESP-IDF + sdkconfig
+       3.7 เครื่องมือพัฒนา
+
+   อ้างอิงโค้ดจริงจาก main/ และ components/
+   เขียนเป็นภาษาไทยสไตล์วิทยานิพนธ์ มี citation อ้างอิง
+   ใส่ pseudocode 3.5.1 ของ pill dispense แบบละเอียด
+   ใส่ตาราง BOM พร้อมราคา
+   ระบุไฟล์โค้ดที่อ้างอิง (เช่น "ตามที่แสดงใน main/dispenser_scheduler.c")
+
+STEP 4 : AI ตอบ → รีวิว → แก้ส่วนที่ AI เข้าใจผิด → ขอเขียนใหม่
+
+STEP 5 : ทำตารางผลทดสอบ + กราฟด้วย Excel/Google Sheets แยกต่างหาก
+         → แทรกในบทที่ 4
+
+STEP 6 : เขียน abstract สุดท้าย หลังเขียนทั้ง 5 บทเสร็จ
+
+
+================================================================================
+PART 7 : ตารางคุมเวลา (Gantt) สำหรับเขียนเล่ม
+================================================================================
+
+สัปดาห์ 1   : บทที่ 1 (บทนำ)                          ~12-15 หน้า
+สัปดาห์ 2   : บทที่ 2 ส่วน 2.1-2.5 (ทฤษฎีพื้นฐาน)    ~18 หน้า
+สัปดาห์ 3   : บทที่ 2 ส่วน 2.6-2.12 (cloud + algo)   ~17 หน้า
+สัปดาห์ 4-5 : บทที่ 3 ทั้งหมด                        ~40 หน้า
+สัปดาห์ 6-7 : ทดลองจริง + เก็บข้อมูล (testing)      —
+สัปดาห์ 8   : บทที่ 4 ส่วน 4.1-4.4                   ~17 หน้า
+สัปดาห์ 9   : บทที่ 4 ส่วน 4.5-4.8                   ~15 หน้า
+สัปดาห์ 10  : บทที่ 5 + อภิปราย                       ~12 หน้า
+สัปดาห์ 11  : บรรณานุกรม + ภาคผนวก                   —
+สัปดาห์ 12  : ปก + บทคัดย่อ + รวมไฟล์                —
+สัปดาห์ 13  : ตรวจ + แก้ตามอาจารย์ที่ปรึกษา           —
+สัปดาห์ 14  : ส่งสอบป้องกัน
+
+จำนวนหน้ารวมประมาณ : 200-250 หน้า (ไม่รวมภาคผนวก)
+
+
+================================================================================
+สรุปทรัพยากรที่ผู้จัดทำมีอยู่
+================================================================================
+
+ไฟล์ที่ผู้จัดทำมีอยู่ในโครงงาน:
+   ✅ thesis_plan.txt              — outline เล่มฉบับเต็ม (ไฟล์นี้)
+   ✅ repomix-output.md            — โค้ดทั้งหมด (1.2 MB) สำหรับ AI
+   ✅ PROJECT_THEORY.html          — ทฤษฎี 14 บท พร้อมทำเล่ม
+   ✅ WIRING_DIAGRAM.html          — ผังต่อสาย
+   ✅ WORKFLOW_REPORT.html         — bug timeline + fix
+   ✅ GPIO_LABELS.html             — GPIO + I²C address ตาราง
+   ✅ Source code 96 ไฟล์          — main/, components/, patches/
+   ✅ Git tags (7 ตัว)             — backup history
+   ✅ overnight.log                 — 24h endurance log
+
+ขั้นตอนถัดไป:
+   1. ตรวจสอบ outline บทแต่ละบทใน thesis_plan.txt นี้
+   2. เก็บข้อมูลผลทดสอบจริง (สำหรับบทที่ 4)
+   3. ส่ง repomix-output.md + thesis_plan.txt ให้ AI
+   4. ขอ AI เขียนทีละบท ตาม prompt template
+   5. รีวิว + แก้ + ใส่ผลทดสอบจริง
+   6. แทรก HTML 4 ไฟล์เป็น PDF appendix
+   7. เขียน abstract + กิตติกรรมประกาศหลังเสร็จ 5 บท
+   8. ส่งให้อาจารย์ตรวจ → แก้ตามคำแนะนำ
+   9. สอบป้องกันวิทยานิพนธ์
+
+================================================================================
+End of thesis_plan.txt — Smart Pill Dispenser Thesis Outline (Detailed)
+อัปเดต 2026-05-06
+================================================================================

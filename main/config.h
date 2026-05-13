@@ -13,13 +13,19 @@
 #define ENABLE_VL53_PILL_SENSORS 1
 
 // I2C bus: shared by camera SCCB, PCF8574, PCA9685, DS3231, FT6336U, and TCA9548A.
+// Per-device clock speed is selected in i2c_manager.c (get_or_add_device).
+// Field-tested split (user reports IR significantly more accurate at 400 kHz
+// — shorter mutex hold → less interleaving with servo PWM noise window):
+//   400 kHz — PCF8574, PCA9685, FT6336U, DS3231, TCA9548A, EEPROM
+//   100 kHz — VL53L0X (via TCA mux, long wires), OV5647 SCCB
 #define I2C_SDA_PIN         7
 #define I2C_SCL_PIN         8
-#if ENABLE_VL53_PILL_SENSORS
-#define I2C_FREQ_HZ         50000   // VL53 via TCA9548A: 50 kHz handles weak pull-ups / long wires.
-#else
+/* Base bus init speed. Per-device clock overrides this (see
+ * device_clock_hz in i2c_manager.c). Lowered 400 kHz → 100 kHz
+ * 2026-05-13 to make the entire system run at standard-mode I2C —
+ * eliminates rise-time issues on the long shared bus that were
+ * causing servo+IR+VL53 to fight each other when active concurrently. */
 #define I2C_FREQ_HZ         100000
-#endif
 
 // VL53L0X multi-sensor bus through TCA9548A, with one XSHUT line per module.
 #define VL53L0X_DEFAULT_ADDR 0x29
@@ -30,6 +36,19 @@
 #define VL53L0X_ADDR_M5      0x75
 #define VL53L0X_ADDR_M6      0x76
 
+/* XSHUT physical wiring. Set VL53L0X_XSHUT_PRESENT to 0 when the chips'
+ * XSHUT pins are LEFT FLOATING (or only tied to module-board pullup) —
+ * the per-channel address dance becomes unnecessary because the TCA9548A
+ * mux isolates each sensor anyway. With XSHUT absent:
+ *   - The boot-time "hold all in reset" sequence is skipped (no-op
+ *     writes to disconnected GPIOs were causing confusing log spam).
+ *   - The mid-init "hard reset via XSHUT" retry is skipped — recovery
+ *     for a wedged sensor requires a full board reboot.
+ *   - camera_init's pre-SCCB XSHUT pulldown is skipped — pins aren't
+ *     connected, so dropping VL53 off the bus during camera SCCB is
+ *     not actually possible. (Bus contention is still mitigated by
+ *     the i2c_manager mutex.) */
+#define VL53L0X_XSHUT_PRESENT 0
 #define VL53L0X_XSHUT_M1     20
 #define VL53L0X_XSHUT_M2     22
 #define VL53L0X_XSHUT_M3     23
@@ -48,11 +67,14 @@
 #define CTP_INT_PIN         -1      // FT6336U interrupt is not connected.
 
 // VL53L0X pill stock measurement.
-// pill_count = max_pills - round((dist_mm - full_dist_mm) / pill_height_mm)
-#define VL53_FULL_DIST_MM       50
+//   tube length 260 mm, pill height 15 mm, capacity 15 pills
+//   d ≈ 30 mm → full (15), d ≈ 255 mm → empty (0)
+//   pill_count = max_pills - round((dist_mm - full_dist_mm) / pill_height_mm)
+#define VL53_FULL_DIST_MM       30
 #define VL53_PILL_HEIGHT_MM     15
-#define VL53_MAX_PILLS          16
+#define VL53_MAX_PILLS          15
 #define VL53_EMPTY_DIST_MM      (VL53_FULL_DIST_MM + VL53_PILL_HEIGHT_MM * VL53_MAX_PILLS)
+#define VL53_LOW_PILL_ALERT     3   /* Telegram แจ้งเตือนเมื่อ ≤ ค่านี้ */
 
 // Camera (MIPI-CSI2 / OV5647).
 #define CAM_LDO_CHAN_ID     3

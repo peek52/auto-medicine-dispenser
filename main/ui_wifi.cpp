@@ -76,7 +76,7 @@ void ui_wifi_scan_render(void)
             fill_screen(THEME_BG);
             draw_top_bar_with_back(g_ui_language == UI_LANG_TH ? NULL : "WIFI SETUP");
             if (g_ui_language == UI_LANG_TH) {
-                draw_wifi_label((LCD_W - kThTopWifiSetup.width) / 2, 8, &kThTopWifiSetup);
+                draw_wifi_label((LCD_W - kThTopWifiSetup.width) / 2, 20, &kThTopWifiSetup);
             }
 
             fill_rect(60, 68, 360, 200, SB_COLOR_CARD);
@@ -210,12 +210,12 @@ void ui_wifi_scan_render(void)
             }
 
             if (ap_count > VISIBLE) {
-                fill_rect(380, 8, 40, 26, SB_COLOR_CARD);
-                draw_rect(380, 8, 40, 26, SB_COLOR_BORDER);
-                draw_string_centered(400, 26, "UP", SB_COLOR_PRIMARY, SB_COLOR_CARD, &FreeSans9pt7b);
-                fill_rect(424, 8, 40, 26, SB_COLOR_CARD);
-                draw_rect(424, 8, 40, 26, SB_COLOR_BORDER);
-                draw_string_centered(444, 26, "DN", SB_COLOR_PRIMARY, SB_COLOR_CARD, &FreeSans9pt7b);
+                fill_rect(380, 18, 40, 30, SB_COLOR_CARD);
+                draw_rect(380, 18, 40, 30, SB_COLOR_BORDER);
+                draw_string_centered(400, 38, "UP", SB_COLOR_PRIMARY, SB_COLOR_CARD, &FreeSans9pt7b);
+                fill_rect(424, 18, 40, 30, SB_COLOR_CARD);
+                draw_rect(424, 18, 40, 30, SB_COLOR_BORDER);
+                draw_string_centered(444, 38, "DN", SB_COLOR_PRIMARY, SB_COLOR_CARD, &FreeSans9pt7b);
             }
             }
         }
@@ -228,7 +228,7 @@ void ui_wifi_scan_handle_touch(uint16_t tx_n, uint16_t ty_n)
     uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
     // BACK — top-left
-    if (tx_n >= 10 && tx_n <= 90 && ty_n >= 8 && ty_n <= 34) {
+    if (tx_n >= 0 && tx_n <= 130 && ty_n >= 0 && ty_n <= 52) {
         dfplayer_play_track(g_snd_button); // Track 10: Back button audio
         pending_page = PAGE_MENU;
         return;
@@ -237,11 +237,11 @@ void ui_wifi_scan_handle_touch(uint16_t tx_n, uint16_t ty_n)
     if (wf_state != 2) return;
 
     // Scroll UP
-    if (tx_n >= 380 && tx_n <= 420 && ty_n >= 8 && ty_n <= 34) {
+    if (tx_n >= 376 && tx_n <= 422 && ty_n >= 14 && ty_n <= 52) {
         if (wifi_scroll > 0) wifi_scroll--;
     }
     // Scroll DN
-    else if (tx_n >= 424 && tx_n <= 464 && ty_n >= 8 && ty_n <= 34) {
+    else if (tx_n >= 422 && tx_n <= 470 && ty_n >= 14 && ty_n <= 52) {
         if (wifi_scroll + 4 < ap_count) wifi_scroll++;
     }
     // Network row tap → go to keyboard for password
@@ -293,7 +293,7 @@ void ui_wifi_status_render(void)
         fill_screen(THEME_BG);
         draw_top_bar_with_back(g_ui_language == UI_LANG_TH ? NULL : "WiFi Status");
         if (g_ui_language == UI_LANG_TH) {
-            draw_wifi_label((LCD_W - kThWifiStatus.width) / 2, 10, &kThWifiStatus);
+            draw_wifi_label((LCD_W - kThWifiStatus.width) / 2, 22, &kThWifiStatus);
         }
 
         /* Customer-facing layout: only the connected SSID and a Forget
@@ -340,7 +340,7 @@ void ui_wifi_status_render(void)
 
 void ui_wifi_status_handle_touch(uint16_t tx_n, uint16_t ty_n)
 {
-    if (tx_n >= 10 && tx_n <= 90 && ty_n >= 8 && ty_n <= 34) {
+    if (tx_n >= 0 && tx_n <= 130 && ty_n >= 0 && ty_n <= 52) {
         dfplayer_play_track(g_snd_button);
         pending_page = PAGE_STANDBY;
     } else if (tx_n >= 20 && tx_n <= (LCD_W - 20) && ty_n >= 246 && ty_n <= 302) {

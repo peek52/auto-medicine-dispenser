@@ -1,0 +1,80 @@
+W (2088) unified_cam: I2C ACK: 0x6A 0x6B 0x6C
+W (2088) unified_cam: I2C scan end. Camera should be 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (2088) unified_cam: CAMERA INIT (early, before any peripheral driver init)
+I (2098) camera_init: Lazy camera_init triggered (first /capture or /photo)
+I (2288) camera_init: Initializing JPEG encoder for 800x640
+W (2288) jpeg_enc: DIAG-LEAK entry  PSRAM free=30478208 largest=30408704
+W (2288) jpeg_enc: DIAG-LEAK deinit PSRAM free=30478208
+I (2348) jpeg_enc: JPEG HW encoder initialized: 800x640, out_buf=1024000 bytes x2 + rot_buf=1024000
+W (2348) jpeg_enc: DIAG-LEAK exit   PSRAM free=26381072 largest=26214400
+I (2648) camera_init: MIPI PHY LDO power-cycled (200 ms off)
+I (2648) camera_init: XCLK 24000000 Hz generated on GPIO33
+I (2848) camera_init: VL53 XSHUT lowered before SCCB (chips offline)
+E (2968) i2c_mgr: Bus still stuck after 4 recovery rounds (SDA=0 SCL=0)
+I (3008) camera_init: Shared I2C bus recovered before SCCB init
+W (3158) camera_init: I2C scan begin (looking for camera + others)...
+W (3178) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (3298) camera_init: Camera attempt 1 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (3768) camera_init: Camera attempt 2 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+E (3898) i2c_mgr: Bus still stuck after 4 recovery rounds (SDA=0 SCL=0)
+W (4218) camera_init: Camera attempt 3 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (4668) camera_init: Camera attempt 4 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (5118) camera_init: Camera attempt 5 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (5578) camera_init: Camera attempt 6 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (5978) camera_init: Camera attempt 7 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (6438) camera_init: Camera attempt 8 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (6448) camera_init: Camera still not detected at attempt 8 — doing a second AVDD power-cycle
+W (7858) camera_init: Camera attempt 9 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (8318) camera_init: Camera attempt 10 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (8778) camera_init: Camera attempt 11 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (9178) camera_init: Camera attempt 12 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (9608) camera_init: Camera attempt 13 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (10008) camera_init: Camera attempt 14 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (10438) camera_init: Camera attempt 15 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (10838) camera_init: Camera attempt 16 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+I (10838) camera_init: VL53 XSHUT restored after SCCB
+E (10848) camera_init: Failed to detect camera sensor after retries
+I (10848) camera_init: Lazy camera_init -> ESP_FAIL
+W (10858) unified_cam: Early camera init → ESP_FAIL
+I (13508) unified_cam: FT6336U responded on initial ping
+I (13508) tca9548a: TCA9548A init OK at 0x70
+I (13508) pca9685: No NVS config for servo found, using defaults
+I (13518) pca9685: PCA9685 initialized (prescale=121, ~50Hz)
+I (13998) unified_cam: PCF8574 initialized â€” all pins set to INPUT (0xFF)
+I (14008) FT6336U: Resetting touch controller
+W (14728) FT6336U: Touch chip-id 0xED not recognised on attempt 1 — retrying
+W (18858) camera_init: Background camera retry 1/38
+I (18858) camera_init: Lazy camera_init triggered (first /capture or /photo)
+I (19038) camera_init: Initializing JPEG encoder for 800x640
+W (19038) jpeg_enc: DIAG-LEAK entry  PSRAM free=23308912 largest=23068672
+I (19038) jpeg_enc: JPEG encoder already initialised 800x640 — reuse
+I (19348) camera_init: MIPI PHY LDO power-cycled (200 ms off)
+I (19348) camera_init: XCLK 24000000 Hz generated on GPIO33
+I (19548) camera_init: VL53 XSHUT lowered before SCCB (chips offline)
+I (21008) camera_init: Shared I2C bus recovered before SCCB init
+W (21078) FT6336U: Touch chip-id 0xED not recognised on attempt 3 — retrying
+W (21168) camera_init: I2C scan begin (looking for camera + others)...
+W (21318) camera_init: I2C scan ACK: 0x0C 0x0E 0x11 0x17 0x1A 0x1B 0x1C 0x1F 0x20 0x21 0x22 0x23 0x25 0x2B 0x2C
+W (21318) camera_init: I2C scan ACK: 0x2D 0x2F 0x30 0x32 0x33 0x34 0x35 0x37 0x38 0x39 0x3A 0x3C 0x3D 0x3E 0x3F
+W (21328) camera_init: I2C scan ACK: 0x40 0x41 0x42 0x44 0x47 0x49 0x4B 0x4C 0x4E 0x4F 0x50 0x51 0x52 0x53 0x55
+W (21338) camera_init: I2C scan ACK: 0x56 0x57 0x5A 0x5B 0x5C 0x5D 0x5E 0x5F 0x60 0x61 0x63 0x65 0x66 0x67 0x68
+W (21348) camera_init: I2C scan ACK: 0x69 0x6A 0x6B 0x6C 0x6D 0x6E 0x6F 0x70 0x71 0x72 0x73 0x74 0x75 0x76 0x77
+W (21358) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (21378) camera_init: Camera attempt 1 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (21468) FT6336U: Touch chip-id check failed but I2C address ACKs (ping attempt 1) — enabling touch in fallback mode
+I (21478) vl53_multi: Bootstrapping VL53L0X sensors via TCA9548A
+W (22218) camera_init: Camera attempt 2 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (24068) camera_init: Camera attempt 3: I2C mutex busy, skipping (would race other clients)
+E (39068) i2c_mgr: recover_bus: mutex busy >15s — skipping recovery
+W (40818) camera_init: Camera attempt 4: I2C mutex busy, skipping (would race other clients)
+E (51848) i2c_mgr: Bus still stuck after 4 recovery rounds (SDA=0 SCL=0)
+W (53638) camera_init: Camera attempt 5: I2C mutex busy, skipping (would race other clients)
+E (68638) i2c_mgr: recover_bus: mutex busy >15s — skipping recovery
+W (70388) camera_init: Camera attempt 6: I2C mutex busy, skipping (would race other clients)
+W (81678) vl53_multi: Ch0: VL53 not found at 0x29 (attempt 1)
+I (81678) vl53_multi: Ch0: hard-reset retry 2/5 via XSHUT (progressive pulse)
+W (82278) camera_init: Camera attempt 7 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (82808) camera_init: Camera attempt 8 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (82818) camera_init: Camera still not detected at attempt 8 — doing a second AVDD power-cycle
+W (82908) vl53_multi: Ch0: VL53 not found at 0x29 (attempt 2)
+I (82908) vl53_multi: Ch0: hard-reset retry 3/5 via XSHUT (progressive pulse)

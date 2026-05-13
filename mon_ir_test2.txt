@@ -1,0 +1,1110 @@
+﻿=== IR test2 monitor 08:31:50 ===
+
+%ZJZESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0x1 (POWERON),boot:0xf (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x18e4
+load:0x4ff2abd0,len:0xd74
+load:0x4ff2cbd0,len:0x322c
+entry 0x4ff2abda
+[0;32mI (25) boot: ESP-IDF v5.3.2-dirty 2nd stage bootloader[0m
+[0;32mI (26) boot: compile time May 10 2026 16:29:07[0m
+[0;32mI (26) boot: Multicore bootloader[0m
+[0;32mI (30) boot: chip revision: v1.3[0m
+[0;32mI (33) boot: efuse block revision: v0.3[0m
+[0;32mI (37) boot.esp32p4: SPI Speed      : 80MHz[0m
+[0;32mI (42) boot.esp32p4: SPI Mode       : DIO[0m
+[0;32mI (47) boot.esp32p4: SPI Flash Size : 16MB[0m
+[0;32mI (52) boot: Enabling RNG early entropy source...[0m
+[0;32mI (57) boot: Partition Table:[0m
+[0;32mI (61) boot: ## Label            Usage          Type ST Offset   Length[0m
+[0;32mI (68) boot:  0 nvs              WiFi data        01 02 00009000 00006000[0m
+[0;32mI (75) boot:  1 phy_init         RF data          01 01 0000f000 00001000[0m
+[0;32mI (83) boot:  2 factory          factory app      00 00 00010000 00300000[0m
+[0;32mI (90) boot:  3 coredump         Unknown data     01 03 00310000 00010000[0m
+[0;32mI (99) boot: End of partition table[0m
+[0;32mI (102) esp_image: segment 0: paddr=00010020 vaddr=400e0020 size=ce608h (845320) map[0m
+[0;32mI (252) esp_image: segment 1: paddr=000de630 vaddr=30100000 size=0005ch (    92) load[0m
+[0;32mI (254) esp_image: segment 2: paddr=000de694 vaddr=4ff00000 size=01984h (  6532) load[0m
+[0;32mI (260) esp_image: segment 3: paddr=000e0020 vaddr=40000020 size=d6a7ch (879228) map[0m
+[0;32mI (413) esp_image: segment 4: paddr=001b6aa4 vaddr=4ff01984 size=13fa8h ( 81832) load[0m
+[0;32mI (430) esp_image: segment 5: paddr=001caa54 vaddr=4ff15980 size=02c80h ( 11392) load[0m
+[0;32mI (438) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (439) boot: Disabling RNG early entropy source...[0m
+[0;32mI (452) hex_psram: vendor id    : 0x0d (AP)[0m
+[0;32mI (452) hex_psram: Latency      : 0x01 (Fixed)[0m
+[0;32mI (452) hex_psram: DriveStr.    : 0x00 (25 Ohm)[0m
+[0;32mI (455) hex_psram: dev id       : 0x03 (generation 4)[0m
+[0;32mI (461) hex_psram: density      : 0x07 (256 Mbit)[0m
+[0;32mI (467) hex_psram: good-die     : 0x06 (Pass)[0m
+[0;32mI (472) hex_psram: SRF          : 0x02 (Slow Refresh)[0m
+[0;32mI (477) hex_psram: BurstType    : 0x00 ( Wrap)[0m
+[0;32mI (482) hex_psram: BurstLen     : 0x03 (2048 Byte)[0m
+[0;32mI (488) hex_psram: BitMode      : 0x01 (X16 Mode)[0m
+[0;32mI (493) hex_psram: Readlatency  : 0x04 (14 cycles@Fixed)[0m
+[0;32mI (499) hex_psram: DriveStrength: 0x00 (1/1)[0m
+[0;32mI (504) MSPI DQS: tuning success, best phase id is 2[0m
+[0;32mI (683) MSPI DQS: tuning success, best delayline id is 11[0m
+[0;32mI (683) esp_psram: Found 32MB PSRAM device[0m
+[0;32mI (684) esp_psram: Speed: 200MHz[0m
+[0;32mI (687) hex_psram: psram CS IO is dedicated[0m
+[0;32mI (691) cpu_start: Multicore app[0m
+[0;32mI (1601) esp_psram: SPI SRAM memory test OK[0m
+[0;33mW (1610) clk: esp_perip_clk_init() has not been implemented yet[0m
+[0;32mI (1617) cpu_start: Pro cpu start user code[0m
+[0;32mI (1617) cpu_start: cpu freq: 360000000 Hz[0m
+[0;32mI (1617) app_init: Application information:[0m
+[0;32mI (1620) app_init: Project name:     unified_cam[0m
+[0;32mI (1626) app_init: App version:      backup-camera-working-2026-05-0[0m
+[0;32mI (1633) app_init: Compile time:     May 10 2026 16:28:32[0m
+[0;32mI (1639) app_init: ELF file SHA256:  7a0e9fd12...[0m
+[0;32mI (1644) app_init: ESP-IDF:          v5.3.2-dirty[0m
+[0;32mI (1650) efuse_init: Min chip rev:     v0.1[0m
+[0;32mI (1654) efuse_init: Max chip rev:     v1.99 [0m
+[0;32mI (1659) efuse_init: Chip rev:         v1.3[0m
+[0;32mI (1664) heap_init: Initializing. RAM available for dynamic allocation:[0m
+[0;32mI (1672) heap_init: At 4FF1B350 len 0001FC70 (127 KiB): RAM[0m
+[0;32mI (1678) heap_init: At 4FF3AFC0 len 00004BF0 (18 KiB): RAM[0m
+[0;32mI (1684) heap_init: At 4FF57990 len 00048670 (289 KiB): RAM[0m
+[0;32mI (1690) heap_init: At 5010808C len 00007F74 (31 KiB): RTCRAM[0m
+[0;32mI (1697) heap_init: At 3010005C len 00001FA4 (7 KiB): TCM[0m
+[0;32mI (1703) esp_psram: Adding pool of 32768K of PSRAM memory to heap allocator[0m
+[0;32mI (1711) spi_flash: detected chip: generic[0m
+[0;32mI (1715) spi_flash: flash io: dio[0m
+[0;32mI (1719) host_init: ESP Hosted : Host chip_ip[18][0m
+[0;32mI (1753) H_API: ESP-Hosted starting. Hosted_Tasks: prio:23, stack: 5120 RPC_task_stack: 5120[0m
+sdio_mempool_create free:33711828 min-free:33711828 lfb-def:33030144 lfb-8bit:33030144
+
+[0;32mI (1759) gpio: GPIO[18]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1768) gpio: GPIO[19]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1778) gpio: GPIO[14]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1787) gpio: GPIO[15]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1796) gpio: GPIO[16]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1806) gpio: GPIO[17]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (1815) H_API: ** add_esp_wifi_remote_channels **[0m
+[0;32mI (1820) transport: Add ESP-Hosted channel IF[1]: S[0] Tx[0x4001093e] Rx[0x4001dc28][0m
+[0;32mI (1829) transport: Add ESP-Hosted channel IF[2]: S[0] Tx[0x40010884] Rx[0x4001dc28][0m
+[0;32mI (1838) esp_core_dump_flash: Init core dump to flash[0m
+[0;32mI (1843) esp_core_dump_flash: Found partition 'coredump' @ 310000 65536 bytes[0m
+[0;32mI (1866) esp_core_dump_flash: Core dump data checksum is correct[0m
+[0;32mI (1867) esp_core_dump_flash: Found core dump 17892 bytes in flash @ 0x310000[0m
+[0;32mI (1870) main_task: Started on CPU0[0m
+[0;32mI (1880) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations[0m
+[0;32mI (1880) main_task: Calling app_main()[0m
+[0;32mI (1890) unified_cam: Starting Unified Cam & Modules (ESP32-P4 Nano)[0m
+[0;33mW (1890) unified_cam: Boot #1, reset reason: POWERON (1)[0m
+[0;32mI (1920) cloud_secrets: Cloud secrets loaded from NVS (telegram=set, sheets=set)[0m
+[0;32mI (1940) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1940) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1950) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1950) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1960) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1970) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1980) i2c_mgr: I2C_NUM_0 ready — SDA=7 SCL=8 @ 400000 Hz[0m
+[0;32mI (1990) ds3231: RTC seeded system time: 2026-05-12 08:31:54[0m
+[0;32mI (1990) unified_cam: Skipping bus scan (per-device pings only)[0m
+[0;33mW (2000) unified_cam: I2C scan begin (full bus)...[0m
+[0;33mW (2020) unified_cam: I2C ACK: 0x18 0x20 0x40 0x56 0x68 0x70 [0m
+[0;33mW (2020) unified_cam: I2C scan end. Camera should be 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38[0m
+[0;33mW (2030) unified_cam: CAMERA INIT (early, before any peripheral driver init)[0m
+[0;32mI (2030) camera_init: Lazy camera_init triggered (first /capture or /photo)[0m
+[0;32mI (2220) camera_init: Initializing JPEG encoder for 800x640[0m
+[0;33mW (2220) jpeg_enc: DIAG-LEAK entry  PSRAM free=30478172 largest=30408704[0m
+[0;33mW (2220) jpeg_enc: DIAG-LEAK deinit PSRAM free=30478172[0m
+[0;32mI (2280) jpeg_enc: JPEG HW encoder initialized: 800x640, out_buf=1024000 bytes x2 + rot_buf=1024000[0m
+[0;33mW (2280) jpeg_enc: DIAG-LEAK exit   PSRAM free=26381048 largest=26214400[0m
+[0;32mI (2580) camera_init: MIPI PHY LDO power-cycled (200 ms off)[0m
+[0;32mI (2580) camera_init: XCLK 24000000 Hz generated on GPIO33[0m
+[0;32mI (2780) camera_init: VL53 XSHUT lowered before SCCB (chips offline)[0m
+[0;33mW (2800) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (2800) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2800) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2820) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2820) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2830) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2840) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2850) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;32mI (2850) camera_init: Shared I2C bus recovered before SCCB init[0m
+[0;33mW (3010) camera_init: I2C scan begin (looking for camera + others)...[0m
+[0;33mW (3020) camera_init: I2C scan ACK: 0x18 0x20 0x40 0x56 0x68 0x70 [0m
+[0;33mW (3020) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38[0m
+[0;32mI (3030) ov5647: Detected Camera sensor PID=0x5647[0m
+[0;31mE (3300) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;33mW (3300) camera_init: set_format readback 0x4837=0x00 (ESP_ERR_INVALID_STATE, expect 0x28)[0m
+[0;33mW (3310) camera_init: PCLK reg verify failed ��� forcing attempt retry[0m
+[0;33mW (3320) camera_init: Camera attempt 1 failed: cam=0x4ff34f68 fmt_match=1 set_fmt=ESP_FAIL[0m
+[0;33mW (3350) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (3350) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3350) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3370) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3370) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3380) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3390) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3400) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;32mI (3650) ov5647: Detected Camera sensor PID=0x5647[0m
+[0;33mW (3930) camera_init: set_format readback 0x4837=0x28 (ESP_OK, expect 0x28)[0m
+[0;32mI (3930) camera_init: Camera detect + format OK (attempt 2) — stream-on deferred until CSI ready[0m
+[0;32mI (3930) camera_init: VL53 XSHUT restored after SCCB[0m
+[0;32mI (3940) camera_init: ISP frame_cfg = 0x6031f27f, bayer_mode = 0 (00=BGGR 01=GBRG 10=GRBG 11=RGGB)[0m
+[0;32mI (3960) camera_init: Override 0x4800=0x10 (continuous clock + line sync): ESP_OK[0m
+[0;32mI (3960) camera_init: OV5647 SDE Y-offset = +64 (brightness boost, no chroma)[0m
+[0;32mI (3960) camera_init: Sensor stream-on issued AFTER CSI ready — first frame should arrive shortly[0m
+[0;32mI (3970) camera_init: Camera capture task started (MJPEG mode)[0m
+[0;32mI (3980) camera_init: Camera + JPEG HW Encoder Initialized OK[0m
+[0;32mI (3990) camera_init: Lazy camera_init -> ESP_OK[0m
+[0;33mW (4690) unified_cam: Early camera init → ESP_OK[0m
+[0;33mW (4980) camera_init: Frame wait timeout, retrying... (1/10)[0m
+[0;33mW (5980) camera_init: Frame wait timeout, retrying... (2/10)[0m
+[0;32mI (6690) gpio: GPIO[21]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;33mW (6980) camera_init: Frame wait timeout, retrying... (3/10)[0m
+[0;33mW (7980) camera_init: Frame wait timeout, retrying... (4/10)[0m
+[0;33mW (8060) unified_cam: FT6336U did not ACK initial ping (will retry after module probes)[0m
+[0;32mI (8060) tca9548a: TCA9548A init OK at 0x70[0m
+[0;32mI (8060) pca9685: Servo configuration loaded from NVS[0m
+[0;32mI (8060) pca9685: PCA9685 initialized (prescale=121, ~50Hz)[0m
+[0;32mI (8070) unified_cam: PCF8574 initialized â€” all pins set to INPUT (0xFF)[0m
+[0;32mI (8080) gpio: GPIO[21]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8090) FT6336U: Resetting touch controller[0m
+[0;33mW (8980) camera_init: Frame wait timeout, retrying... (5/10)[0m
+[0;33mW (9980) camera_init: Frame wait timeout, retrying... (6/10)[0m
+[0;33mW (9990) FT6336U: Touch dead after standard reset — attempting DEEP RST (1 s LOW)[0m
+[0;33mW (10980) camera_init: Frame wait timeout, retrying... (7/10)[0m
+[0;33mW (11980) camera_init: Frame wait timeout, retrying... (8/10)[0m
+[0;33mW (12090) FT6336U: Touch controller did not ACK after 4 ping attempts — starting in disabled state; ft6336u_read_touch() will auto-recover when the chip wakes up[0m
+[0;32mI (12090) vl53_multi: Ch0 cal loaded from NVS: full=50mm height=15mm max=16[0m
+[0;32mI (12100) vl53_multi: Bootstrapping VL53L0X sensors via TCA9548A[0m
+[0;32mI (12100) gpio: GPIO[20]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (12110) gpio: GPIO[22]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (12120) gpio: GPIO[23]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (12130) gpio: GPIO[47]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (12140) gpio: GPIO[48]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (12150) gpio: GPIO[53]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (12410) vl53_multi: Ch0: SPAD cache HIT (count=5 aperture=0 stop=0x00)[0m
+[0;33mW (12980) camera_init: Frame wait timeout, retrying... (9/10)[0m
+[0;32mI (13190) vl53_multi: Ch0: ready, first=0 mm[0m
+[0;33mW (13980) camera_init: Frame wait timeout, retrying... (10/10)[0m
+[0;31mE (13980) camera_init: Camera frames stuck for 10 s — performing full re-init[0m
+[0;32mI (14160) vl53_multi: Ch1: SPAD cache SAVED (count=5 aperture=0 stop=0x00)[0m
+[0;32mI (14250) vl53_multi: Ch1: ready, first=0 mm[0m
+[0;32mI (14480) vl53_multi: Ch2: SPAD cache HIT (count=7 aperture=0 stop=0x00)[0m
+[0;33mW (14780) camera_init: Capture task exiting — auto re-init in 2 s[0m
+[0;33mW (15310) vl53_multi: Ch2: no first sample (read fail)[0m
+[0;32mI (15590) vl53_multi: Ch3: SPAD cache HIT (count=15 aperture=0 stop=0x00)[0m
+[0;32mI (15780) vl53_multi: Ch3: ready, first=16705 mm[0m
+[0;32mI (16010) vl53_multi: Ch4: SPAD cache HIT (count=6 aperture=0 stop=0x00)[0m
+[0;32mI (16260) vl53_multi: Ch4: ready, first=0 mm[0m
+[0;32mI (16490) vl53_multi: Ch5: SPAD cache HIT (count=8 aperture=0 stop=0x00)[0m
+[0;33mW (16670) vl53_multi: Ch5 init fail: ref_cal 0x40[0m
+[0;33mW (16670) vl53_multi: Ch5: init_device failed on attempt 1[0m
+[0;32mI (16670) vl53_multi: Ch5: hard-reset retry 2/5 via XSHUT (progressive pulse)[0m
+[0;32mI (16860) vl53_multi: Ch5: SPAD cache HIT (count=8 aperture=0 stop=0x00)[0m
+[0;33mW (17040) vl53_multi: Ch5 init fail: ref_cal 0x40[0m
+[0;33mW (17040) vl53_multi: Ch5: init_device failed on attempt 2[0m
+[0;33mW (17050) vl53_multi: Ch5: cleared bad SPAD cache, next retry will re-read[0m
+[0;32mI (17050) vl53_multi: Ch5: hard-reset retry 3/5 via XSHUT (progressive pulse)[0m
+[0;33mW (17540) vl53_multi: Ch5 init fail: SPAD info[0m
+[0;33mW (17540) vl53_multi: Ch5: init_device failed on attempt 3[0m
+[0;32mI (17540) vl53_multi: Ch5: hard-reset retry 4/5 via XSHUT (progressive pulse)[0m
+[0;33mW (18470) vl53_multi: Ch5 init fail: SPAD info[0m
+[0;33mW (18470) vl53_multi: Ch5: init_device failed on attempt 4[0m
+[0;32mI (18470) vl53_multi: Ch5: hard-reset retry 5/5 via XSHUT (progressive pulse)[0m
+[0;32mI (20430) vl53_multi: Ch5: SPAD cache SAVED (count=8 aperture=0 stop=0x00)[0m
+[0;33mW (20580) vl53_multi: Ch5: no first sample (read fail)[0m
+[0;32mI (20610) vl53_multi: Starting VL53L0X poll task[0m
+[0;32mI (20610) display_clk: Init ST7796S 480x320 - Interactive UI Layout[0m
+[0;32mI (20610) gpio: GPIO[24]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (20620) gpio: GPIO[25]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (20680) gpio: GPIO[26]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (20680) display_clk: SPI2 OK 40MHz[0m
+[0;32mI (20680) display_clk: Display SPI ready[0m
+[0;33mW (20780) camera_init: Auto re-init starting (no user trigger needed)[0m
+[0;32mI (20780) camera_init: Lazy camera_init triggered (first /capture or /photo)[0m
+[0;32mI (20880) vl53_multi: vl53 raw[mm]: M1=0(f0) M2=0(f0) M3=?? M4=16705(f16705) M5=0(f0) M6=??[0m
+
+assert failed: tcpip_send_msg_wait_sem /IDF/components/lwip/lwip/src/api/tcpip.c:449 (Invalid mbox)
+Core  0 register dump:
+MEPC    : 0x4ff00c40  RA      : 0x4ff0b874  SP      : 0x4ff3d3f0  GP      : 0x4ff16180  
+TP      : 0x4ff3da80  T0      : 0x37363534  T1      : 0x7271706f  T2      : 0x33323130  
+S0/FP   : 0x00000001  S1      : 0x00000064  A0      : 0x4ff3d438  A1      : 0x4ff17d31  
+A2      : 0x00000001  A3      : 0x00000029  A4      : 0x00000001  A5      : 0x4ff57000  
+A6      : 0x0000000c  A7      : 0x76757473  S2      : 0x4ff3d438  S3      : 0x4ff3d563  
+S4      : 0x4ff17d30  S5      : 0x4ff3d438  S6      : 0x4ff39dec  S7      : 0xffffffff  
+S8      : 0x00000000  S9      : 0x01249a4f  S10     : 0x00000000  S11     : 0x00000000  
+T3      : 0x6e6d6c6b  T4      : 0x6a696867  T5      : 0x66656463  T6      : 0x62613938  
+MSTATUS : 0x00011880  MTVEC   : 0x4ff00003  MCAUSE  : 0x00000007  MTVAL   : 0x00000000  
+MHARTID : 0x00000000  
+
+Stack memory:
+4ff3d3f0: 0xa5a5a5a5 0xa5a5a5a5 0x401a86e4 0x4ff146ae 0x00393434 0xa5a5a5a5 0x00000000 0x00000000
+4ff3d410: 0xa5000000 0x4ff17278 0x401a86e4 0x4ff1725c 0x4010c504 0x4ff17288 0x4ff3d400 0x4ff1728c
+4ff3d430: 0x4010c530 0x4ff17d30 0x65737361 0x66207472 0x656c6961 0x74203a64 0x70697063 0x6e65735f
+4ff3d450: 0x736d5f64 0x61775f67 0x735f7469 0x2f206d65 0x2f464449 0x706d6f63 0x6e656e6f 0x6c2f7374
+4ff3d470: 0x2f706977 0x7069776c 0x6372732f 0x6970612f 0x7063742f 0x632e7069 0x3934343a 0x6e492820
+4ff3d490: 0x696c6176 0x626d2064 0x0029786f 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0xffffffff
+4ff3d4b0: 0x4ff39dec 0x00000000 0x00000000 0x00000004 0x4ff1b6d0 0x00000054 0x4ff1b350 0x4ff12b54
+4ff3d4d0: 0x00000003 0x4ff57000 0x4ff1b6bc 0x4ff01102 0xa5a5a5a5 0x00000804 0x00000054 0x00000004
+4ff3d4f0: 0xa5a5a5a5 0x4ff39e1c 0x00000010 0x00000000 0x4ff39ea4 0x4ff39e1c 0x00000010 0x00000000
+4ff3d510: 0x00000000 0x4ff3d5dc 0x00000000 0x4005e4c0 0x00000000 0x4ff3d5dc 0x4ff39e48 0x40073060
+4ff3d530: 0xa5a5a5a5 0xa5a5a5a5 0x00000000 0x40076dd4 0x4ff39dec 0x00000000 0x00000000 0x4ff39e30
+4ff3d550: 0x4ff3d598 0x00000002 0x4ff39e48 0x4ff3d54b 0x00000003 0x4ff57000 0x4ff1b6bc 0x400babe6
+4ff3d570: 0xa5a5a5a5 0x00001800 0x00000011 0x00000004 0xa5a5a5a5 0x4ff39e1c 0x4ff39e30 0x4ff3d600
+4ff3d590: 0x000001bb 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+4ff3d5b0: 0x000001bb 0x4ff395d4 0x00000010 0x4ff39e30 0x000001bb 0x4ff39130 0x4ff3d600 0x4008ea9a
+4ff3d5d0: 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0x00000000 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5
+4ff3d5f0: 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0x00000000 0x00000000 0x00000001 0x00000000
+4ff3d610: 0x00000000 0x00000000 0x00000000 0x00000000 0x4ff1b364 0x4ff395ec 0x4ff391ac 0x4ff13df4
+4ff3d630: 0x00000001 0x000001bb 0x00000010 0x4ff395d4 0x00000010 0x4ff39130 0x4ff39734 0x4008f1ba
+4ff3d650: 0x4ff1b6d0 0x00000010 0x4ff1b350 0x000001bb 0x00000003 0x4ff57000 0x4ff1b6bc 0x4ff01102
+4ff3d670: 0x00000003 0x00001800 0x00000010 0x00000004 0x00000000 0x00000000 0x000001bb 0x4ff395d4
+4ff3d690: 0x4ff39734 0x4ff39130 0x4ff3912c 0x4008f3e6 0x4ff395d4 0x00000010 0x00000010 0x00000000
+4ff3d6b0: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x000001bb 0x4ff390c4
+4ff3d6d0: 0x4ff395d4 0x4ff39734 0x4ff3912c 0x40090e16 0x4ff1b6d0 0x00001800 0x00000011 0x00000004
+4ff3d6f0: 0x4ff38d10 0x4ff38e88 0x00000000 0x4ff38e20 0x4ff38d10 0x4ff38e88 0x00000000 0x400932d4
+4ff3d710: 0x00000000 0x00000011 0x00000011 0x4ff38e88 0x4ff38de8 0x4ff38e88 0x4ff38e88 0x4009480c
+4ff3d730: 0x4ff38d10 0x0000000c 0x0000000c 0x4ff38e88 0x4ff38d10 0x400f9000 0x4ff38e88 0x4009442e
+4ff3d750: 0x4ff1621c 0x00000000 0x00000000 0x4ff38e20 0x4ff38d10 0x4ff38e88 0x4ff38784 0x4002ee50
+4ff3d770: 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0x4ff3d810 0x00000000 0x00000000 0x00000000 0x00000000
+4ff3d790: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+4ff3d7b0: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00003a98 0x00000000
+4ff3d7d0: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+
+
+
+ELF file SHA256: 7a0e9fd12
+
+[0;32mI (9350) esp_core_dump_flash: Save core dump to flash...[0m
+[0;32mI (9356) esp_core_dump_common: Backing up stack @ 0x4ff3d2b0 and use core dump stack @ 0x4ff1a320[0m
+[0;32mI (9366) esp_core_dump_flash: Erase flash 20480 bytes @ 0x310000[0m
+[0;32mI (9615) esp_core_dump_flash: Write end offset 0x4684, check sum length 4[0m
+[0;32mI (9615) esp_core_dump_common: Core dump used 1000 bytes on stack. 884 bytes left free.[0m
+[0;32mI (9620) esp_core_dump_common: Restoring stack @ 0x4ff3d2b0[0m
+[0;32mI (9626) esp_core_dump_flash: Core dump has been saved to flash.[0m
+Rebooting...
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0xc (SW_CPU_RESET),boot:0xf (SPI_FAST_FLASH_BOOT)
+Core0 Saved PC:0x4ff00c18
+Core1 Saved PC:0x4ff06bec
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x18e4
+load:0x4ff2abd0,len:0xd74
+load:0x4ff2cbd0,len:0x322c
+entry 0x4ff2abda
+[0;32mI (33) boot: ESP-IDF v5.3.2-dirty 2nd stage bootloader[0m
+[0;32mI (33) boot: compile time May 10 2026 16:29:07[0m
+[0;32mI (34) boot: Multicore bootloader[0m
+[0;32mI (37) boot: chip revision: v1.3[0m
+[0;32mI (40) boot: efuse block revision: v0.3[0m
+[0;32mI (45) boot.esp32p4: SPI Speed      : 80MHz[0m
+[0;32mI (50) boot.esp32p4: SPI Mode       : DIO[0m
+[0;32mI (54) boot.esp32p4: SPI Flash Size : 16MB[0m
+[0;32mI (59) boot: Enabling RNG early entropy source...[0m
+[0;32mI (65) boot: Partition Table:[0m
+[0;32mI (68) boot: ## Label            Usage          Type ST Offset   Length[0m
+[0;32mI (75) boot:  0 nvs              WiFi data        01 02 00009000 00006000[0m
+[0;32mI (83) boot:  1 phy_init         RF data          01 01 0000f000 00001000[0m
+[0;32mI (90) boot:  2 factory          factory app      00 00 00010000 00300000[0m
+[0;32mI (98) boot:  3 coredump         Unknown data     01 03 00310000 00010000[0m
+[0;32mI (106) boot: End of partition table[0m
+[0;32mI (110) esp_image: segment 0: paddr=00010020 vaddr=400e0020 size=ce608h (845320) map[0m
+[0;32mI (236) esp_image: segment 1: paddr=000de630 vaddr=30100000 size=0005ch (    92) load[0m
+[0;32mI (238) esp_image: segment 2: paddr=000de694 vaddr=4ff00000 size=01984h (  6532) load[0m
+[0;32mI (244) esp_image: segment 3: paddr=000e0020 vaddr=40000020 size=d6a7ch (879228) map[0m
+[0;32mI (374) esp_image: segment 4: paddr=001b6aa4 vaddr=4ff01984 size=13fa8h ( 81832) load[0m
+[0;32mI (389) esp_image: segment 5: paddr=001caa54 vaddr=4ff15980 size=02c80h ( 11392) load[0m
+[0;32mI (396) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (397) boot: Disabling RNG early entropy source...[0m
+[0;32mI (410) hex_psram: vendor id    : 0x0d (AP)[0m
+[0;32mI (410) hex_psram: Latency      : 0x01 (Fixed)[0m
+[0;32mI (411) hex_psram: DriveStr.    : 0x00 (25 Ohm)[0m
+[0;32mI (414) hex_psram: dev id       : 0x03 (generation 4)[0m
+[0;32mI (420) hex_psram: density      : 0x07 (256 Mbit)[0m
+[0;32mI (425) hex_psram: good-die     : 0x06 (Pass)[0m
+[0;32mI (430) hex_psram: SRF          : 0x02 (Slow Refresh)[0m
+[0;32mI (436) hex_psram: BurstType    : 0x00 ( Wrap)[0m
+[0;32mI (441) hex_psram: BurstLen     : 0x03 (2048 Byte)[0m
+[0;32mI (446) hex_psram: BitMode      : 0x01 (X16 Mode)[0m
+[0;32mI (452) hex_psram: Readlatency  : 0x04 (14 cycles@Fixed)[0m
+[0;32mI (458) hex_psram: DriveStrength: 0x00 (1/1)[0m
+[0;32mI (463) MSPI DQS: tuning success, best phase id is 2[0m
+[0;32mI (641) MSPI DQS: tuning success, best delayline id is 11[0m
+[0;32mI (642) esp_psram: Found 32MB PSRAM device[0m
+[0;32mI (642) esp_psram: Speed: 200MHz[0m
+[0;32mI (645) hex_psram: psram CS IO is dedicated[0m
+[0;32mI (649) cpu_start: Multicore app[0m
+[0;32mI (1559) esp_psram: SPI SRAM memory test OK[0m
+[0;33mW (1568) clk: esp_perip_clk_init() has not been implemented yet[0m
+[0;32mI (1575) cpu_start: Pro cpu start user code[0m
+[0;32mI (1575) cpu_start: cpu freq: 360000000 Hz[0m
+[0;32mI (1576) app_init: Application information:[0m
+[0;32mI (1578) app_init: Project name:     unified_cam[0m
+[0;32mI (1584) app_init: App version:      backup-camera-working-2026-05-0[0m
+[0;32mI (1591) app_init: Compile time:     May 10 2026 16:28:32[0m
+[0;32mI (1597) app_init: ELF file SHA256:  7a0e9fd12...[0m
+[0;32mI (1602) app_init: ESP-IDF:          v5.3.2-dirty[0m
+[0;32mI (1608) efuse_init: Min chip rev:     v0.1[0m
+[0;32mI (1613) efuse_init: Max chip rev:     v1.99 [0m
+[0;32mI (1618) efuse_init: Chip rev:         v1.3[0m
+[0;32mI (1622) heap_init: Initializing. RAM available for dynamic allocation:[0m
+[0;32mI (1630) heap_init: At 4FF1B350 len 0001FC70 (127 KiB): RAM[0m
+[0;32mI (1636) heap_init: At 4FF3AFC0 len 00004BF0 (18 KiB): RAM[0m
+[0;32mI (1642) heap_init: At 4FF57990 len 00048670 (289 KiB): RAM[0m
+[0;32mI (1649) heap_init: At 5010808C len 00007F74 (31 KiB): RTCRAM[0m
+[0;32mI (1655) heap_init: At 3010005C len 00001FA4 (7 KiB): TCM[0m
+[0;32mI (1661) esp_psram: Adding pool of 32768K of PSRAM memory to heap allocator[0m
+[0;32mI (1669) spi_flash: detected chip: generic[0m
+[0;32mI (1673) spi_flash: flash io: dio[0m
+[0;32mI (1677) host_init: ESP Hosted : Host chip_ip[18][0m
+[0;32mI (1711) H_API: ESP-Hosted starting. Hosted_Tasks: prio:23, stack: 5120 RPC_task_stack: 5120[0m
+sdio_mempool_create free:33711828 min-free:33711828 lfb-def:33030144 lfb-8bit:33030144
+
+[0;32mI (1717) gpio: GPIO[18]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1726) gpio: GPIO[19]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1736) gpio: GPIO[14]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1745) gpio: GPIO[15]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1754) gpio: GPIO[16]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1764) gpio: GPIO[17]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (1773) H_API: ** add_esp_wifi_remote_channels **[0m
+[0;32mI (1779) transport: Add ESP-Hosted channel IF[1]: S[0] Tx[0x4001093e] Rx[0x4001dc28][0m
+[0;32mI (1787) transport: Add ESP-Hosted channel IF[2]: S[0] Tx[0x40010884] Rx[0x4001dc28][0m
+[0;32mI (1796) esp_core_dump_flash: Init core dump to flash[0m
+[0;32mI (1801) esp_core_dump_flash: Found partition 'coredump' @ 310000 65536 bytes[0m
+[0;32mI (1825) esp_core_dump_flash: Core dump data checksum is correct[0m
+[0;32mI (1825) esp_core_dump_flash: Found core dump 18052 bytes in flash @ 0x310000[0m
+[0;32mI (1828) main_task: Started on CPU0[0m
+[0;32mI (1838) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations[0m
+[0;32mI (1838) main_task: Calling app_main()[0m
+[0;32mI (1848) unified_cam: Starting Unified Cam & Modules (ESP32-P4 Nano)[0m
+[0;33mW (1848) unified_cam: Boot #2, reset reason: PANIC (4)[0m
+[0;32mI (1888) cloud_secrets: Cloud secrets loaded from NVS (telegram=set, sheets=set)[0m
+[0;32mI (1898) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1898) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1908) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1908) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1918) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1928) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1938) i2c_mgr: I2C_NUM_0 ready — SDA=7 SCL=8 @ 400000 Hz[0m
+[0;32mI (1948) ds3231: RTC seeded system time: 2026-05-12 08:32:15[0m
+[0;32mI (1948) unified_cam: Skipping bus scan (per-device pings only)[0m
+[0;33mW (1958) unified_cam: I2C scan begin (full bus)...[0m
+[0;33mW (1978) unified_cam: I2C ACK: 0x20 0x36 0x40 0x56 0x68 0x70 [0m
+[0;33mW (1978) unified_cam: I2C scan end. Camera should be 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38[0m
+[0;33mW (1988) unified_cam: CAMERA INIT (early, before any peripheral driver init)[0m
+[0;32mI (1988) camera_init: Lazy camera_init triggered (first /capture or /photo)[0m
+[0;32mI (2178) camera_init: Initializing JPEG encoder for 800x640[0m
+[0;33mW (2178) jpeg_enc: DIAG-LEAK entry  PSRAM free=30478172 largest=30408704[0m
+[0;33mW (2178) jpeg_enc: DIAG-LEAK deinit PSRAM free=30478172[0m
+[0;32mI (2238) jpeg_enc: JPEG HW encoder initialized: 800x640, out_buf=1024000 bytes x2 + rot_buf=1024000[0m
+[0;33mW (2238) jpeg_enc: DIAG-LEAK exit   PSRAM free=26381048 largest=26214400[0m
+[0;32mI (2538) camera_init: MIPI PHY LDO power-cycled (200 ms off)[0m
+[0;32mI (2538) camera_init: XCLK 24000000 Hz generated on GPIO33[0m
+[0;32mI (2738) camera_init: VL53 XSHUT lowered before SCCB (chips offline)[0m
+[0;33mW (2758) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (2758) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2758) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2778) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2778) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2788) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2798) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2808) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;32mI (2808) camera_init: Shared I2C bus recovered before SCCB init[0m
+[0;33mW (2968) camera_init: I2C scan begin (looking for camera + others)...[0m
+[0;33mW (2978) camera_init: I2C scan ACK: 0x18 0x20 0x40 0x56 0x68 0x70 [0m
+[0;33mW (2978) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38[0m
+[0;32mI (2988) ov5647: Detected Camera sensor PID=0x5647[0m
+[0;33mW (3258) camera_init: set_format readback 0x4837=0x28 (ESP_OK, expect 0x28)[0m
+[0;32mI (3258) camera_init: Camera detect + format OK (attempt 1) — stream-on deferred until CSI ready[0m
+[0;32mI (3258) camera_init: VL53 XSHUT restored after SCCB[0m
+[0;32mI (3268) camera_init: ISP frame_cfg = 0x6031f27f, bayer_mode = 0 (00=BGGR 01=GBRG 10=GRBG 11=RGGB)[0m
+[0;32mI (3278) camera_init: Override 0x4800=0x10 (continuous clock + line sync): ESP_OK[0m
+[0;32mI (3288) camera_init: OV5647 SDE Y-offset = +64 (brightness boost, no chroma)[0m
+[0;32mI (3288) camera_init: Sensor stream-on issued AFTER CSI ready — first frame should arrive shortly[0m
+[0;32mI (3298) camera_init: Camera capture task started (MJPEG mode)[0m
+[0;32mI (3308) camera_init: MIPI first frame received — pipeline healthy[0m
+[0;32mI (3318) camera_init: Camera + JPEG HW Encoder Initialized OK[0m
+[0;32mI (3318) camera_init: Lazy camera_init -> ESP_OK[0m
+[0;33mW (4028) unified_cam: Early camera init → ESP_OK[0m
+[0;32mI (6028) gpio: GPIO[21]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6798) unified_cam: FT6336U responded on initial ping[0m
+[0;32mI (7298) tca9548a: TCA9548A init OK at 0x70[0m
+[0;32mI (7298) pca9685: Servo configuration loaded from NVS[0m
+[0;32mI (7298) pca9685: PCA9685 initialized (prescale=121, ~50Hz)[0m
+[0;32mI (7298) unified_cam: PCF8574 initialized â€” all pins set to INPUT (0xFF)[0m
+[0;32mI (7308) gpio: GPIO[21]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7318) FT6336U: Resetting touch controller[0m
+[0;33mW (9218) FT6336U: Touch dead after standard reset — attempting DEEP RST (1 s LOW)[0m
+[0;33mW (11318) FT6336U: Touch controller did not ACK after 4 ping attempts — starting in disabled state; ft6336u_read_touch() will auto-recover when the chip wakes up[0m
+[0;32mI (11318) vl53_multi: Ch0 cal loaded from NVS: full=50mm height=15mm max=16[0m
+[0;32mI (11328) vl53_multi: Bootstrapping VL53L0X sensors via TCA9548A[0m
+[0;32mI (11328) gpio: GPIO[20]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11338) gpio: GPIO[22]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11348) gpio: GPIO[23]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11358) gpio: GPIO[47]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11368) gpio: GPIO[48]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11378) gpio: GPIO[53]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11638) vl53_multi: Ch0: SPAD cache HIT (count=5 aperture=0 stop=0x00)[0m
+[0;32mI (11868) vl53_multi: Ch0: ready, first=0 mm[0m
+[0;32mI (12098) vl53_multi: Ch1: SPAD cache HIT (count=5 aperture=0 stop=0x00)[0m
+[0;33mW (12168) vl53_multi: Ch1 init fail: set_timing_budget[0m
+[0;33mW (12168) vl53_multi: Ch1: init_device failed on attempt 1[0m
+[0;32mI (12168) vl53_multi: Ch1: hard-reset retry 2/5 via XSHUT (progressive pulse)[0m
+[0;32mI (12358) vl53_multi: Ch1: SPAD cache HIT (count=5 aperture=0 stop=0x00)[0m
+[0;33mW (12558) vl53_multi: Ch1 init fail: ref_cal 0x00[0m
+[0;33mW (12558) vl53_multi: Ch1: init_device failed on attempt 2[0m
+[0;33mW (12568) vl53_multi: Ch1: cleared bad SPAD cache, next retry will re-read[0m
+[0;32mI (12568) vl53_multi: Ch1: hard-reset retry 3/5 via XSHUT (progressive pulse)[0m
+[0;32mI (13218) vl53_multi: Ch1: SPAD cache SAVED (count=5 aperture=0 stop=0x00)[0m
+[0;32mI (13298) vl53_multi: Ch1: ready, first=15360 mm[0m
+[0;32mI (13528) vl53_multi: Ch2: SPAD cache HIT (count=7 aperture=0 stop=0x00)[0m
+[0;33mW (13838) vl53_multi: Ch2: no first sample (read fail)[0m
+[0;32mI (14068) vl53_multi: Ch3: SPAD cache HIT (count=15 aperture=0 stop=0x00)[0m
+[0;32mI (15368) vl53_multi: Ch3: ready, first=511 mm[0m
+[0;32mI (15598) vl53_multi: Ch4: SPAD cache HIT (count=6 aperture=0 stop=0x00)[0m
+[0;32mI (16908) vl53_multi: Ch4: ready, first=0 mm[0m
+[0;32mI (17138) vl53_multi: Ch5: SPAD cache HIT (count=8 aperture=0 stop=0x00)[0m
+[0;32mI (17268) camera_init: MIPI alive: 500 frames received[0m
+[0;33mW (17438) vl53_multi: Ch5: no first sample (read fail)[0m
+[0;32mI (17468) vl53_multi: Starting VL53L0X poll task[0m
+[0;32mI (17468) display_clk: Init ST7796S 480x320 - Interactive UI Layout[0m
+[0;32mI (17468) gpio: GPIO[24]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (17478) gpio: GPIO[25]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (17488) gpio: GPIO[26]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (17498) display_clk: SPI2 OK 40MHz[0m
+[0;32mI (17498) display_clk: Display SPI ready[0m
+[0;32mI (17778) vl53_multi: vl53 raw[mm]: M1=0(f0) M2=15360(f15360) M3=?? M4=511(f511) M5=255(f153) M6=??[0m
+
+assert failed: tcpip_send_msg_wait_sem /IDF/components/lwip/lwip/src/api/tcpip.c:449 (Invalid mbox)
+Core  0 register dump:
+MEPC    : 0x4ff00c40  RA      : 0x4ff0b874  SP      : 0x4ff3d3f0  GP      : 0x4ff16180  
+TP      : 0x4ff3da80  T0      : 0x37363534  T1      : 0x7271706f  T2      : 0x33323130  
+S0/FP   : 0x00000001  S1      : 0x00000064  A0      : 0x4ff3d438  A1      : 0x4ff17d31  
+A2      : 0x00000001  A3      : 0x00000029  A4      : 0x00000001  A5      : 0x4ff57000  
+A6      : 0x0000000c  A7      : 0x76757473  S2      : 0x4ff3d438  S3      : 0x4ff3d563  
+S4      : 0x4ff17d30  S5      : 0x4ff3d438  S6      : 0x4ff3aea0  S7      : 0xffffffff  
+S8      : 0x00000000  S9      : 0x00f5eaa7  S10     : 0x00000000  S11     : 0x00000000  
+T3      : 0x6e6d6c6b  T4      : 0x6a696867  T5      : 0x66656463  T6      : 0x62613938  
+MSTATUS : 0x00011880  MTVEC   : 0x4ff00003  MCAUSE  : 0x00000007  MTVAL   : 0x00000000  
+MHARTID : 0x00000000  
+
+Stack memory:
+4ff3d3f0: 0xa5a5a5a5 0xa5a5a5a5 0x401a86e4 0x4ff146ae 0x00393434 0xa5a5a5a5 0x00000000 0x00000000
+4ff3d410: 0xa5000000 0x4ff17278 0x401a86e4 0x4ff1725c 0x4010c504 0x4ff17288 0x4ff3d400 0x4ff1728c
+4ff3d430: 0x4010c530 0x4ff17d30 0x65737361 0x66207472 0x656c6961 0x74203a64 0x70697063 0x6e65735f
+4ff3d450: 0x736d5f64 0x61775f67 0x735f7469 0x2f206d65 0x2f464449 0x706d6f63 0x6e656e6f 0x6c2f7374
+4ff3d470: 0x2f706977 0x7069776c 0x6372732f 0x6970612f 0x7063742f 0x632e7069 0x3934343a 0x6e492820
+4ff3d490: 0x696c6176 0x626d2064 0x0029786f 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0xffffffff
+4ff3d4b0: 0x4ff3aea0 0x00000000 0x00000000 0x00000004 0x4ff1b6d0 0x00000054 0x4ff1b350 0x4ff12b54
+4ff3d4d0: 0x00000003 0x4ff57000 0x4ff1b6bc 0x4ff01102 0xa5a5a5a5 0x00000804 0x00000054 0x00000004
+4ff3d4f0: 0xa5a5a5a5 0x4ff3aed0 0x00000010 0x00000000 0x4ff3af58 0x4ff3aed0 0x00000010 0x00000000
+4ff3d510: 0x00000000 0x4ff3d5dc 0x00000000 0x4005e4c0 0x00000000 0x4ff3d5dc 0x4ff3aefc 0x40073060
+4ff3d530: 0xa5a5a5a5 0xa5a5a5a5 0x00000000 0x40076dd4 0x4ff3aea0 0x00000000 0x00000000 0x4ff3aee4
+4ff3d550: 0x4ff3d598 0x00000002 0x4ff3aefc 0x4ff3d54b 0x00000003 0x4ff57000 0x4ff1b6bc 0x400babe6
+4ff3d570: 0xa5a5a5a5 0x00001800 0x00000011 0x00000004 0xa5a5a5a5 0x4ff3aed0 0x4ff3aee4 0x4ff3d600
+4ff3d590: 0x000001bb 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+4ff3d5b0: 0x000001bb 0x4ff3a688 0x00000010 0x4ff3aee4 0x000001bb 0x4ff3a1e4 0x4ff3d600 0x4008ea9a
+4ff3d5d0: 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0x00000000 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5
+4ff3d5f0: 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0x00000000 0x00000000 0x00000001 0x00000000
+4ff3d610: 0x00000000 0x00000000 0x00000000 0x00000000 0x4ff1b364 0x4ff3a6a0 0x4ff3a260 0x4ff13df4
+4ff3d630: 0x00000001 0x000001bb 0x00000010 0x4ff3a688 0x00000010 0x4ff3a1e4 0x4ff3a7e8 0x4008f1ba
+4ff3d650: 0x4ff1b6d0 0x00000010 0x4ff1b350 0x000001bb 0x00000003 0x4ff57000 0x4ff1b6bc 0x4ff01102
+4ff3d670: 0x00000003 0x00001800 0x00000010 0x00000004 0x00000000 0x00000000 0x000001bb 0x4ff3a688
+4ff3d690: 0x4ff3a7e8 0x4ff3a1e4 0x4ff3a1e0 0x4008f3e6 0x4ff3a688 0x00000010 0x00000010 0x00000000
+4ff3d6b0: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x000001bb 0x4ff3a178
+4ff3d6d0: 0x4ff3a688 0x4ff3a7e8 0x4ff3a1e0 0x40090e16 0x4ff1b6d0 0x00001800 0x00000011 0x00000004
+4ff3d6f0: 0x4ff39d54 0x4ff39dec 0x00000000 0x4ff39ee4 0x4ff39d54 0x4ff39dec 0x00000000 0x400932d4
+4ff3d710: 0x00000000 0x00000011 0x00000011 0x4ff39dec 0x4ff39ed0 0x4ff39dec 0x4ff39dec 0x4009480c
+4ff3d730: 0x4ff39d54 0x0000000c 0x0000000c 0x4ff39dec 0x4ff39d54 0x400f9000 0x4ff39dec 0x4009442e
+4ff3d750: 0x4ff1621c 0x00000000 0x00000000 0x4ff39ee4 0x4ff39d54 0x4ff39dec 0x4ff397a4 0x4002ee50
+4ff3d770: 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0x4ff3d810 0x00000000 0x00000000 0x00000000 0x00000000
+4ff3d790: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+4ff3d7b0: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00003a98 0x00000000
+4ff3d7d0: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+
+
+
+ELF file SHA256: 7a0e9fd12
+
+[0;32mI (6249) esp_core_dump_flash: Save core dump to flash...[0m
+[0;32mI (6255) esp_core_dump_common: Backing up stack @ 0x4ff3d2b0 and use core dump stack @ 0x4ff1a320[0m
+[0;32mI (6265) esp_core_dump_flash: Erase flash 20480 bytes @ 0x310000[0m
+[0;32mI (6516) esp_core_dump_flash: Write end offset 0x46a4, check sum length 4[0m
+[0;32mI (6516) esp_core_dump_common: Core dump used 1000 bytes on stack. 884 bytes left free.[0m
+[0;32mI (6521) esp_core_dump_common: Restoring stack @ 0x4ff3d2b0[0m
+[0;32mI (6527) esp_core_dump_flash: Core dump has been saved to flash.[0m
+Rebooting...
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0xc (SW_CPU_RESET),boot:0xf (SPI_FAST_FLASH_BOOT)
+Core0 Saved PC:0x4ff00c18
+Core1 Saved PC:0x4ff06bec
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x18e4
+load:0x4ff2abd0,len:0xd74
+load:0x4ff2cbd0,len:0x322c
+entry 0x4ff2abda
+[0;32mI (33) boot: ESP-IDF v5.3.2-dirty 2nd stage bootloader[0m
+[0;32mI (33) boot: compile time May 10 2026 16:29:07[0m
+[0;32mI (34) boot: Multicore bootloader[0m
+[0;32mI (37) boot: chip revision: v1.3[0m
+[0;32mI (40) boot: efuse block revision: v0.3[0m
+[0;32mI (45) boot.esp32p4: SPI Speed      : 80MHz[0m
+[0;32mI (50) boot.esp32p4: SPI Mode       : DIO[0m
+[0;32mI (54) boot.esp32p4: SPI Flash Size : 16MB[0m
+[0;32mI (59) boot: Enabling RNG early entropy source...[0m
+[0;32mI (65) boot: Partition Table:[0m
+[0;32mI (68) boot: ## Label            Usage          Type ST Offset   Length[0m
+[0;32mI (75) boot:  0 nvs              WiFi data        01 02 00009000 00006000[0m
+[0;32mI (83) boot:  1 phy_init         RF data          01 01 0000f000 00001000[0m
+[0;32mI (90) boot:  2 factory          factory app      00 00 00010000 00300000[0m
+[0;32mI (98) boot:  3 coredump         Unknown data     01 03 00310000 00010000[0m
+[0;32mI (106) boot: End of partition table[0m
+[0;32mI (110) esp_image: segment 0: paddr=00010020 vaddr=400e0020 size=ce608h (845320) map[0m
+[0;32mI (236) esp_image: segment 1: paddr=000de630 vaddr=30100000 size=0005ch (    92) load[0m
+[0;32mI (238) esp_image: segment 2: paddr=000de694 vaddr=4ff00000 size=01984h (  6532) load[0m
+[0;32mI (244) esp_image: segment 3: paddr=000e0020 vaddr=40000020 size=d6a7ch (879228) map[0m
+[0;32mI (374) esp_image: segment 4: paddr=001b6aa4 vaddr=4ff01984 size=13fa8h ( 81832) load[0m
+[0;32mI (389) esp_image: segment 5: paddr=001caa54 vaddr=4ff15980 size=02c80h ( 11392) load[0m
+[0;32mI (396) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (397) boot: Disabling RNG early entropy source...[0m
+[0;32mI (410) hex_psram: vendor id    : 0x0d (AP)[0m
+[0;32mI (410) hex_psram: Latency      : 0x01 (Fixed)[0m
+[0;32mI (411) hex_psram: DriveStr.    : 0x00 (25 Ohm)[0m
+[0;32mI (414) hex_psram: dev id       : 0x03 (generation 4)[0m
+[0;32mI (420) hex_psram: density      : 0x07 (256 Mbit)[0m
+[0;32mI (425) hex_psram: good-die     : 0x06 (Pass)[0m
+[0;32mI (430) hex_psram: SRF          : 0x02 (Slow Refresh)[0m
+[0;32mI (436) hex_psram: BurstType    : 0x00 ( Wrap)[0m
+[0;32mI (441) hex_psram: BurstLen     : 0x03 (2048 Byte)[0m
+[0;32mI (446) hex_psram: BitMode      : 0x01 (X16 Mode)[0m
+[0;32mI (452) hex_psram: Readlatency  : 0x04 (14 cycles@Fixed)[0m
+[0;32mI (458) hex_psram: DriveStrength: 0x00 (1/1)[0m
+[0;32mI (463) MSPI DQS: tuning success, best phase id is 2[0m
+[0;32mI (641) MSPI DQS: tuning success, best delayline id is 11[0m
+[0;32mI (641) esp_psram: Found 32MB PSRAM device[0m
+[0;32mI (642) esp_psram: Speed: 200MHz[0m
+[0;32mI (645) hex_psram: psram CS IO is dedicated[0m
+[0;32mI (649) cpu_start: Multicore app[0m
+[0;32mI (1559) esp_psram: SPI SRAM memory test OK[0m
+[0;33mW (1568) clk: esp_perip_clk_init() has not been implemented yet[0m
+[0;32mI (1575) cpu_start: Pro cpu start user code[0m
+[0;32mI (1575) cpu_start: cpu freq: 360000000 Hz[0m
+[0;32mI (1575) app_init: Application information:[0m
+[0;32mI (1578) app_init: Project name:     unified_cam[0m
+[0;32mI (1584) app_init: App version:      backup-camera-working-2026-05-0[0m
+[0;32mI (1591) app_init: Compile time:     May 10 2026 16:28:32[0m
+[0;32mI (1597) app_init: ELF file SHA256:  7a0e9fd12...[0m
+[0;32mI (1602) app_init: ESP-IDF:          v5.3.2-dirty[0m
+[0;32mI (1607) efuse_init: Min chip rev:     v0.1[0m
+[0;32mI (1612) efuse_init: Max chip rev:     v1.99 [0m
+[0;32mI (1617) efuse_init: Chip rev:         v1.3[0m
+[0;32mI (1622) heap_init: Initializing. RAM available for dynamic allocation:[0m
+[0;32mI (1630) heap_init: At 4FF1B350 len 0001FC70 (127 KiB): RAM[0m
+[0;32mI (1636) heap_init: At 4FF3AFC0 len 00004BF0 (18 KiB): RAM[0m
+[0;32mI (1642) heap_init: At 4FF57990 len 00048670 (289 KiB): RAM[0m
+[0;32mI (1648) heap_init: At 5010808C len 00007F74 (31 KiB): RTCRAM[0m
+[0;32mI (1655) heap_init: At 3010005C len 00001FA4 (7 KiB): TCM[0m
+[0;32mI (1661) esp_psram: Adding pool of 32768K of PSRAM memory to heap allocator[0m
+[0;32mI (1669) spi_flash: detected chip: generic[0m
+[0;32mI (1673) spi_flash: flash io: dio[0m
+[0;32mI (1677) host_init: ESP Hosted : Host chip_ip[18][0m
+[0;32mI (1711) H_API: ESP-Hosted starting. Hosted_Tasks: prio:23, stack: 5120 RPC_task_stack: 5120[0m
+sdio_mempool_create free:33711828 min-free:33711828 lfb-def:33030144 lfb-8bit:33030144
+
+[0;32mI (1717) gpio: GPIO[18]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1726) gpio: GPIO[19]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1736) gpio: GPIO[14]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1745) gpio: GPIO[15]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1754) gpio: GPIO[16]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1764) gpio: GPIO[17]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (1773) H_API: ** add_esp_wifi_remote_channels **[0m
+[0;32mI (1778) transport: Add ESP-Hosted channel IF[1]: S[0] Tx[0x4001093e] Rx[0x4001dc28][0m
+[0;32mI (1787) transport: Add ESP-Hosted channel IF[2]: S[0] Tx[0x40010884] Rx[0x4001dc28][0m
+[0;32mI (1796) esp_core_dump_flash: Init core dump to flash[0m
+[0;32mI (1801) esp_core_dump_flash: Found partition 'coredump' @ 310000 65536 bytes[0m
+[0;32mI (1825) esp_core_dump_flash: Core dump data checksum is correct[0m
+[0;32mI (1825) esp_core_dump_flash: Found core dump 18084 bytes in flash @ 0x310000[0m
+[0;32mI (1828) main_task: Started on CPU0[0m
+[0;32mI (1838) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations[0m
+[0;32mI (1838) main_task: Calling app_main()[0m
+[0;32mI (1848) unified_cam: Starting Unified Cam & Modules (ESP32-P4 Nano)[0m
+[0;33mW (1848) unified_cam: Boot #3, reset reason: PANIC (4)[0m
+[0;32mI (1888) cloud_secrets: Cloud secrets loaded from NVS (telegram=set, sheets=set)[0m
+[0;32mI (1898) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1898) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1908) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1908) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1918) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1928) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1938) i2c_mgr: I2C_NUM_0 ready — SDA=7 SCL=8 @ 400000 Hz[0m
+[0;32mI (1948) ds3231: RTC seeded system time: 2026-05-12 08:32:34[0m
+[0;32mI (1948) unified_cam: Skipping bus scan (per-device pings only)[0m
+[0;33mW (1958) unified_cam: I2C scan begin (full bus)...[0m
+[0;33mW (1978) unified_cam: I2C ACK: 0x18 0x20 0x36 0x40 0x56 0x68 0x70 [0m
+[0;33mW (1978) unified_cam: I2C scan end. Camera should be 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38[0m
+[0;33mW (1988) unified_cam: CAMERA INIT (early, before any peripheral driver init)[0m
+[0;32mI (1998) camera_init: Lazy camera_init triggered (first /capture or /photo)[0m
+[0;32mI (2178) camera_init: Initializing JPEG encoder for 800x640[0m
+[0;33mW (2178) jpeg_enc: DIAG-LEAK entry  PSRAM free=30478172 largest=30408704[0m
+[0;33mW (2178) jpeg_enc: DIAG-LEAK deinit PSRAM free=30478172[0m
+[0;32mI (2238) jpeg_enc: JPEG HW encoder initialized: 800x640, out_buf=1024000 bytes x2 + rot_buf=1024000[0m
+[0;33mW (2238) jpeg_enc: DIAG-LEAK exit   PSRAM free=26381048 largest=26214400[0m
+[0;32mI (2538) camera_init: MIPI PHY LDO power-cycled (200 ms off)[0m
+[0;32mI (2538) camera_init: XCLK 24000000 Hz generated on GPIO33[0m
+[0;32mI (2738) camera_init: VL53 XSHUT lowered before SCCB (chips offline)[0m
+[0;33mW (2758) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (2758) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2758) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2778) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2778) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2788) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2798) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2808) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;32mI (2808) camera_init: Shared I2C bus recovered before SCCB init[0m
+[0;33mW (2968) camera_init: I2C scan begin (looking for camera + others)...[0m
+[0;33mW (2978) camera_init: I2C scan ACK: 0x18 0x20 0x36 0x40 0x56 0x68 0x70 [0m
+[0;33mW (2978) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38[0m
+[0;32mI (2988) ov5647: Detected Camera sensor PID=0x5647[0m
+[0;33mW (3258) camera_init: set_format readback 0x4837=0x28 (ESP_OK, expect 0x28)[0m
+[0;32mI (3258) camera_init: Camera detect + format OK (attempt 1) — stream-on deferred until CSI ready[0m
+[0;32mI (3268) camera_init: VL53 XSHUT restored after SCCB[0m
+[0;32mI (3268) camera_init: ISP frame_cfg = 0x6031f27f, bayer_mode = 0 (00=BGGR 01=GBRG 10=GRBG 11=RGGB)[0m
+[0;32mI (3288) camera_init: Override 0x4800=0x10 (continuous clock + line sync): ESP_OK[0m
+[0;32mI (3298) camera_init: OV5647 SDE Y-offset = +64 (brightness boost, no chroma)[0m
+[0;32mI (3298) camera_init: Sensor stream-on issued AFTER CSI ready — first frame should arrive shortly[0m
+[0;32mI (3308) camera_init: Camera capture task started (MJPEG mode)[0m
+[0;32mI (3318) camera_init: MIPI first frame received — pipeline healthy[0m
+[0;32mI (3318) camera_init: Camera + JPEG HW Encoder Initialized OK[0m
+[0;32mI (3328) camera_init: Lazy camera_init -> ESP_OK[0m
+[0;33mW (4028) unified_cam: Early camera init → ESP_OK[0m
+[0;32mI (6028) gpio: GPIO[21]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;33mW (7398) unified_cam: FT6336U did not ACK initial ping (will retry after module probes)[0m
+[0;32mI (7398) tca9548a: TCA9548A init OK at 0x70[0m
+[0;32mI (7398) pca9685: Servo configuration loaded from NVS[0m
+[0;32mI (7398) pca9685: PCA9685 initialized (prescale=121, ~50Hz)[0m
+[0;32mI (7408) unified_cam: PCF8574 initialized â€” all pins set to INPUT (0xFF)[0m
+[0;32mI (7418) gpio: GPIO[21]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7428) FT6336U: Resetting touch controller[0m
+[0;33mW (9328) FT6336U: Touch dead after standard reset — attempting DEEP RST (1 s LOW)[0m
+[0;33mW (11428) FT6336U: Touch controller did not ACK after 4 ping attempts — starting in disabled state; ft6336u_read_touch() will auto-recover when the chip wakes up[0m
+[0;32mI (11428) vl53_multi: Ch0 cal loaded from NVS: full=50mm height=15mm max=16[0m
+[0;32mI (11438) vl53_multi: Bootstrapping VL53L0X sensors via TCA9548A[0m
+[0;32mI (11438) gpio: GPIO[20]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11448) gpio: GPIO[22]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11458) gpio: GPIO[23]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11468) gpio: GPIO[47]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11478) gpio: GPIO[48]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11488) gpio: GPIO[53]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11748) vl53_multi: Ch0: SPAD cache HIT (count=5 aperture=0 stop=0x00)[0m
+[0;32mI (11958) vl53_multi: Ch0: ready, first=0 mm[0m
+[0;32mI (12188) vl53_multi: Ch1: SPAD cache HIT (count=5 aperture=0 stop=0x00)[0m
+[0;33mW (12348) vl53_multi: Ch1 init fail: ref_cal 0x40[0m
+[0;33mW (12348) vl53_multi: Ch1: init_device failed on attempt 1[0m
+[0;32mI (12348) vl53_multi: Ch1: hard-reset retry 2/5 via XSHUT (progressive pulse)[0m
+[0;32mI (12538) vl53_multi: Ch1: SPAD cache HIT (count=5 aperture=0 stop=0x00)[0m
+[0;32mI (13318) vl53_multi: Ch1: ready, first=0 mm[0m
+[0;32mI (13548) vl53_multi: Ch2: SPAD cache HIT (count=7 aperture=0 stop=0x00)[0m
+[0;32mI (13758) vl53_multi: Ch2: ready, first=0 mm[0m
+[0;32mI (13988) vl53_multi: Ch3: SPAD cache HIT (count=15 aperture=0 stop=0x00)[0m
+[0;32mI (14198) vl53_multi: Ch3: ready, first=255 mm[0m
+[0;32mI (14478) vl53_multi: Ch4: SPAD cache HIT (count=6 aperture=0 stop=0x00)[0m
+[0;32mI (14728) vl53_multi: Ch4: ready, first=0 mm[0m
+[0;32mI (14958) vl53_multi: Ch5: SPAD cache HIT (count=8 aperture=0 stop=0x00)[0m
+[0;33mW (15678) vl53_multi: Ch5 init fail: ref_cal 0x00[0m
+[0;33mW (15678) vl53_multi: Ch5: init_device failed on attempt 1[0m
+[0;32mI (15678) vl53_multi: Ch5: hard-reset retry 2/5 via XSHUT (progressive pulse)[0m
+[0;32mI (15868) vl53_multi: Ch5: SPAD cache HIT (count=8 aperture=0 stop=0x00)[0m
+[0;33mW (16138) vl53_multi: Ch5 init fail: ref_cal 0x00[0m
+[0;33mW (16138) vl53_multi: Ch5: init_device failed on attempt 2[0m
+[0;33mW (16148) vl53_multi: Ch5: cleared bad SPAD cache, next retry will re-read[0m
+[0;32mI (16148) vl53_multi: Ch5: hard-reset retry 3/5 via XSHUT (progressive pulse)[0m
+[0;33mW (17128) vl53_multi: Ch5 init fail: SPAD info[0m
+[0;33mW (17128) vl53_multi: Ch5: init_device failed on attempt 3[0m
+[0;32mI (17128) vl53_multi: Ch5: hard-reset retry 4/5 via XSHUT (progressive pulse)[0m
+[0;32mI (17268) camera_init: MIPI alive: 500 frames received[0m
+[0;33mW (18148) vl53_multi: Ch5 init fail: ref_cal 0x40[0m
+[0;33mW (18148) vl53_multi: Ch5: init_device failed on attempt 4[0m
+[0;32mI (18148) vl53_multi: Ch5: hard-reset retry 5/5 via XSHUT (progressive pulse)[0m
+[0;32mI (20618) vl53_multi: Ch5: SPAD cache SAVED (count=8 aperture=0 stop=0x00)[0m
+[0;32mI (20738) vl53_multi: Ch5: ready, first=0 mm[0m
+[0;32mI (20768) vl53_multi: Starting VL53L0X poll task[0m
+[0;32mI (20768) display_clk: Init ST7796S 480x320 - Interactive UI Layout[0m
+[0;32mI (20768) gpio: GPIO[24]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (20778) gpio: GPIO[25]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (20788) gpio: GPIO[26]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (20798) display_clk: SPI2 OK 40MHz[0m
+[0;32mI (20798) display_clk: Display SPI ready[0m
+[0;32mI (21198) vl53_multi: vl53 raw[mm]: M1=0(f0) M2=0(f0) M3=0(f0) M4=255(f255) M5=255(f153) M6=0(f0)[0m
+
+assert failed: tcpip_send_msg_wait_sem /IDF/components/lwip/lwip/src/api/tcpip.c:449 (Invalid mbox)
+Core  1 register dump:
+MEPC    : 0x4ff00c40  RA      : 0x4ff0b874  SP      : 0x4ff3d3f0  GP      : 0x4ff16180  
+TP      : 0x4ff3da80  T0      : 0x37363534  T1      : 0x7271706f  T2      : 0x33323130  
+S0/FP   : 0x00000001  S1      : 0x00000064  A0      : 0x4ff3d438  A1      : 0x4ff17d31  
+A2      : 0x00000001  A3      : 0x00000029  A4      : 0x00000001  A5      : 0x4ff57000  
+A6      : 0x0000000c  A7      : 0x76757473  S2      : 0x4ff3d438  S3      : 0x4ff3d563  
+S4      : 0x4ff17d30  S5      : 0x4ff3d438  S6      : 0x4ff3ae60  S7      : 0xffffffff  
+S8      : 0x00000000  S9      : 0x012a22fd  S10     : 0x00000000  S11     : 0x00000000  
+T3      : 0x6e6d6c6b  T4      : 0x6a696867  T5      : 0x66656463  T6      : 0x62613938  
+MSTATUS : 0x00011880  MTVEC   : 0x4ff00003  MCAUSE  : 0x00000007  MTVAL   : 0x00000000  
+MHARTID : 0x00000001  
+
+Stack memory:
+4ff3d3f0: 0xa5a5a5a5 0xa5a5a5a5 0x401a86e4 0x4ff146ae 0x00393434 0xa5a5a5a5 0x00000000 0x00000000
+4ff3d410: 0xa5000000 0x4ff17278 0x401a86e4 0x4ff1725c 0x4010c504 0x4ff17288 0x4ff3d400 0x4ff1728c
+4ff3d430: 0x4010c530 0x4ff17d30 0x65737361 0x66207472 0x656c6961 0x74203a64 0x70697063 0x6e65735f
+4ff3d450: 0x736d5f64 0x61775f67 0x735f7469 0x2f206d65 0x2f464449 0x706d6f63 0x6e656e6f 0x6c2f7374
+4ff3d470: 0x2f706977 0x7069776c 0x6372732f 0x6970612f 0x7063742f 0x632e7069 0x3934343a 0x6e492820
+4ff3d490: 0x696c6176 0x626d2064 0x0029786f 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0xffffffff
+4ff3d4b0: 0x4ff3ae60 0x00000000 0x00000000 0x00000004 0x4ff1b6d0 0x00000054 0x4ff1b350 0x4ff12b54
+4ff3d4d0: 0x00000003 0x4ff57000 0x4ff1b6bc 0x4ff01102 0xa5a5a5a5 0x00000804 0x00000054 0x00000004
+4ff3d4f0: 0xa5a5a5a5 0x4ff3ae90 0x00000010 0x00000000 0x4ff3af18 0x4ff3ae90 0x00000010 0x00000000
+4ff3d510: 0x00000000 0x4ff3d5dc 0x00000000 0x4005e4c0 0x00000000 0x4ff3d5dc 0x4ff3aebc 0x40073060
+4ff3d530: 0xa5a5a5a5 0xa5a5a5a5 0x00000000 0x40076dd4 0x4ff3ae60 0x00000000 0x00000000 0x4ff3aea4
+4ff3d550: 0x4ff3d598 0x00000002 0x4ff3aebc 0x4ff3d54b 0x00000003 0x4ff57000 0x4ff1b6bc 0x400babe6
+4ff3d570: 0xa5a5a5a5 0x00001800 0x00000011 0x00000004 0xa5a5a5a5 0x4ff3ae90 0x4ff3aea4 0x4ff3d600
+4ff3d590: 0x000001bb 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+4ff3d5b0: 0x000001bb 0x4ff3a648 0x00000010 0x4ff3aea4 0x000001bb 0x4ff3a1a4 0x4ff3d600 0x4008ea9a
+4ff3d5d0: 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0x00000000 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5
+4ff3d5f0: 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0x00000000 0x00000000 0x00000001 0x00000000
+4ff3d610: 0x00000000 0x00000000 0x00000000 0x00000000 0x4ff1b364 0x4ff3a660 0x4ff3a220 0x4ff13df4
+4ff3d630: 0x00000001 0x000001bb 0x00000010 0x4ff3a648 0x00000010 0x4ff3a1a4 0x4ff3a7a8 0x4008f1ba
+4ff3d650: 0x4ff1b6d0 0x00000010 0x4ff1b350 0x000001bb 0x00000003 0x4ff57000 0x4ff1b6bc 0x4ff01102
+4ff3d670: 0x00000003 0x00001800 0x00000010 0x00000004 0x00000000 0x00000000 0x000001bb 0x4ff3a648
+4ff3d690: 0x4ff3a7a8 0x4ff3a1a4 0x4ff3a1a0 0x4008f3e6 0x4ff3a648 0x00000010 0x00000010 0x00000000
+4ff3d6b0: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x000001bb 0x4ff3a138
+4ff3d6d0: 0x4ff3a648 0x4ff3a7a8 0x4ff3a1a0 0x40090e16 0x4ff1b6d0 0x00001800 0x00000011 0x00000004
+4ff3d6f0: 0x4ff39d94 0x4ff39efc 0x00000000 0x4ff39e94 0x4ff39d94 0x4ff39efc 0x00000000 0x400932d4
+4ff3d710: 0x00000000 0x00000011 0x00000011 0x4ff39efc 0x4ff397e8 0x4ff39efc 0x4ff39efc 0x4009480c
+4ff3d730: 0x4ff39d94 0x0000000c 0x0000000c 0x4ff39efc 0x4ff39d94 0x400f9000 0x4ff39efc 0x4009442e
+4ff3d750: 0x4ff1621c 0x00000000 0x00000000 0x4ff39e94 0x4ff39d94 0x4ff39efc 0x4ff39664 0x4002ee50
+4ff3d770: 0xa5a5a5a5 0xa5a5a5a5 0xa5a5a5a5 0x4ff3d810 0x00000000 0x00000000 0x00000000 0x00000000
+4ff3d790: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+4ff3d7b0: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00003a98 0x00000000
+4ff3d7d0: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+
+
+
+ELF file SHA256: 7a0e9fd12
+
+[0;32mI (8490) esp_core_dump_flash: Save core dump to flash...[0m
+[0;32mI (8496) esp_core_dump_common: Backing up stack @ 0x4ff3d2b0 and use core dump stack @ 0x4ff1a320[0m
+[0;32mI (8506) esp_core_dump_flash: Erase flash 20480 bytes @ 0x310000[0m
+[0;32mI (8755) esp_core_dump_flash: Write end offset 0x46a4, check sum length 4[0m
+[0;32mI (8755) esp_core_dump_common: Core dump used 1000 bytes on stack. 884 bytes left free.[0m
+[0;32mI (8760) esp_core_dump_common: Restoring stack @ 0x4ff3d2b0[0m
+[0;32mI (8766) esp_core_dump_flash: Core dump has been saved to flash.[0m
+Rebooting...
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0xc (SW_CPU_RESET),boot:0xf (SPI_FAST_FLASH_BOOT)
+Core0 Saved PC:0x4ff06bfa
+Core1 Saved PC:0x4ff00c18
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x18e4
+load:0x4ff2abd0,len:0xd74
+load:0x4ff2cbd0,len:0x322c
+entry 0x4ff2abda
+[0;32mI (33) boot: ESP-IDF v5.3.2-dirty 2nd stage bootloader[0m
+[0;32mI (33) boot: compile time May 10 2026 16:29:07[0m
+[0;32mI (34) boot: Multicore bootloader[0m
+[0;32mI (37) boot: chip revision: v1.3[0m
+[0;32mI (40) boot: efuse block revision: v0.3[0m
+[0;32mI (45) boot.esp32p4: SPI Speed      : 80MHz[0m
+[0;32mI (50) boot.esp32p4: SPI Mode       : DIO[0m
+[0;32mI (54) boot.esp32p4: SPI Flash Size : 16MB[0m
+[0;32mI (59) boot: Enabling RNG early entropy source...[0m
+[0;32mI (65) boot: Partition Table:[0m
+[0;32mI (68) boot: ## Label            Usage          Type ST Offset   Length[0m
+[0;32mI (76) boot:  0 nvs              WiFi data        01 02 00009000 00006000[0m
+[0;32mI (83) boot:  1 phy_init         RF data          01 01 0000f000 00001000[0m
+[0;32mI (91) boot:  2 factory          factory app      00 00 00010000 00300000[0m
+[0;32mI (98) boot:  3 coredump         Unknown data     01 03 00310000 00010000[0m
+[0;32mI (106) boot: End of partition table[0m
+[0;32mI (110) esp_image: segment 0: paddr=00010020 vaddr=400e0020 size=ce608h (845320) map[0m
+[0;32mI (237) esp_image: segment 1: paddr=000de630 vaddr=30100000 size=0005ch (    92) load[0m
+[0;32mI (238) esp_image: segment 2: paddr=000de694 vaddr=4ff00000 size=01984h (  6532) load[0m
+[0;32mI (244) esp_image: segment 3: paddr=000e0020 vaddr=40000020 size=d6a7ch (879228) map[0m
+[0;32mI (374) esp_image: segment 4: paddr=001b6aa4 vaddr=4ff01984 size=13fa8h ( 81832) load[0m
+[0;32mI (389) esp_image: segment 5: paddr=001caa54 vaddr=4ff15980 size=02c80h ( 11392) load[0m
+[0;32mI (397) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (397) boot: Disabling RNG early entropy source...[0m
+[0;32mI (410) hex_psram: vendor id    : 0x0d (AP)[0m
+[0;32mI (411) hex_psram: Latency      : 0x01 (Fixed)[0m
+[0;32mI (411) hex_psram: DriveStr.    : 0x00 (25 Ohm)[0m
+[0;32mI (414) hex_psram: dev id       : 0x03 (generation 4)[0m
+[0;32mI (420) hex_psram: density      : 0x07 (256 Mbit)[0m
+[0;32mI (425) hex_psram: good-die     : 0x06 (Pass)[0m
+[0;32mI (431) hex_psram: SRF          : 0x02 (Slow Refresh)[0m
+[0;32mI (436) hex_psram: BurstType    : 0x00 ( Wrap)[0m
+[0;32mI (441) hex_psram: BurstLen     : 0x03 (2048 Byte)[0m
+[0;32mI (447) hex_psram: BitMode      : 0x01 (X16 Mode)[0m
+[0;32mI (452) hex_psram: Readlatency  : 0x04 (14 cycles@Fixed)[0m
+[0;32mI (458) hex_psram: DriveStrength: 0x00 (1/1)[0m
+[0;32mI (463) MSPI DQS: tuning success, best phase id is 2[0m
+[0;32mI (641) MSPI DQS: tuning success, best delayline id is 11[0m
+[0;32mI (642) esp_psram: Found 32MB PSRAM device[0m
+[0;32mI (643) esp_psram: Speed: 200MHz[0m
+[0;32mI (646) hex_psram: psram CS IO is dedicated[0m
+[0;32mI (650) cpu_start: Multicore app[0m
+[0;32mI (1560) esp_psram: SPI SRAM memory test OK[0m
+[0;33mW (1569) clk: esp_perip_clk_init() has not been implemented yet[0m
+[0;32mI (1576) cpu_start: Pro cpu start user code[0m
+[0;32mI (1576) cpu_start: cpu freq: 360000000 Hz[0m
+[0;32mI (1576) app_init: Application information:[0m
+[0;32mI (1579) app_init: Project name:     unified_cam[0m
+[0;32mI (1584) app_init: App version:      backup-camera-working-2026-05-0[0m
+[0;32mI (1591) app_init: Compile time:     May 10 2026 16:28:32[0m
+[0;32mI (1597) app_init: ELF file SHA256:  7a0e9fd12...[0m
+[0;32mI (1603) app_init: ESP-IDF:          v5.3.2-dirty[0m
+[0;32mI (1608) efuse_init: Min chip rev:     v0.1[0m
+[0;32mI (1613) efuse_init: Max chip rev:     v1.99 [0m
+[0;32mI (1618) efuse_init: Chip rev:         v1.3[0m
+[0;32mI (1623) heap_init: Initializing. RAM available for dynamic allocation:[0m
+[0;32mI (1630) heap_init: At 4FF1B350 len 0001FC70 (127 KiB): RAM[0m
+[0;32mI (1636) heap_init: At 4FF3AFC0 len 00004BF0 (18 KiB): RAM[0m
+[0;32mI (1642) heap_init: At 4FF57990 len 00048670 (289 KiB): RAM[0m
+[0;32mI (1649) heap_init: At 5010808C len 00007F74 (31 KiB): RTCRAM[0m
+[0;32mI (1655) heap_init: At 3010005C len 00001FA4 (7 KiB): TCM[0m
+[0;32mI (1661) esp_psram: Adding pool of 32768K of PSRAM memory to heap allocator[0m
+[0;32mI (1670) spi_flash: detected chip: generic[0m
+[0;32mI (1674) spi_flash: flash io: dio[0m
+[0;32mI (1678) host_init: ESP Hosted : Host chip_ip[18][0m
+[0;32mI (1711) H_API: ESP-Hosted starting. Hosted_Tasks: prio:23, stack: 5120 RPC_task_stack: 5120[0m
+sdio_mempool_create free:33711828 min-free:33711828 lfb-def:33030144 lfb-8bit:33030144
+
+[0;32mI (1718) gpio: GPIO[18]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1727) gpio: GPIO[19]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1736) gpio: GPIO[14]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1745) gpio: GPIO[15]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1755) gpio: GPIO[16]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1764) gpio: GPIO[17]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (1774) H_API: ** add_esp_wifi_remote_channels **[0m
+[0;32mI (1779) transport: Add ESP-Hosted channel IF[1]: S[0] Tx[0x4001093e] Rx[0x4001dc28][0m
+[0;32mI (1787) transport: Add ESP-Hosted channel IF[2]: S[0] Tx[0x40010884] Rx[0x4001dc28][0m
+[0;32mI (1796) esp_core_dump_flash: Init core dump to flash[0m
+[0;32mI (1802) esp_core_dump_flash: Found partition 'coredump' @ 310000 65536 bytes[0m
+[0;32mI (1825) esp_core_dump_flash: Core dump data checksum is correct[0m
+[0;32mI (1825) esp_core_dump_flash: Found core dump 18084 bytes in flash @ 0x310000[0m
+[0;32mI (1829) main_task: Started on CPU0[0m
+[0;32mI (1839) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations[0m
+[0;32mI (1839) main_task: Calling app_main()[0m
+[0;32mI (1849) unified_cam: Starting Unified Cam & Modules (ESP32-P4 Nano)[0m
+[0;33mW (1849) unified_cam: Boot #4, reset reason: PANIC (4)[0m
+[0;32mI (1889) cloud_secrets: Cloud secrets loaded from NVS (telegram=set, sheets=set)[0m
+[0;32mI (1899) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1899) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1909) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1909) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1919) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1929) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1939) i2c_mgr: I2C_NUM_0 ready — SDA=7 SCL=8 @ 400000 Hz[0m
+[0;32mI (1949) ds3231: RTC seeded system time: 2026-05-12 08:32:56[0m
+[0;32mI (1949) unified_cam: Skipping bus scan (per-device pings only)[0m
+[0;33mW (1959) unified_cam: I2C scan begin (full bus)...[0m
+[0;33mW (1979) unified_cam: I2C ACK: 0x20 0x36 0x40 0x56 0x68 0x70 [0m
+[0;33mW (1979) unified_cam: I2C scan end. Camera should be 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38[0m
+[0;33mW (1989) unified_cam: CAMERA INIT (early, before any peripheral driver init)[0m
+[0;32mI (1989) camera_init: Lazy camera_init triggered (first /capture or /photo)[0m
+[0;32mI (2179) camera_init: Initializing JPEG encoder for 800x640[0m
+[0;33mW (2179) jpeg_enc: DIAG-LEAK entry  PSRAM free=30478172 largest=30408704[0m
+[0;33mW (2179) jpeg_enc: DIAG-LEAK deinit PSRAM free=30478172[0m
+[0;32mI (2239) jpeg_enc: JPEG HW encoder initialized: 800x640, out_buf=1024000 bytes x2 + rot_buf=1024000[0m
+[0;33mW (2239) jpeg_enc: DIAG-LEAK exit   PSRAM free=26381048 largest=26214400[0m
+[0;32mI (2539) camera_init: MIPI PHY LDO power-cycled (200 ms off)[0m
+[0;32mI (2539) camera_init: XCLK 24000000 Hz generated on GPIO33[0m
+[0;32mI (2739) camera_init: VL53 XSHUT lowered before SCCB (chips offline)[0m
+[0;33mW (2759) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (2759) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2759) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2779) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2779) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2789) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2799) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2809) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;32mI (2809) camera_init: Shared I2C bus recovered before SCCB init[0m
+[0;33mW (2969) camera_init: I2C scan begin (looking for camera + others)...[0m
+[0;33mW (2979) camera_init: I2C scan ACK: 0x18 0x36 0x40 0x56 0x68 0x70 [0m
+[0;33mW (2979) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38[0m
+[0;31mE (2989) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (2999) ov5647: ov5647_get_sensor_id(193): read pid_l failed[0m
+[0;31mE (2999) ov5647: Get sensor ID failed[0m
+[0;33mW (3009) camera_init: Camera attempt 1 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (3009) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (3019) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3029) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3049) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3049) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3059) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3069) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3079) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;32mI (3329) ov5647: Detected Camera sensor PID=0x5647[0m
+[0;33mW (3599) camera_init: set_format readback 0x4837=0x47 (ESP_OK, expect 0x28)[0m
+[0;33mW (3599) camera_init: PCLK reg verify failed — forcing attempt retry[0m
+[0;33mW (3599) camera_init: Camera attempt 2 failed: cam=0x4ff34f68 fmt_match=1 set_fmt=ESP_FAIL[0m
+[0;33mW (3629) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (3629) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3629) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3649) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3649) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3659) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3669) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3679) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;32mI (3929) ov5647: Detected Camera sensor PID=0x5647[0m
+[0;33mW (4199) camera_init: set_format readback 0x4837=0x47 (ESP_OK, expect 0x28)[0m
+[0;33mW (4199) camera_init: PCLK reg verify failed — forcing attempt retry[0m
+[0;33mW (4199) camera_init: Camera attempt 3 failed: cam=0x4ff34f90 fmt_match=1 set_fmt=ESP_FAIL[0m
+[0;33mW (4229) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (4229) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4229) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4249) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4249) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4259) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4269) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4279) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;32mI (4529) ov5647: Detected Camera sensor PID=0x5647[0m
+[0;33mW (4789) camera_init: set_format readback 0x4837=0x28 (ESP_OK, expect 0x28)[0m
+[0;32mI (4799) camera_init: Camera detect + format OK (attempt 4) — stream-on deferred until CSI ready[0m
+[0;32mI (4799) camera_init: VL53 XSHUT restored after SCCB[0m
+[0;32mI (4809) camera_init: ISP frame_cfg = 0x6031f27f, bayer_mode = 0 (00=BGGR 01=GBRG 10=GRBG 11=RGGB)[0m
+[0;32mI (4819) camera_init: Override 0x4800=0x10 (continuous clock + line sync): ESP_OK[0m
+[0;32mI (4829) camera_init: OV5647 SDE Y-offset = +64 (brightness boost, no chroma)[0m
+[0;32mI (4829) camera_init: Sensor stream-on issued AFTER CSI ready — first frame should arrive shortly[0m
+[0;32mI (4839) camera_init: Camera capture task started (MJPEG mode)[0m
+[0;32mI (4849) camera_init: Camera + JPEG HW Encoder Initialized OK[0m
+[0;32mI (4859) camera_init: Lazy camera_init -> ESP_OK[0m
+[0;33mW (5559) unified_cam: Early camera init → ESP_OK[0m
+[0;33mW (5849) camera_init: Frame wait timeout, retrying... (1/10)[0m
+[0;33mW (6849) camera_init: Frame wait timeout, retrying... (2/10)[0m
+[0;32mI (7559) gpio: GPIO[21]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;33mW (7849) camera_init: Frame wait timeout, retrying... (3/10)[0m
+[0;33mW (8849) camera_init: Frame wait timeout, retrying... (4/10)[0m
+[0;33mW (8929) unified_cam: FT6336U did not ACK initial ping (will retry after module probes)[0m
+[0;32mI (8929) tca9548a: TCA9548A init OK at 0x70[0m
+[0;32mI (8929) pca9685: Servo configuration loaded from NVS[0m
+[0;32mI (8929) pca9685: PCA9685 initialized (prescale=121, ~50Hz)[0m
+[0;32mI (8939) unified_cam: PCF8574 initialized â€” all pins set to INPUT (0xFF)[0m
+[0;32mI (8949) gpio: GPIO[21]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8959) FT6336U: Resetting touch controller[0m
+[0;33mW (9849) camera_init: Frame wait timeout, retrying... (5/10)[0m
+[0;33mW (10849) camera_init: Frame wait timeout, retrying... (6/10)[0m
+[0;33mW (10859) FT6336U: Touch dead after standard reset — attempting DEEP RST (1 s LOW)[0m
+[0;33mW (11849) camera_init: Frame wait timeout, retrying... (7/10)[0m
+[0;33mW (12849) camera_init: Frame wait timeout, retrying... (8/10)[0m
+[0;33mW (12959) FT6336U: Touch controller did not ACK after 4 ping attempts — starting in disabled state; ft6336u_read_touch() will auto-recover when the chip wakes up[0m
+[0;32mI (12959) vl53_multi: Ch0 cal loaded from NVS: full=50mm height=15mm max=16[0m
+[0;32mI (12969) vl53_multi: Bootstrapping VL53L0X sensors via TCA9548A[0m
+[0;32mI (12969) gpio: GPIO[20]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (12979) gpio: GPIO[22]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (12989) gpio: GPIO[23]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (12999) gpio: GPIO[47]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (13009) gpio: GPIO[48]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (13019) gpio: GPIO[53]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (13279) vl53_multi: Ch0: SPAD cache HIT (count=5 aperture=0 stop=0x00)[0m
+[0;33mW (13849) camera_init: Frame wait timeout, retrying... (9/10)[0m
+[0;33mW (13929) vl53_multi: Ch0 init fail: ref_cal 0x40[0m
+[0;33mW (13929) vl53_multi: Ch0: init_device failed on attempt 1[0m
+[0;32mI (13929) vl53_multi: Ch0: hard-reset retry 2/5 via XSHUT (progressive pulse)[0m
+[0;32mI (14119) vl53_multi: Ch0: SPAD cache HIT (count=5 aperture=0 stop=0x00)[0m
+[0;33mW (14289) vl53_multi: Ch0 init fail: ref_cal 0x40[0m
+[0;33mW (14289) vl53_multi: Ch0: init_device failed on attempt 2[0m
+[0;33mW (14299) vl53_multi: Ch0: cleared bad SPAD cache, next retry will re-read[0m
+[0;32mI (14299) vl53_multi: Ch0: hard-reset retry 3/5 via XSHUT (progressive pulse)[0m
+[0;33mW (14849) camera_init: Frame wait timeout, retrying... (10/10)[0m
+[0;31mE (14849) camera_init: Camera frames stuck for 10 s — performing full re-init[0m
+[0;33mW (14919) vl53_multi: Ch0 init fail: ref_cal 0x00[0m
+[0;33mW (14919) vl53_multi: Ch0: init_device failed on attempt 3[0m
+[0;32mI (14919) vl53_multi: Ch0: hard-reset retry 4/5 via XSHUT (progressive pulse)[0m
+[0;33mW (15649) camera_init: Capture task exiting — auto re-init in 2 s[0m
+[0;32mI (15919) vl53_multi: Ch0: SPAD cache SAVED (count=5 aperture=0 stop=0x00)[0m
+[0;32mI (15999) vl53_multi: Ch0: ready, first=0 mm[0m
+[0;32mI (16229) vl53_multi: Ch1: SPAD cache HIT (count=5 aperture=0 stop=0x00)[0m
+[0;33mW (16539) vl53_multi: Ch1: no first sample (read fail)[0m
+[0;32mI (16769) vl53_multi: Ch2: SPAD cache HIT (count=7 aperture=0 stop=0x00)[0m
+[0;33mW (16949) vl53_multi: Ch2 init fail: ref_cal 0x40[0m
+[0;33mW (16949) vl53_multi: Ch2: init_device failed on attempt 1[0m
+[0;32mI (16949) vl53_multi: Ch2: hard-reset retry 2/5 via XSHUT (progressive pulse)[0m
+[0;32mI (17129) vl53_multi: Ch2: SPAD cache HIT (count=7 aperture=0 stop=0x00)[0m
+[0;33mW (17209) vl53_multi: Ch2 init fail: set_timing_budget[0m
+[0;33mW (17209) vl53_multi: Ch2: init_device failed on attempt 2[0m
+[0;33mW (17219) vl53_multi: Ch2: cleared bad SPAD cache, next retry will re-read[0m
+[0;32mI (17219) vl53_multi: Ch2: hard-reset retry 3/5 via XSHUT (progressive pulse)[0m
+[0;32mI (17799) vl53_multi: Ch2: SPAD cache SAVED (count=7 aperture=0 stop=0x3C)[0m
+[0;32mI (17889) vl53_multi: Ch2: ready, first=0 mm[0m
+[0;32mI (18119) vl53_multi: Ch3: SPAD cache HIT (count=15 aperture=0 stop=0x00)[0m
+[0;32mI (18359) vl53_multi: Ch3: ready, first=0 mm[0m
+[0;32mI (18589) vl53_multi: Ch4: SPAD cache HIT (count=6 aperture=0 stop=0x00)[0m
+[0;33mW (18759) vl53_multi: Ch4 init fail: ref_cal 0x40[0m
+[0;33mW (18759) vl53_multi: Ch4: init_device failed on attempt 1[0m
+[0;32mI (18759) vl53_multi: Ch4: hard-reset retry 2/5 via XSHUT (progressive pulse)[0m
+[0;32mI (18949) vl53_multi: Ch4: SPAD cache HIT (count=6 aperture=0 stop=0x00)[0m
+[0;33mW (19199) vl53_multi: Ch4 init fail: ref_cal 0x00[0m
+[0;33mW (19199) vl53_multi: Ch4: init_device failed on attempt 2[0m
+[0;33mW (19209) vl53_multi: Ch4: cleared bad SPAD cache, next retry will re-read[0m
+[0;32mI (19209) vl53_multi: Ch4: hard-reset retry 3/5 via XSHUT (progressive pulse)[0m
+[0;32mI (19799) vl53_multi: Ch4: SPAD cache SAVED (count=6 aperture=0 stop=0x3C)[0m
+[0;32mI (19889) vl53_multi: Ch4: ready, first=0 mm[0m
+[0;32mI (20119) vl53_multi: Ch5: SPAD cache HIT (count=8 aperture=0 stop=0x00)[0m
+[0;32mI (20399) vl53_multi: Ch5: ready, first=0 mm[0m
+[0;32mI (20429) vl53_multi: Starting VL53L0X poll task[0m
+[0;32mI (20429) display_clk: Init ST7796S 480x320 - Interactive UI Layout[0m
+[0;32mI (20429) gpio: GPIO[24]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (20439) gpio: GPIO[25]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (20449) gpio: GPIO[26]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (20459) display_clk: SPI2 OK 40MHz[0m
+[0;32mI (20459) display_clk: Display SPI ready[0m
+[0;33mW (20649) camera_init: Auto re-init starting (no user trigger needed)[0m
+[0;32mI (20649) camera_init: Lazy camera_init triggered (first /capture or /photo)[0m
+[0;32mI (20939) display_clk: Display controller initialized[0m
+[0;32mI (20939) display_clk: Display initialized[0m
+[0;32mI (20939) unified_cam: SD card init disabled[0m
+[0;32mI (21159) vl53_multi: vl53 raw[mm]: M1=0(f0) M2=?? M3=0(f0) M4=0(f0) M5=0(f0) M6=0(f0)[0m
+[0;32mI (21379) camera_init: Initializing JPEG encoder for 800x640[0m
+[0;33mW (21379) jpeg_enc: DIAG-LEAK entry  PSRAM free=26380800 largest=22020096[0m
+[0;32mI (21379) jpeg_enc: JPEG encoder already initialised 800x640 — reuse[0m
+[0;33mW (21439) unified_cam: I2C watchdog DISABLED — IDF v5.3.2 probe race risk[0m
+[0;32mI (21669) display_clk: Clock task started[0m
+[LIVENESS] canary armed (TWDT auto-reboot if stuck)
+[0;32mI (21669) unified_cam: app_main: init complete, entering keepalive loop[0m
+[0;32mI (21689) camera_init: MIPI PHY LDO power-cycled (200 ms off)[0m
+[0;32mI (21689) camera_init: XCLK 24000000 Hz generated on GPIO33[0m
+[0;32mI (21889) camera_init: VL53 XSHUT lowered before SCCB (chips offline)[0m
+[0;33mW (21909) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (21909) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (21909) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (21929) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (21929) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (21939) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (21949) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (21959) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;32mI (21959) camera_init: Shared I2C bus recovered before SCCB init[0m
+[0;33mW (22119) camera_init: I2C scan begin (looking for camera + others)...[0m
+[0;33mW (22129) camera_init: I2C scan ACK: 0x18 0x20 0x40 0x56 0x68 0x70 0x76 [0m
+[0;33mW (22129) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38[0m
+[0;32mI (22139) ov5647: Detected Camera sensor PID=0x5647[0m
+[0;31mE (22399) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;33mW (22399) camera_init: set_format readback 0x4837=0x00 (ESP_ERR_INVALID_STATE, expect 0x28)[0m
+[0;33mW (22409) camera_init: PCLK reg verify failed — forcing attempt retry[0m
+[0;33mW (22419) camera_init: Camera attempt 1 failed: cam=0x4ff372e4 fmt_match=1 set_fmt=ESP_FAIL[0m
+[0;33mW (22449) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (22449) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (22449) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (22469) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (22469) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (22479) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (22489) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (22499) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;32mI (22749) ov5647: Detected Camera sensor PID=0x5647[0m
+[0;33mW (23019) camera_init: set_format readback 0x4837=0x28 (ESP_OK, expect 0x28)[0m
+[0;32mI (23019) camera_init: Camera detect + format OK (attempt 2) — stream-on deferred until CSI ready[0m
+[0;32mI (23019) camera_init: VL53 XSHUT restored after SCCB[0m
+[0;32mI (23029) camera_init: ISP frame_cfg = 0x6031f27f, bayer_mode = 0 (00=BGGR 01=GBRG 10=GRBG 11=RGGB)[0m
+[0;32mI (23049) camera_init: Override 0x4800=0x10 (continuous clock + line sync): ESP_OK[0m
+[0;32mI (23049) camera_init: OV5647 SDE Y-offset = +64 (brightness boost, no chroma)[0m
+[0;32mI (23059) camera_init: Sensor stream-on issued AFTER CSI ready — first frame should arrive shortly[0m
+[0;32mI (23069) camera_init: Camera capture task started (MJPEG mode)[0m
+[0;32mI (23069) camera_init: Camera + JPEG HW Encoder Initialized OK[0m
+[0;32mI (23069) camera_init: MIPI first frame received — pipeline healthy[0m
+[0;32mI (23079) camera_init: Lazy camera_init -> ESP_OK[0m
+[0;32mI (23439) �                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
+=== monitor ended 08:41:50 ===

@@ -1,0 +1,10 @@
+﻿python.exe : WARNING:root:The core dump image offset is not specified. Use partition offset: 0x310000.
+At C:\Users\peekz\esp\esp-idf\export.ps1:54 char:19
++ function idf.py { &python "$IDF_PATH\tools\idf.py" $args }
++                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING:root:Th...fset: 0x310000.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Failed to load core dump: Invalid application image for coredump: coredump SHA256(c922fc274) != app SHA256(e06ebcf59).
+Executing action: coredump-info
+

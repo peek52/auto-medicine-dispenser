@@ -31,6 +31,12 @@ uint8_t dispenser_get_missed_slots(void);
 void dispenser_confirm_meds(void);
 void dispenser_skip_meds(void);
 
+/** Clear the 12-hour refire guard for a specific slot. Call this when
+ *  the user edits a slot's HH:MM via the UI — otherwise a test fire
+ *  earlier today would silently block the slot for 12 hours regardless
+ *  of the new time. slot_idx valid range: 0..6, else no-op. */
+void dispenser_reset_slot_refire_guard(int slot_idx);
+
 /** สั่งจ่ายยาแบบ Manual ทันที (Non-blocking) */
 void dispenser_manual_dispense(int med_idx, int qty);
 
@@ -91,8 +97,17 @@ typedef struct {
     char      source;
 } dispenser_audit_entry_t;
 
-/** Append an event to the audit ring (32 entries, newest wins). */
+/** Append an event to the audit ring (256 entries, newest wins).
+ *  Side effect: persists the ring to NVS so reboots don't lose history. */
 void dispenser_audit_log(int med_idx, int from_count, int to_count, char source);
+
+/** Restore audit ring contents from NVS — call once early in boot
+ *  (before any task that uses /log or /audit.json). Safe to call when
+ *  there's no prior data; just leaves the ring empty. */
+void dispenser_audit_load_nvs(void);
+
+/** Number of audit entries currently held (0..256). */
+size_t dispenser_audit_count(void);
 
 /** Copy up to max_entries newest-first audit entries into out_entries.
  *  Returns the number actually written. */

@@ -1,0 +1,189 @@
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x18e4
+load:0x4ff2abd0,len:0xd74
+load:0x4ff2cbd0,len:0x322c
+entry 0x4ff2abda
+I (25) boot: ESP-IDF v5.3.2-dirty 2nd stage bootloader
+I (26) boot: compile time May 10 2026 16:29:07
+I (26) boot: Multicore bootloader
+I (30) boot: chip revision: v1.3
+I (33) boot: efuse block revision: v0.3
+I (38) boot.esp32p4: SPI Speed      : 80MHz
+I (42) boot.esp32p4: SPI Mode       : DIO
+I (47) boot.esp32p4: SPI Flash Size : 16MB
+I (52) boot: Enabling RNG early entropy source...
+I (57) boot: Partition Table:
+I (61) boot: ## Label            Usage          Type ST Offset   Length
+I (68) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (76) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (83) boot:  2 factory          factory app      00 00 00010000 00300000
+I (90) boot:  3 coredump         Unknown data     01 03 00310000 00010000
+I (99) boot: End of partition table
+I (438) boot: Loaded app from partition at offset 0x10000
+I (438) boot: Disabling RNG early entropy source...
+I (504) MSPI DQS: tuning success, best phase id is 2
+I (682) MSPI DQS: tuning success, best delayline id is 11
+I (682) esp_psram: Found 32MB PSRAM device
+I (683) esp_psram: Speed: 200MHz
+I (690) cpu_start: Multicore app
+I (1600) esp_psram: SPI SRAM memory test OK
+W (1609) clk: esp_perip_clk_init() has not been implemented yet
+I (1616) cpu_start: Pro cpu start user code
+I (1616) cpu_start: cpu freq: 360000000 Hz
+I (1616) app_init: Application information:
+I (1619) app_init: Project name:     unified_cam
+I (1625) app_init: App version:      backup-camera-working-2026-05-0
+I (1632) app_init: Compile time:     May 10 2026 16:28:32
+I (1638) app_init: ELF file SHA256:  160f90511...
+I (1643) app_init: ESP-IDF:          v5.3.2-dirty
+I (1648) efuse_init: Min chip rev:     v0.1
+I (1653) efuse_init: Max chip rev:     v1.99
+I (1658) efuse_init: Chip rev:         v1.3
+I (1663) heap_init: Initializing. RAM available for dynamic allocation:
+I (1671) heap_init: At 4FF1B310 len 0001FCB0 (127 KiB): RAM
+I (1677) heap_init: At 4FF3AFC0 len 00004BF0 (18 KiB): RAM
+I (1683) heap_init: At 4FF5CBF0 len 00043410 (269 KiB): RAM
+I (1689) heap_init: At 5010808C len 00007F74 (31 KiB): RTCRAM
+I (1696) heap_init: At 3010005C len 00001FA4 (7 KiB): TCM
+I (1702) esp_psram: Adding pool of 32768K of PSRAM memory to heap allocator
+I (1710) spi_flash: detected chip: generic
+I (1714) spi_flash: flash io: dio
+I (1718) host_init: ESP Hosted : Host chip_ip[18]
+I (1752) H_API: ESP-Hosted starting. Hosted_Tasks: prio:23, stack: 5120 RPC_task_stack: 5120
+sdio_mempool_create free:33711892 min-free:33711892 lfb-def:33030144 lfb-8bit:33030144
+I (1814) H_API: ** add_esp_wifi_remote_channels **
+I (1819) transport: Add ESP-Hosted channel IF[1]: S[0] Tx[0x4001093e] Rx[0x4001dc28]
+I (1828) transport: Add ESP-Hosted channel IF[2]: S[0] Tx[0x40010884] Rx[0x4001dc28]
+I (1837) esp_core_dump_flash: Init core dump to flash
+I (1842) esp_core_dump_flash: Found partition 'coredump' @ 310000 65536 bytes
+I (1863) esp_core_dump_flash: Core dump data checksum is correct
+I (1863) esp_core_dump_flash: Found core dump 14724 bytes in flash @ 0x310000
+I (1866) main_task: Started on CPU0
+I (1876) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations
+I (1876) main_task: Calling app_main()
+I (1886) unified_cam: Starting Unified Cam & Modules (ESP32-P4 Nano)
+W (1886) unified_cam: Boot #1, reset reason: POWERON (1)
+I (1906) cloud_secrets: Cloud secrets loaded from NVS (telegram=set, sheets=set)
+I (1956) i2c_mgr: I2C_NUM_0 ready — SDA=7 SCL=8 @ 50000 Hz
+I (1966) unified_cam: Skipping bus scan (per-device pings only)
+W (1976) unified_cam: I2C scan begin (full bus)...
+W (13176) unified_cam: I2C scan end. Camera should be 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (13176) unified_cam: CAMERA INIT (early, before any peripheral driver init)
+I (13176) camera_init: Lazy camera_init triggered (first /capture or /photo)
+I (13366) camera_init: Initializing JPEG encoder for 800x640
+W (13366) jpeg_enc: DIAG-LEAK entry  PSRAM free=30478208 largest=30408704
+W (13366) jpeg_enc: DIAG-LEAK deinit PSRAM free=30478208
+I (13426) jpeg_enc: JPEG HW encoder initialized: 800x640, out_buf=1024000 bytes x2 + rot_buf=1024000
+W (13426) jpeg_enc: DIAG-LEAK exit   PSRAM free=26381072 largest=26214400
+I (13726) camera_init: MIPI PHY LDO power-cycled (200 ms off)
+I (13726) camera_init: XCLK 24000000 Hz generated on GPIO33
+I (13926) camera_init: VL53 XSHUT lowered before SCCB (chips offline)
+W (13946) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (13996) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+I (13996) camera_init: Shared I2C bus recovered before SCCB init
+W (14156) camera_init: I2C scan begin (looking for camera + others)...
+W (25356) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+E (25856) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (25856) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (25856) ov5647: Get sensor ID failed
+W (25856) camera_init: Camera attempt 1 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (25866) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (25936) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (26686) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (26686) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (26686) ov5647: Get sensor ID failed
+W (26686) camera_init: Camera attempt 2 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (26696) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (26766) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (27516) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (27516) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (27516) ov5647: Get sensor ID failed
+W (27516) camera_init: Camera attempt 3 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (27526) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (27596) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (28346) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (28346) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (28346) ov5647: Get sensor ID failed
+W (28346) camera_init: Camera attempt 4 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (28356) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (28426) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (29176) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (29176) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (29176) ov5647: Get sensor ID failed
+W (29176) camera_init: Camera attempt 5 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (29186) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (29256) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (30006) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (30006) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (30006) ov5647: Get sensor ID failed
+W (30006) camera_init: Camera attempt 6 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (30016) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (30086) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (30836) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (30836) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (30836) ov5647: Get sensor ID failed
+W (30836) camera_init: Camera attempt 7 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (30846) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (30916) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (31666) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (31666) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (31666) ov5647: Get sensor ID failed
+W (31666) camera_init: Camera attempt 8 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (31676) camera_init: Camera still not detected at attempt 8 — doing a second AVDD power-cycle
+W (32636) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (32686) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (33436) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (33436) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (33436) ov5647: Get sensor ID failed
+W (33436) camera_init: Camera attempt 9 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (33446) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (33516) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (34266) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (34266) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (34266) ov5647: Get sensor ID failed
+W (34266) camera_init: Camera attempt 10 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (34276) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (34346) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (35096) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (35096) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (35096) ov5647: Get sensor ID failed
+W (35096) camera_init: Camera attempt 11 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (35106) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (35176) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (35926) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (35926) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (35926) ov5647: Get sensor ID failed
+W (35926) camera_init: Camera attempt 12 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (35936) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (36006) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (36756) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (36756) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (36756) ov5647: Get sensor ID failed
+W (36756) camera_init: Camera attempt 13 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (36766) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (36836) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (37586) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (37586) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (37586) ov5647: Get sensor ID failed
+W (37586) camera_init: Camera attempt 14 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (37596) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (37666) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (38416) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (38416) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (38416) ov5647: Get sensor ID failed
+W (38416) camera_init: Camera attempt 15 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (38426) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (38496) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+E (39246) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (39246) ov5647: ov5647_get_sensor_id(190): read pid_h failed
+E (39246) ov5647: Get sensor ID failed
+W (39246) camera_init: Camera attempt 16 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+I (39256) camera_init: VL53 XSHUT restored after SCCB
+E (39266) camera_init: Failed to detect camera sensor after retries
+I (39276) camera_init: Lazy camera_init -> ESP_FAIL
+W (39276) unified_cam: Early camera init → ESP_FAIL
+W (43056) unified_cam: FT6336U did not ACK initial ping (will retry after module probes)
+

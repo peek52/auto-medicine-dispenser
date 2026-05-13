@@ -1,0 +1,344 @@
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0x1 (POWERON),boot:0x10f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x18e4
+load:0x4ff2abd0,len:0xd74
+load:0x4ff2cbd0,len:0x322c
+entry 0x4ff2abda
+[0;32mI (25) boot: ESP-IDF v5.3.2-dirty 2nd stage bootloader[0m
+[0;32mI (26) boot: compile time May 10 2026 16:29:07[0m
+[0;32mI (26) boot: Multicore bootloader[0m
+[0;32mI (30) boot: chip revision: v1.3[0m
+[0;32mI (33) boot: efuse block revision: v0.3[0m
+[0;32mI (38) boot.esp32p4: SPI Speed      : 80MHz[0m
+[0;32mI (42) boot.esp32p4: SPI Mode       : DIO[0m
+[0;32mI (47) boot.esp32p4: SPI Flash Size : 16MB[0m
+[0;32mI (52) boot: Enabling RNG early entropy source...[0m
+[0;32mI (57) boot: Partition Table:[0m
+[0;32mI (61) boot: ## Label            Usage          Type ST Offset   Length[0m
+[0;32mI (68) boot:  0 nvs              WiFi data        01 02 00009000 00006000[0m
+[0;32mI (76) boot:  1 phy_init         RF data          01 01 0000f000 00001000[0m
+[0;32mI (83) boot:  2 factory          factory app      00 00 00010000 00300000[0m
+[0;32mI (90) boot:  3 coredump         Unknown data     01 03 00310000 00010000[0m
+[0;32mI (99) boot: End of partition table[0m
+[0;32mI (102) esp_image: segment 0: paddr=00010020 vaddr=400e0020 size=ce308h (844552) map[0m
+[0;32mI (252) esp_image: segment 1: paddr=000de330 vaddr=30100000 size=0005ch (    92) load[0m
+[0;32mI (254) esp_image: segment 2: paddr=000de394 vaddr=4ff00000 size=01c84h (  7300) load[0m
+[0;32mI (260) esp_image: segment 3: paddr=000e0020 vaddr=40000020 size=d61e8h (877032) map[0m
+[0;32mI (413) esp_image: segment 4: paddr=001b6210 vaddr=4ff01c84 size=13ca4h ( 81060) load[0m
+[0;32mI (430) esp_image: segment 5: paddr=001c9ebc vaddr=4ff15980 size=02c40h ( 11328) load[0m
+[0;32mI (438) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (438) boot: Disabling RNG early entropy source...[0m
+[0;32mI (451) hex_psram: vendor id    : 0x0d (AP)[0m
+[0;32mI (451) hex_psram: Latency      : 0x01 (Fixed)[0m
+[0;32mI (452) hex_psram: DriveStr.    : 0x00 (25 Ohm)[0m
+[0;32mI (455) hex_psram: dev id       : 0x03 (generation 4)[0m
+[0;32mI (461) hex_psram: density      : 0x07 (256 Mbit)[0m
+[0;32mI (466) hex_psram: good-die     : 0x06 (Pass)[0m
+[0;32mI (471) hex_psram: SRF          : 0x02 (Slow Refresh)[0m
+[0;32mI (477) hex_psram: BurstType    : 0x00 ( Wrap)[0m
+[0;32mI (482) hex_psram: BurstLen     : 0x03 (2048 Byte)[0m
+[0;32mI (487) hex_psram: BitMode      : 0x01 (X16 Mode)[0m
+[0;32mI (493) hex_psram: Readlatency  : 0x04 (14 cycles@Fixed)[0m
+[0;32mI (499) hex_psram: DriveStrength: 0x00 (1/1)[0m
+[0;32mI (504) MSPI DQS: tuning success, best phase id is 2[0m
+[0;32mI (682) MSPI DQS: tuning success, best delayline id is 11[0m
+[0;32mI (683) esp_psram: Found 32MB PSRAM device[0m
+[0;32mI (683) esp_psram: Speed: 200MHz[0m
+[0;32mI (686) hex_psram: psram CS IO is dedicated[0m
+[0;32mI (691) cpu_start: Multicore app[0m
+[0;32mI (1600) esp_psram: SPI SRAM memory test OK[0m
+[0;33mW (1610) clk: esp_perip_clk_init() has not been implemented yet[0m
+[0;32mI (1616) cpu_start: Pro cpu start user code[0m
+[0;32mI (1617) cpu_start: cpu freq: 360000000 Hz[0m
+[0;32mI (1617) app_init: Application information:[0m
+[0;32mI (1620) app_init: Project name:     unified_cam[0m
+[0;32mI (1625) app_init: App version:      backup-camera-working-2026-05-0[0m
+[0;32mI (1632) app_init: Compile time:     May 10 2026 16:28:32[0m
+[0;32mI (1638) app_init: ELF file SHA256:  50b0284f2...[0m
+[0;32mI (1643) app_init: ESP-IDF:          v5.3.2-dirty[0m
+[0;32mI (1649) efuse_init: Min chip rev:     v0.1[0m
+[0;32mI (1654) efuse_init: Max chip rev:     v1.99 [0m
+[0;32mI (1659) efuse_init: Chip rev:         v1.3[0m
+[0;32mI (1664) heap_init: Initializing. RAM available for dynamic allocation:[0m
+[0;32mI (1671) heap_init: At 4FF1B310 len 0001FCB0 (127 KiB): RAM[0m
+[0;32mI (1677) heap_init: At 4FF3AFC0 len 00004BF0 (18 KiB): RAM[0m
+[0;32mI (1683) heap_init: At 4FF57970 len 00048690 (289 KiB): RAM[0m
+[0;32mI (1690) heap_init: At 5010808C len 00007F74 (31 KiB): RTCRAM[0m
+[0;32mI (1696) heap_init: At 3010005C len 00001FA4 (7 KiB): TCM[0m
+[0;32mI (1702) esp_psram: Adding pool of 32768K of PSRAM memory to heap allocator[0m
+[0;32mI (1710) spi_flash: detected chip: generic[0m
+[0;32mI (1714) spi_flash: flash io: dio[0m
+[0;32mI (1719) host_init: ESP Hosted : Host chip_ip[18][0m
+[0;32mI (1752) H_API: ESP-Hosted starting. Hosted_Tasks: prio:23, stack: 5120 RPC_task_stack: 5120[0m
+sdio_mempool_create free:33711892 min-free:33711892 lfb-def:33030144 lfb-8bit:33030144
+
+[0;32mI (1758) gpio: GPIO[18]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1768) gpio: GPIO[19]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1777) gpio: GPIO[14]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1786) gpio: GPIO[15]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1796) gpio: GPIO[16]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1805) gpio: GPIO[17]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (1815) H_API: ** add_esp_wifi_remote_channels **[0m
+[0;32mI (1820) transport: Add ESP-Hosted channel IF[1]: S[0] Tx[0x4001093e] Rx[0x4001dc28][0m
+[0;32mI (1828) transport: Add ESP-Hosted channel IF[2]: S[0] Tx[0x40010884] Rx[0x4001dc28][0m
+[0;32mI (1837) esp_core_dump_flash: Init core dump to flash[0m
+[0;32mI (1842) esp_core_dump_flash: Found partition 'coredump' @ 310000 65536 bytes[0m
+[0;32mI (1883) esp_core_dump_flash: Core dump data checksum is correct[0m
+[0;32mI (1883) esp_core_dump_flash: Found core dump 37956 bytes in flash @ 0x310000[0m
+[0;32mI (1887) main_task: Started on CPU0[0m
+[0;32mI (1897) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations[0m
+[0;32mI (1897) main_task: Calling app_main()[0m
+[0;32mI (1907) unified_cam: Starting Unified Cam & Modules (ESP32-P4 Nano)[0m
+[0;33mW (1907) unified_cam: Boot #1, reset reason: POWERON (1)[0m
+[0;32mI (1937) cloud_secrets: Cloud secrets loaded from NVS (telegram=set, sheets=set)[0m
+[0;32mI (1947) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1947) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1967) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1967) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1977) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1987) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1997) i2c_mgr: I2C_NUM_0 ready — SDA=7 SCL=8 @ 50000 Hz[0m
+[0;32mI (2007) ds3231: RTC seeded system time: 2026-05-11 09:10:55[0m
+[0;32mI (2007) unified_cam: Skipping bus scan (per-device pings only)[0m
+[0;33mW (2017) unified_cam: I2C scan begin (full bus)...[0m
+[0;33mW (2037) unified_cam: I2C ACK: 0x36 0x40 0x56 0x68 [0m
+[0;33mW (2037) unified_cam: I2C scan end. Camera should be 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38[0m
+[0;33mW (2037) unified_cam: CAMERA INIT (early, before any peripheral driver init)[0m
+[0;32mI (2047) camera_init: Lazy camera_init triggered (first /capture or /photo)[0m
+[0;32mI (2237) camera_init: Initializing JPEG encoder for 800x640[0m
+[0;33mW (2237) jpeg_enc: DIAG-LEAK entry  PSRAM free=30478172 largest=30408704[0m
+[0;33mW (2237) jpeg_enc: DIAG-LEAK deinit PSRAM free=30478172[0m
+[0;32mI (2297) jpeg_enc: JPEG HW encoder initialized: 800x640, out_buf=1024000 bytes x2 + rot_buf=1024000[0m
+[0;33mW (2297) jpeg_enc: DIAG-LEAK exit   PSRAM free=26381048 largest=26214400[0m
+[0;32mI (2597) camera_init: MIPI PHY LDO power-cycled (200 ms off)[0m
+[0;32mI (2597) camera_init: XCLK 24000000 Hz generated on GPIO33[0m
+[0;32mI (2797) camera_init: VL53 XSHUT lowered before SCCB (chips offline)[0m
+[0;33mW (2817) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (2817) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2817) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2837) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2837) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2847) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2857) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (2867) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;32mI (2867) camera_init: Shared I2C bus recovered before SCCB init[0m
+[0;33mW (3027) camera_init: I2C scan begin (looking for camera + others)...[0m
+[0;33mW (3037) camera_init: I2C scan ACK: 0x18 0x20 0x36 0x40 0x56 0x68 [0m
+[0;33mW (3037) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38[0m
+[0;31mE (3047) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (3057) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (3057) ov5647: Get sensor ID failed[0m
+[0;33mW (3067) camera_init: Camera attempt 1 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (3067) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (3077) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3087) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3107) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3107) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3117) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3127) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3137) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (3387) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (3387) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (3387) ov5647: Get sensor ID failed[0m
+[0;33mW (3387) camera_init: Camera attempt 2 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (3397) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (3407) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3417) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3437) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3437) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3447) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3457) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3467) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (3717) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (3717) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (3717) ov5647: Get sensor ID failed[0m
+[0;33mW (3717) camera_init: Camera attempt 3 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (3727) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (3737) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3747) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3767) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3767) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3777) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3787) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (3797) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (4047) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (4047) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (4047) ov5647: Get sensor ID failed[0m
+[0;33mW (4047) camera_init: Camera attempt 4 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (4057) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (4067) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4077) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4097) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4097) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4107) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4117) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4127) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (4377) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (4377) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (4377) ov5647: Get sensor ID failed[0m
+[0;33mW (4377) camera_init: Camera attempt 5 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (4387) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (4397) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4407) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4427) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4427) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4437) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4447) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4457) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (4707) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (4707) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (4707) ov5647: Get sensor ID failed[0m
+[0;33mW (4707) camera_init: Camera attempt 6 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (4717) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (4727) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4737) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4757) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4757) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4767) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4777) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4787) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (5037) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (5037) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (5037) ov5647: Get sensor ID failed[0m
+[0;33mW (5037) camera_init: Camera attempt 7 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (5047) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (5057) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (5067) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (5087) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (5087) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (5097) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (5107) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (5117) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (5367) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (5367) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (5367) ov5647: Get sensor ID failed[0m
+[0;33mW (5367) camera_init: Camera attempt 8 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (5377) camera_init: Camera still not detected at attempt 8 — doing a second AVDD power-cycle[0m
+[0;33mW (6337) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (6337) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6337) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6357) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6357) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6367) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6377) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6387) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (6637) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (6637) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (6637) ov5647: Get sensor ID failed[0m
+[0;33mW (6637) camera_init: Camera attempt 9 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (6647) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (6657) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6667) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6687) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6687) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6697) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6707) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6717) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (6967) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (6967) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (6967) ov5647: Get sensor ID failed[0m
+[0;33mW (6967) camera_init: Camera attempt 10 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (6977) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (6987) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (6997) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7017) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7017) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7027) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7037) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7047) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (7297) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (7297) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (7297) ov5647: Get sensor ID failed[0m
+[0;33mW (7297) camera_init: Camera attempt 11 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (7307) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (7317) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7327) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7347) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7347) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7357) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7367) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7377) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (7627) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (7627) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (7627) ov5647: Get sensor ID failed[0m
+[0;33mW (7627) camera_init: Camera attempt 12 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (7637) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (7647) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7657) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7677) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7677) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7687) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7697) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7707) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (7957) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (7957) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (7957) ov5647: Get sensor ID failed[0m
+[0;33mW (7957) camera_init: Camera attempt 13 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (7967) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (7977) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (7987) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8007) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8007) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8017) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8027) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8037) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (8287) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (8287) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (8287) ov5647: Get sensor ID failed[0m
+[0;33mW (8287) camera_init: Camera attempt 14 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (8297) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (8307) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8317) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8337) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8337) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8347) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8357) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8367) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (8617) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (8617) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (8617) ov5647: Get sensor ID failed[0m
+[0;33mW (8617) camera_init: Camera attempt 15 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;33mW (8627) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA[0m
+[0;32mI (8637) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8647) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8667) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8667) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8677) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8687) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (8697) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)[0m
+[0;31mE (8947) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive[0m
+[0;31mE (8947) ov5647: ov5647_get_sensor_id(190): read pid_h failed[0m
+[0;31mE (8947) ov5647: Get sensor ID failed[0m
+[0;33mW (8947) camera_init: Camera attempt 16 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL[0m
+[0;32mI (8957) camera_init: VL53 XSHUT restored after SCCB[0m
+[0;31mE (8967) camera_init: Failed to detect camera sensor after retries[0m
+[0;32mI (8967) camera_init: Lazy camera_init -> ESP_FAIL[0m
+[0;33mW (8977) unified_cam: Early camera init → ESP_FAIL[0m
+[0;32mI (10987) gpio: GPIO[21]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (11157) unified_cam: FT6336U responded on initial ping[0m
+[0;33mW (11417) unified_cam: TCA9548A not found at 0x70 — VL53 will be skipped[0m
+[0;32mI (11417) pca9685: Servo configuration loaded from NVS[0m
+[0;32mI (11427) pca9685: PCA9685 initialized (prescale=121, ~50Hz)[0m
+[0;32mI (11427) unified_cam: PCF8574 initialized â€” all pins set to INPUT (0xFF)[0m
+[0;32mI (11437) gpio: GPIO[21]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (11447) FT6336U: Resetting touch controller[0m
+[0;33mW (11597) FT6336U: Touch chip-id 0x00 not recognised on attempt 1 — retrying[0m
+[0;33mW (11797) FT6336U: Touch chip-id 0x00 not recognised on attempt 2 — retrying[0m
+[0;33mW (11997) FT6336U: Touch chip-id 0x00 not recognised on attempt 3 — retrying[0m
+[0;33mW (12197) FT6336U: Touch chip-id check failed but I2C address ACKs (ping attempt 1) — enabling touch in fallback mode[0m
+[0;32mI (12197) display_clk: Init ST7796S 480x320 - Interactive UI Layout[0m
+[0;32mI (12197) gpio: GPIO[24]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (12207) gpio: GPIO[25]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (12267) gpio: GPIO[26]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (12267) display_clk: SPI2 OK 40MHz[0m
+[0;32mI (12267) display_clk: Display SPI ready[0m
+[0;32mI (12747) display_clk: Display controller initialized[0m
+[0;32mI (12747) display_clk: Display initialized[0m
+[0;32mI (12747) unified_cam: SD card init disabled[0m
+[0;33mW (13247) unified_cam: I2C watchdog skipped — TCA9548A absent at boot (would crash on probe)[0m
+[0;32mI (13467) display_clk: Clock task started[0m
+[LIVENESS] canary armed (TWDT auto-reboot if stuck)
+[0;32mI (13467) unified_cam: app_main: init complete, entering keepalive loop[0m
+[0;32mI (15247)               

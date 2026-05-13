@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Pill Dispenser — Wiring Diagram</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f3f5fa;
+  --surface: #ffffff;
+  --ink: #0b1220;
+  --ink-2: #475569;
+  --ink-3: #94a3b8;
+  --line: #e5e7eb;
+  --brand: #4f46e5;
+  --brand-2: #7c3aed;
+  --power: #ef4444;
+  --gnd: #111827;
+  --i2c: #2563eb;
+  --gpio: #16a34a;
+  --uart: #d97706;
+  --spi: #db2777;
+  --csi: #7c3aed;
+  --shadow: 0 1px 3px rgba(15,23,42,.05), 0 8px 24px rgba(15,23,42,.07);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter','IBM Plex Sans Thai',sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.6;
+  font-size: 14.5px; -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1280px; margin: 0 auto; padding: 32px 28px; }
+header {
+  background: linear-gradient(135deg, #0f1424 0%, #4f46e5 100%);
+  color: #fff; padding: 48px 0 56px; margin-bottom: 32px;
+}
+header .inner { max-width: 1280px; margin: 0 auto; padding: 0 28px; }
+header .eyebrow {
+  display: inline-block; padding: 4px 12px; border-radius: 999px;
+  background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.18);
+  font-size: 11px; font-weight: 700; letter-spacing: .12em;
+  color: #c7d2fe; margin-bottom: 14px; text-transform: uppercase;
+}
+header h1 {
+  font-size: clamp(28px, 4.2vw, 48px); font-weight: 800;
+  letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 8px;
+}
+header p { color: #cbd5e1; max-width: 760px; }
+header .meta {
+  display: flex; flex-wrap: wrap; gap: 18px 30px; margin-top: 22px;
+  font-size: 13px; color: #94a3b8;
+}
+header .meta b { color: #fff; }
+
+section { margin-bottom: 32px; }
+.section-head { margin-bottom: 18px; }
+.kicker {
+  font-size: 11px; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--brand); margin-bottom: 4px;
+}
+.section-head h2 {
+  font-size: 24px; font-weight: 700; letter-spacing: -0.01em;
+}
+.section-head p { color: var(--ink-2); margin-top: 4px; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 14px; padding: 24px; box-shadow: var(--shadow);
+}
+.card + .card { margin-top: 16px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th, td {
+  padding: 10px 14px; text-align: left;
+  border-bottom: 1px solid var(--line); vertical-align: top;
+}
+thead th {
+  background: #f8fafc; font-weight: 700; font-size: 11.5px;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2);
+  border-bottom: 2px solid var(--line);
+}
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: #fafbff; }
+.mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+.pin {
+  display: inline-block; padding: 3px 9px; border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 12px;
+  background: #ecfdf5; color: var(--gpio); border: 1px solid #a7f3d0;
+}
+.addr {
+  display: inline-block; padding: 3px 9px; border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 12px;
+  background: #eff6ff; color: var(--i2c); border: 1px solid #bfdbfe;
+}
+.pwr {
+  display: inline-block; padding: 3px 9px; border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 12px;
+  background: #fef2f2; color: var(--power); border: 1px solid #fecaca;
+}
+.gnd-pill {
+  display: inline-block; padding: 3px 9px; border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 12px;
+  background: #1f2937; color: #f3f4f6; border: 1px solid #374151;
+}
+.bus-pill {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.b-i2c   { background: #dbeafe; color: var(--i2c); }
+.b-spi   { background: #fce7f3; color: var(--spi); }
+.b-uart  { background: #fed7aa; color: var(--uart); }
+.b-gpio  { background: #d1fae5; color: var(--gpio); }
+.b-csi   { background: #ede9fe; color: var(--csi); }
+.b-pwr   { background: #fee2e2; color: var(--power); }
+
+.note {
+  margin-top: 12px; padding: 12px 14px;
+  background: #fffbeb; border-left: 3px solid #f59e0b;
+  border-radius: 6px; font-size: 12.5px; color: #78350f;
+}
+.note b { color: #451a03; }
+
+.legend {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px; margin-bottom: 20px;
+}
+.legend .item {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 10px; padding: 12px 14px; font-size: 12.5px;
+}
+.legend .item b { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 4px; color: var(--ink-3); }
+
+.diagram-wrap {
+  background: var(--surface); border-radius: 14px;
+  padding: 20px; box-shadow: var(--shadow); border: 1px solid var(--line);
+  overflow-x: auto;
+}
+.diagram-wrap svg { display: block; margin: 0 auto; min-width: 1100px; }
+
+footer { text-align: center; padding: 24px 0; color: var(--ink-3); font-size: 12.5px; }
+@media print {
+  body { background: white; }
+  header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  section { page-break-inside: avoid; }
+  .card, .diagram-wrap { box-shadow: none; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="inner">
+    <div class="eyebrow">📐 Hardware Wiring Reference</div>
+    <h1>Smart Pill Dispenser — Wiring Diagram</h1>
+    <p>เอกสารอ้างอิงการต่อสายของอุปกรณ์ทั้งหมดเข้ากับ ESP32-P4-Nano (จาก <code style="background:rgba(255,255,255,.1);padding:2px 6px;border-radius:4px;font-family:'JetBrains Mono',monospace">main/config.h</code>)</p>
+    <div class="meta">
+      <div><b>MCU</b> · ESP32-P4-Nano</div>
+      <div><b>I/O</b> · 3.3 V logic</div>
+      <div><b>I2C bus</b> · GPIO 7/8 (SDA/SCL)</div>
+      <div><b>Updated</b> · 2026-05-02</div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ============ LEGEND ============ -->
+  <section>
+    <div class="legend">
+      <div class="item"><b>Bus types</b>
+        <span class="bus-pill b-i2c">I2C</span>
+        <span class="bus-pill b-spi">SPI</span>
+        <span class="bus-pill b-uart">UART</span>
+        <span class="bus-pill b-csi">MIPI-CSI</span>
+        <span class="bus-pill b-gpio">GPIO</span>
+        <span class="bus-pill b-pwr">PWR</span>
+      </div>
+      <div class="item"><b>Pin labels</b>
+        <span class="pin">GPIO N</span>&nbsp;<span class="addr">0x__</span>&nbsp;<span class="pwr">3V3</span>&nbsp;<span class="gnd-pill">GND</span>
+      </div>
+      <div class="item"><b>Power rails</b>
+        <span class="pwr">3V3</span> &mdash; logic + sensors<br>
+        <span class="pwr" style="background:#fef3c7;color:#92400e;border-color:#fcd34d">5V</span> &mdash; servos / DFPlayer / camera AVDD
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ I2C BUS MAP ============ -->
+  <section>
+    <div class="section-head">
+      <div class="kicker">I²C Bus 0 — shared</div>
+      <h2>🚌 I²C Master Bus (GPIO 7 / 8)</h2>
+      <p>ESP32-P4 → ทุก peripheral I²C ใช้ pin คู่เดียวกัน. VL53 ผ่าน TCA9548A mux เพราะมี address ซ้ำกัน</p>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>Device</th><th>Address</th><th>Role</th><th>Wiring</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>ESP32-P4 SDA</b></td>
+            <td class="mono">—</td>
+            <td>I2C master data</td>
+            <td><span class="pin">GPIO 7</span></td>
+            <td>4.7 kΩ pull-up to 3.3 V</td>
+          </tr>
+          <tr>
+            <td><b>ESP32-P4 SCL</b></td>
+            <td class="mono">—</td>
+            <td>I2C master clock</td>
+            <td><span class="pin">GPIO 8</span></td>
+            <td>4.7 kΩ pull-up to 3.3 V (แนะนำ 2.2 kΩ ลด rise time)</td>
+          </tr>
+          <tr>
+            <td>PCF8574</td>
+            <td><span class="addr">0x20</span></td>
+            <td>IR sensor 8-bit IO expander (นับยา)</td>
+            <td>SDA→GPIO 7 · SCL→GPIO 8 · VCC→3V3 · GND→GND</td>
+            <td>ขา A0/A1/A2 → GND (address 0x20)</td>
+          </tr>
+          <tr>
+            <td>PCA9685</td>
+            <td><span class="addr">0x40</span></td>
+            <td>Servo PWM driver 16 ช่อง (ใช้ 6)</td>
+            <td>SDA→GPIO 7 · SCL→GPIO 8 · VCC→3V3 · V+→5V · GND→GND</td>
+            <td>V+ ต่อแหล่ง 5V อิสระสำหรับ servo (ground ต้อง common)</td>
+          </tr>
+          <tr>
+            <td>DS3231</td>
+            <td><span class="addr">0x68</span></td>
+            <td>Real-time clock + battery backup</td>
+            <td>SDA→GPIO 7 · SCL→GPIO 8 · VCC→3V3 · GND→GND</td>
+            <td>EEPROM ในตัว 0x56 (ไม่ได้ใช้)</td>
+          </tr>
+          <tr>
+            <td>FT6336U</td>
+            <td><span class="addr">0x38</span></td>
+            <td>Capacitive touch controller</td>
+            <td>SDA→GPIO 7 · SCL→GPIO 8 · RST→<span class="pin">GPIO 21</span> · VCC→3V3</td>
+            <td>INT pin ไม่ได้ต่อ — โพลแบบ I²C อย่างเดียว</td>
+          </tr>
+          <tr>
+            <td>TCA9548A</td>
+            <td><span class="addr">0x70</span></td>
+            <td>I²C multiplexer 8 ช่อง</td>
+            <td>SDA→GPIO 7 · SCL→GPIO 8 · VCC→3V3 · A0/A1/A2→GND · RST→3V3</td>
+            <td>ปลายทางของ ch0..ch5 ต่อกับ VL53L0X 6 ตัว</td>
+          </tr>
+          <tr>
+            <td colspan="5" style="background:#f8fafc;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:.08em;color:var(--ink-2);">VL53L0X (ผ่าน TCA9548A mux)</td>
+          </tr>
+          <tr><td>VL53L0X #1 (M1)</td><td><span class="addr">0x71</span></td><td>วัดระดับยา ช่อง 1</td><td>TCA ch0 SDA/SCL · XSHUT→<span class="pin">GPIO 20</span> · VCC→3V3</td><td rowspan="6">Address ถูก reassign ที่บูตผ่าน XSHUT pulse · บัสนี้รัน <b>50 kHz</b></td></tr>
+          <tr><td>VL53L0X #2 (M2)</td><td><span class="addr">0x72</span></td><td>วัดระดับยา ช่อง 2</td><td>TCA ch1 · XSHUT→<span class="pin">GPIO 22</span></td></tr>
+          <tr><td>VL53L0X #3 (M3)</td><td><span class="addr">0x73</span></td><td>วัดระดับยา ช่อง 3</td><td>TCA ch2 · XSHUT→<span class="pin">GPIO 23</span></td></tr>
+          <tr><td>VL53L0X #4 (M4)</td><td><span class="addr">0x74</span></td><td>วัดระดับยา ช่อง 4</td><td>TCA ch3 · XSHUT→<span class="pin">GPIO 47</span></td></tr>
+          <tr><td>VL53L0X #5 (M5)</td><td><span class="addr">0x75</span></td><td>วัดระดับยา ช่อง 5</td><td>TCA ch4 · XSHUT→<span class="pin">GPIO 48</span></td></tr>
+          <tr><td>VL53L0X #6 (M6)</td><td><span class="addr">0x76</span></td><td>วัดระดับยา ช่อง 6</td><td>TCA ch5 · XSHUT→<span class="pin">GPIO 53</span></td></tr>
+        </tbody>
+      </table>
+      <div class="note">
+        <b>หมายเหตุ I²C:</b> อุปกรณ์ทั้งหมดใช้ <span class="pin">GPIO 7</span>/<span class="pin">GPIO 8</span> ร่วมกัน ผ่าน pull-up เดียว.
+        Bus speed ตอนคุยกับ VL53 จะลดเป็น <b>50 kHz</b> (per-device clock), อุปกรณ์อื่น <b>100 kHz</b>.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DISPLAY SPI ============ -->
+  <section>
+    <div class="section-head">
+      <div class="kicker">SPI 2 — Display</div>
+      <h2>📺 ST7796S TFT 480×320 (SPI)</h2>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Display pin</th><th>ESP32-P4</th><th>Role</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>MOSI / SDA</td><td><span class="pin">GPIO 32</span></td><td>SPI data out</td><td>SPI mode 0, 40 MHz</td></tr>
+          <tr><td>SCK / SCL</td><td><span class="pin">GPIO 36</span></td><td>SPI clock</td><td>—</td></tr>
+          <tr><td>CS</td><td><span class="pin">GPIO 26</span></td><td>Chip select</td><td>active-low</td></tr>
+          <tr><td>DC / RS</td><td><span class="pin">GPIO 24</span></td><td>Data/Command</td><td>HIGH = data, LOW = command</td></tr>
+          <tr><td>RST</td><td><span class="pin">GPIO 25</span></td><td>Hardware reset</td><td>active-low pulse on init</td></tr>
+          <tr><td>BLK / LED</td><td><span class="pwr">3V3</span></td><td>Backlight</td><td>ผ่าน R 100 Ω หรือทรานซิสเตอร์</td></tr>
+          <tr><td>VCC</td><td><span class="pwr">3V3</span></td><td>Power</td><td>—</td></tr>
+          <tr><td>GND</td><td><span class="gnd-pill">GND</span></td><td>—</td><td>—</td></tr>
+        </tbody>
+      </table>
+      <div class="note"><b>Touch (FT6336U):</b> ใช้ I²C bus เดียวกับอุปกรณ์อื่น (ดูตาราง I²C). Reset อยู่ <span class="pin">GPIO 21</span></div>
+    </div>
+  </section>
+
+  <!-- ============ CAMERA ============ -->
+  <section>
+    <div class="section-head">
+      <div class="kicker">MIPI-CSI</div>
+      <h2>📷 OV5647 Camera (5 MP)</h2>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Camera signal</th><th>ESP32-P4</th><th>Role</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>XCLK</td><td><span class="pin">GPIO 33</span></td><td>External clock 24 MHz</td><td>ESP32 ส่งคล็อกให้ sensor</td></tr>
+          <tr><td>D0± / D1±</td><td>MIPI-CSI lanes</td><td>2-lane MIPI data</td><td>ใช้ pin จัดสรรในตัว ESP32-P4</td></tr>
+          <tr><td>CLK±</td><td>MIPI-CSI clk</td><td>MIPI clock pair</td><td>—</td></tr>
+          <tr><td>SCCB SDA/SCL</td><td>I²C bus</td><td>Camera config (SCCB ≈ I²C)</td><td>ใช้ I²C bus เดียวกับ peripherals อื่น</td></tr>
+          <tr><td>AVDD</td><td><span class="pwr">2.8 V LDO ch3</span></td><td>Analog supply</td><td>ปรับจาก 2.5 → 2.8 V (datasheet)</td></tr>
+          <tr><td>DVDD</td><td><span class="pwr">1.5 V</span></td><td>Digital core</td><td>มาจาก LDO ในตัวบอร์ด</td></tr>
+          <tr><td>DOVDD</td><td><span class="pwr">1.8 V</span></td><td>I/O</td><td>—</td></tr>
+          <tr><td>GND</td><td><span class="gnd-pill">GND</span></td><td>—</td><td>—</td></tr>
+        </tbody>
+      </table>
+      <div class="note"><b>Format:</b> MIPI 2-lane, 24 MHz input, RAW8 800×640 @ 50 fps. PID ที่อ่านได้ = 0x5647 (OV5647)</div>
+    </div>
+  </section>
+
+  <!-- ============ AUDIO UART ============ -->
+  <section>
+    <div class="section-head">
+      <div class="kicker">UART 1</div>
+      <h2>🔊 DY-HV20T Audio Module (UART)</h2>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Module pin</th><th>ESP32-P4</th><th>Role</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>RX (รับจาก ESP)</td><td><span class="pin">GPIO 37</span></td><td>UART TX</td><td>ESP TX → Module RX</td></tr>
+          <tr><td>TX (ส่งกลับ ESP)</td><td><span class="pin">GPIO 38</span></td><td>UART RX</td><td>Module TX → ESP RX</td></tr>
+          <tr><td>VCC</td><td><span class="pwr">5 V</span></td><td>Power</td><td>กระแสสูงเวลาเล่น — แยก rail ถ้าทำได้</td></tr>
+          <tr><td>SPK+/SPK-</td><td>—</td><td>ลำโพง 4–8 Ω</td><td>ต่อโดยตรงไปลำโพง</td></tr>
+          <tr><td>GND</td><td><span class="gnd-pill">GND</span></td><td>—</td><td>common ground</td></tr>
+        </tbody>
+      </table>
+      <div class="note"><b>Tracks:</b> 1=intro, 2=สำเร็จ, 3=ผิดพลาด, 4=คืนยา, 15-21 = ชื่อมื้อ (เช้า/เที่ยง/เย็น/ก่อน/หลัง)</div>
+    </div>
+  </section>
+
+  <!-- ============ SD CARD (DISABLED) ============ -->
+  <section>
+    <div class="section-head">
+      <div class="kicker">Disabled</div>
+      <h2>💾 SD Card (4-bit SDIO) — <span style="color:var(--ink-3)">ปิดอยู่</span></h2>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>SD pin</th><th>ESP32-P4</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td>CLK</td><td><span class="pin">GPIO 43</span></td><td>SDIO clock</td></tr>
+          <tr><td>CMD</td><td><span class="pin">GPIO 44</span></td><td>SDIO command</td></tr>
+          <tr><td>D0</td><td><span class="pin">GPIO 39</span></td><td>SDIO data 0</td></tr>
+          <tr><td>D1</td><td><span class="pin">GPIO 40</span></td><td>SDIO data 1</td></tr>
+          <tr><td>D2</td><td><span class="pin">GPIO 41</span></td><td>SDIO data 2</td></tr>
+          <tr><td>D3</td><td><span class="pin">GPIO 42</span></td><td>SDIO data 3</td></tr>
+          <tr><td>POWER (LDO)</td><td><span class="pin">GPIO 45</span></td><td>Power switch</td></tr>
+        </tbody>
+      </table>
+      <div class="note"><b>สถานะปัจจุบัน:</b> <code class="mono">ENABLE_SD_CARD = 0</code> — pin เหล่านี้ว่างใช้ทำอย่างอื่นได้</div>
+    </div>
+  </section>
+
+  <!-- ============ FULL SVG WIRING DIAGRAM ============ -->
+  <section>
+    <div class="section-head">
+      <div class="kicker">Visual Map</div>
+      <h2>🔌 ภาพรวมการต่อสาย (block diagram)</h2>
+    </div>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="d-i2c" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L8,4 L0,8 z" fill="#2563eb"/>
+          </marker>
+          <marker id="d-spi" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L8,4 L0,8 z" fill="#db2777"/>
+          </marker>
+          <marker id="d-gpio" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L8,4 L0,8 z" fill="#16a34a"/>
+          </marker>
+          <marker id="d-uart" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L8,4 L0,8 z" fill="#d97706"/>
+          </marker>
+          <marker id="d-csi" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L8,4 L0,8 z" fill="#7c3aed"/>
+          </marker>
+          <filter id="ds" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity=".15"/>
+          </filter>
+        </defs>
+        <style>
+          .lbl  { font: 700 13px 'Inter','IBM Plex Sans Thai',sans-serif; fill: #0b1220; }
+          .lbl-sm { font: 500 11px 'Inter','IBM Plex Sans Thai',sans-serif; fill: #475569; }
+          .lbl-pin { font: 700 10px 'JetBrains Mono', monospace; fill: #0b1220; }
+          .lbl-bus { font: 700 10px 'JetBrains Mono', monospace; }
+          .lbl-w { font: 800 16px 'Inter',sans-serif; fill: #fff; }
+          .box { stroke-width: 1.5; }
+        </style>
+
+        <!-- Center: ESP32-P4 -->
+        <g filter="url(#ds)">
+          <rect x="490" y="380" width="220" height="140" rx="14" fill="#0f1424" stroke="#4f46e5" stroke-width="2"/>
+          <text x="600" y="412" text-anchor="middle" class="lbl-w">ESP32-P4-Nano</text>
+          <text x="600" y="432" text-anchor="middle" font-size="11" fill="#94a3b8">RISC-V · 360 MHz · 32 MB PSRAM</text>
+          <line x1="510" y1="448" x2="690" y2="448" stroke="#374151" stroke-dasharray="3 3"/>
+          <text x="600" y="468" text-anchor="middle" font-size="10" fill="#cbd5e1">I²C: GPIO 7/8 (master)</text>
+          <text x="600" y="484" text-anchor="middle" font-size="10" fill="#cbd5e1">SPI2: 32/36/26/24/25</text>
+          <text x="600" y="500" text-anchor="middle" font-size="10" fill="#cbd5e1">UART1: 37/38 · CSI: built-in</text>
+        </g>
+
+        <!-- TCA9548A mux below -->
+        <g filter="url(#ds)">
+          <rect x="490" y="650" width="220" height="60" rx="10" fill="#fff" stroke="#2563eb" class="box"/>
+          <text x="600" y="675" text-anchor="middle" class="lbl">TCA9548A I²C Mux</text>
+          <text x="600" y="694" text-anchor="middle" class="lbl-sm">addr 0x70 · 8 channels</text>
+        </g>
+
+        <!-- I²C devices left column -->
+        <g filter="url(#ds)">
+          <rect x="40" y="60" width="180" height="56" rx="8" fill="#fff" stroke="#2563eb" class="box"/>
+          <text x="130" y="83" text-anchor="middle" class="lbl">PCA9685</text>
+          <text x="130" y="100" text-anchor="middle" class="lbl-sm">0x40 · servo PWM x6</text>
+
+          <rect x="40" y="138" width="180" height="56" rx="8" fill="#fff" stroke="#2563eb" class="box"/>
+          <text x="130" y="161" text-anchor="middle" class="lbl">PCF8574</text>
+          <text x="130" y="178" text-anchor="middle" class="lbl-sm">0x20 · IR sensor x6</text>
+
+          <rect x="40" y="216" width="180" height="56" rx="8" fill="#fff" stroke="#2563eb" class="box"/>
+          <text x="130" y="239" text-anchor="middle" class="lbl">DS3231</text>
+          <text x="130" y="256" text-anchor="middle" class="lbl-sm">0x68 · RTC + battery</text>
+
+          <rect x="40" y="294" width="180" height="56" rx="8" fill="#fff" stroke="#2563eb" class="box"/>
+          <text x="130" y="317" text-anchor="middle" class="lbl">FT6336U</text>
+          <text x="130" y="334" text-anchor="middle" class="lbl-sm">0x38 · Touch (RST→GPIO21)</text>
+        </g>
+
+        <!-- VL53 row below mux -->
+        <g filter="url(#ds)">
+          <rect x="40" y="780" width="148" height="76" rx="8" fill="#fff" stroke="#2563eb" class="box"/>
+          <text x="114" y="800" text-anchor="middle" class="lbl">VL53L0X #1</text>
+          <text x="114" y="818" text-anchor="middle" class="lbl-sm">0x71 · ch0</text>
+          <text x="114" y="834" text-anchor="middle" class="lbl-sm">XSHUT→GPIO 20</text>
+
+          <rect x="200" y="780" width="148" height="76" rx="8" fill="#fff" stroke="#2563eb" class="box"/>
+          <text x="274" y="800" text-anchor="middle" class="lbl">VL53L0X #2</text>
+          <text x="274" y="818" text-anchor="middle" class="lbl-sm">0x72 · ch1</text>
+          <text x="274" y="834" text-anchor="middle" class="lbl-sm">XSHUT→GPIO 22</text>
+
+          <rect x="360" y="780" width="148" height="76" rx="8" fill="#fff" stroke="#2563eb" class="box"/>
+          <text x="434" y="800" text-anchor="middle" class="lbl">VL53L0X #3</text>
+          <text x="434" y="818" text-anchor="middle" class="lbl-sm">0x73 · ch2</text>
+          <text x="434" y="834" text-anchor="middle" class="lbl-sm">XSHUT→GPIO 23</text>
+
+          <rect x="520" y="780" width="148" height="76" rx="8" fill="#fff" stroke="#2563eb" class="box"/>
+          <text x="594" y="800" text-anchor="middle" class="lbl">VL53L0X #4</text>
+          <text x="594" y="818" text-anchor="middle" class="lbl-sm">0x74 · ch3</text>
+          <text x="594" y="834" text-anchor="middle" class="lbl-sm">XSHUT→GPIO 47</text>
+
+          <rect x="680" y="780" width="148" height="76" rx="8" fill="#fff" stroke="#2563eb" class="box"/>
+          <text x="754" y="800" text-anchor="middle" class="lbl">VL53L0X #5</text>
+          <text x="754" y="818" text-anchor="middle" class="lbl-sm">0x75 · ch4</text>
+          <text x="754" y="834" text-anchor="middle" class="lbl-sm">XSHUT→GPIO 48</text>
+
+          <rect x="840" y="780" width="148" height="76" rx="8" fill="#fff" stroke="#2563eb" class="box"/>
+          <text x="914" y="800" text-anchor="middle" class="lbl">VL53L0X #6</text>
+          <text x="914" y="818" text-anchor="middle" class="lbl-sm">0x76 · ch5</text>
+          <text x="914" y="834" text-anchor="middle" class="lbl-sm">XSHUT→GPIO 53</text>
+        </g>
+
+        <!-- Right column: SPI display, camera, audio -->
+        <g filter="url(#ds)">
+          <rect x="980" y="60" width="180" height="78" rx="8" fill="#fff" stroke="#db2777" class="box"/>
+          <text x="1070" y="83" text-anchor="middle" class="lbl">ST7796S TFT</text>
+          <text x="1070" y="101" text-anchor="middle" class="lbl-sm">SPI 480×320</text>
+          <text x="1070" y="118" text-anchor="middle" class="lbl-sm">MOSI 32 · SCK 36</text>
+          <text x="1070" y="132" text-anchor="middle" class="lbl-sm">CS 26 · DC 24 · RST 25</text>
+
+          <rect x="980" y="160" width="180" height="78" rx="8" fill="#fff" stroke="#7c3aed" class="box"/>
+          <text x="1070" y="183" text-anchor="middle" class="lbl">OV5647 Camera</text>
+          <text x="1070" y="201" text-anchor="middle" class="lbl-sm">MIPI-CSI 2-lane</text>
+          <text x="1070" y="217" text-anchor="middle" class="lbl-sm">XCLK 33 · 24 MHz</text>
+          <text x="1070" y="232" text-anchor="middle" class="lbl-sm">AVDD 2.8 V (LDO ch3)</text>
+
+          <rect x="980" y="260" width="180" height="64" rx="8" fill="#fff" stroke="#d97706" class="box"/>
+          <text x="1070" y="283" text-anchor="middle" class="lbl">DY-HV20T Audio</text>
+          <text x="1070" y="300" text-anchor="middle" class="lbl-sm">UART1 TX 37 · RX 38</text>
+          <text x="1070" y="316" text-anchor="middle" class="lbl-sm">5 V supply</text>
+        </g>
+
+        <!-- Connectors I²C from ESP to left devices -->
+        <path d="M490,420 C400,420 320,88 220,88" stroke="#2563eb" fill="none" stroke-width="2" marker-end="url(#d-i2c)"/>
+        <path d="M490,430 C400,430 320,166 220,166" stroke="#2563eb" fill="none" stroke-width="2" marker-end="url(#d-i2c)"/>
+        <path d="M490,440 C400,440 320,244 220,244" stroke="#2563eb" fill="none" stroke-width="2" marker-end="url(#d-i2c)"/>
+        <path d="M490,450 C400,450 320,322 220,322" stroke="#2563eb" fill="none" stroke-width="2" marker-end="url(#d-i2c)"/>
+        <text x="380" y="60" class="lbl-bus" fill="#2563eb">I²C · GPIO 7/8</text>
+
+        <!-- ESP → TCA9548A (I²C) -->
+        <line x1="600" y1="520" x2="600" y2="650" stroke="#2563eb" stroke-width="2.5" marker-end="url(#d-i2c)"/>
+        <text x="615" y="595" class="lbl-bus" fill="#2563eb">I²C @ 50 kHz</text>
+
+        <!-- TCA → VL53s -->
+        <path d="M530,710 C530,740 130,760 114,780" stroke="#2563eb" fill="none" stroke-width="1.5" marker-end="url(#d-i2c)"/>
+        <path d="M555,710 C555,740 274,760 274,780" stroke="#2563eb" fill="none" stroke-width="1.5" marker-end="url(#d-i2c)"/>
+        <path d="M580,710 C580,740 434,760 434,780" stroke="#2563eb" fill="none" stroke-width="1.5" marker-end="url(#d-i2c)"/>
+        <path d="M620,710 C620,740 594,760 594,780" stroke="#2563eb" fill="none" stroke-width="1.5" marker-end="url(#d-i2c)"/>
+        <path d="M645,710 C645,740 754,760 754,780" stroke="#2563eb" fill="none" stroke-width="1.5" marker-end="url(#d-i2c)"/>
+        <path d="M670,710 C670,740 914,760 914,780" stroke="#2563eb" fill="none" stroke-width="1.5" marker-end="url(#d-i2c)"/>
+        <text x="320" y="755" class="lbl-bus" fill="#2563eb">ch0..ch5 (SDA/SCL fanout)</text>
+
+        <!-- ESP → Display (SPI) -->
+        <path d="M710,400 C800,400 880,90 980,90" stroke="#db2777" fill="none" stroke-width="2" marker-end="url(#d-spi)"/>
+        <text x="820" y="65" class="lbl-bus" fill="#db2777">SPI 2 · 40 MHz</text>
+
+        <!-- ESP → Camera (CSI) -->
+        <path d="M710,440 C800,440 880,200 980,200" stroke="#7c3aed" fill="none" stroke-width="2" marker-end="url(#d-csi)"/>
+        <text x="830" y="160" class="lbl-bus" fill="#7c3aed">MIPI-CSI</text>
+
+        <!-- ESP → Audio (UART) -->
+        <path d="M710,480 C800,480 880,290 980,290" stroke="#d97706" fill="none" stroke-width="2" marker-end="url(#d-uart)"/>
+        <text x="830" y="270" class="lbl-bus" fill="#d97706">UART 1</text>
+
+        <!-- WiFi/SDIO note bottom-right -->
+        <g>
+          <rect x="980" y="380" width="180" height="64" rx="8" fill="#f3f4f6" stroke="#9ca3af" stroke-dasharray="4 3"/>
+          <text x="1070" y="402" text-anchor="middle" class="lbl">WiFi (esp_hosted)</text>
+          <text x="1070" y="420" text-anchor="middle" class="lbl-sm">SDIO co-processor</text>
+          <text x="1070" y="436" text-anchor="middle" class="lbl-sm">internal SLC bus</text>
+          <line x1="710" y1="490" x2="980" y2="412" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#d-gpio)"/>
+        </g>
+
+        <!-- Power note legend -->
+        <g>
+          <rect x="40" y="380" width="380" height="120" rx="10" fill="#fffbeb" stroke="#f59e0b" stroke-dasharray="3 3"/>
+          <text x="60" y="408" class="lbl">⚡ Power Rails</text>
+          <text x="60" y="430" class="lbl-sm">3V3 → I²C devices, FT6336U, DS3231, TFT logic, TCA9548A</text>
+          <text x="60" y="448" class="lbl-sm">5V  → PCA9685 V+ (servo), DY-HV20T, OV5647 (via internal LDO)</text>
+          <text x="60" y="466" class="lbl-sm">2.8V → Camera AVDD (LDO ch3, ปรับใน sdkconfig)</text>
+          <text x="60" y="484" class="lbl-sm">GND → common ground (ห้ามขาด — servo/audio ต้องร่วม ground กับ MCU)</text>
+        </g>
+
+      </svg>
+    </div>
+  </section>
+
+  <!-- ============ ALL GPIO MAP ============ -->
+  <section>
+    <div class="section-head">
+      <div class="kicker">Master GPIO Map</div>
+      <h2>📋 ตารางสรุป GPIO ทั้งหมด</h2>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>GPIO</th><th>Function</th><th>Bus</th><th>Direction</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="pin">GPIO 7</span></td><td>I²C0 SDA</td><td><span class="bus-pill b-i2c">I2C</span></td><td>Bidirectional</td><td>Shared bus 0</td></tr>
+          <tr><td><span class="pin">GPIO 8</span></td><td>I²C0 SCL</td><td><span class="bus-pill b-i2c">I2C</span></td><td>Output</td><td>Shared bus 0</td></tr>
+          <tr><td><span class="pin">GPIO 20</span></td><td>VL53L0X #1 XSHUT</td><td><span class="bus-pill b-gpio">GPIO</span></td><td>Output</td><td>active-low (LOW = sleep)</td></tr>
+          <tr><td><span class="pin">GPIO 21</span></td><td>FT6336U RST</td><td><span class="bus-pill b-gpio">GPIO</span></td><td>Output</td><td>active-low pulse</td></tr>
+          <tr><td><span class="pin">GPIO 22</span></td><td>VL53L0X #2 XSHUT</td><td><span class="bus-pill b-gpio">GPIO</span></td><td>Output</td><td>—</td></tr>
+          <tr><td><span class="pin">GPIO 23</span></td><td>VL53L0X #3 XSHUT</td><td><span class="bus-pill b-gpio">GPIO</span></td><td>Output</td><td>—</td></tr>
+          <tr><td><span class="pin">GPIO 24</span></td><td>TFT DC</td><td><span class="bus-pill b-spi">SPI</span></td><td>Output</td><td>—</td></tr>
+          <tr><td><span class="pin">GPIO 25</span></td><td>TFT RST</td><td><span class="bus-pill b-gpio">GPIO</span></td><td>Output</td><td>active-low pulse</td></tr>
+          <tr><td><span class="pin">GPIO 26</span></td><td>TFT CS</td><td><span class="bus-pill b-spi">SPI</span></td><td>Output</td><td>—</td></tr>
+          <tr><td><span class="pin">GPIO 32</span></td><td>TFT MOSI</td><td><span class="bus-pill b-spi">SPI</span></td><td>Output</td><td>—</td></tr>
+          <tr><td><span class="pin">GPIO 33</span></td><td>Camera XCLK</td><td><span class="bus-pill b-csi">CAM</span></td><td>Output</td><td>24 MHz</td></tr>
+          <tr><td><span class="pin">GPIO 36</span></td><td>TFT SCK</td><td><span class="bus-pill b-spi">SPI</span></td><td>Output</td><td>40 MHz</td></tr>
+          <tr><td><span class="pin">GPIO 37</span></td><td>UART1 TX</td><td><span class="bus-pill b-uart">UART</span></td><td>Output</td><td>→ DY-HV20T RX</td></tr>
+          <tr><td><span class="pin">GPIO 38</span></td><td>UART1 RX</td><td><span class="bus-pill b-uart">UART</span></td><td>Input</td><td>← DY-HV20T TX</td></tr>
+          <tr><td><span class="pin">GPIO 39-45</span></td><td>SD Card (SDIO)</td><td><span class="bus-pill b-gpio">GPIO</span></td><td>—</td><td>ปิดอยู่ (ENABLE_SD_CARD=0)</td></tr>
+          <tr><td><span class="pin">GPIO 47</span></td><td>VL53L0X #4 XSHUT</td><td><span class="bus-pill b-gpio">GPIO</span></td><td>Output</td><td>—</td></tr>
+          <tr><td><span class="pin">GPIO 48</span></td><td>VL53L0X #5 XSHUT</td><td><span class="bus-pill b-gpio">GPIO</span></td><td>Output</td><td>—</td></tr>
+          <tr><td><span class="pin">GPIO 53</span></td><td>VL53L0X #6 XSHUT</td><td><span class="bus-pill b-gpio">GPIO</span></td><td>Output</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ POWER ============ -->
+  <section>
+    <div class="section-head">
+      <div class="kicker">Power tree</div>
+      <h2>⚡ การจ่ายไฟ</h2>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Rail</th><th>Source</th><th>โหลด</th><th>ข้อควรระวัง</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="pwr">5 V</span></td>
+            <td>Adapter / USB</td>
+            <td>PCA9685 V+ (servo) · DY-HV20T · LDO upstream</td>
+            <td>ตอน servo ทำงานพร้อมกัน 6 ตัว ใช้กระแสกระชาก ≥ 2 A — ใช้ supply ≥ 3 A หรือแยก rail</td>
+          </tr>
+          <tr>
+            <td><span class="pwr">3.3 V</span></td>
+            <td>LDO ของบอร์ด ESP32-P4</td>
+            <td>I²C peripherals, TFT logic, FT6336U, TCA9548A</td>
+            <td>เข้า cap 100nF + 10μF ใกล้ขาแต่ละชิป</td>
+          </tr>
+          <tr>
+            <td><span class="pwr" style="background:#fef3c7;color:#92400e;border-color:#fcd34d">2.8 V</span></td>
+            <td>LDO channel 3 (ใน chip)</td>
+            <td>OV5647 AVDD</td>
+            <td>ปรับใน <code class="mono">CAM_LDO_VOLTAGE_MV</code></td>
+          </tr>
+          <tr>
+            <td><span class="gnd-pill">GND</span></td>
+            <td>Common</td>
+            <td>ทุก device</td>
+            <td><b>ห้ามขาด</b> โดยเฉพาะ servo + audio + I²C ต้องเชื่อม ground ร่วม</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>Generated 2026-05-02 · ESP32-P4-Nano Smart Pill Dispenser</p>
+    <p style="margin-top:6px;opacity:.7">เปิด <code style="font-family:'JetBrains Mono',monospace;background:#fff;padding:2px 6px;border-radius:4px;border:1px solid var(--line)">main/config.h</code> เพื่อดูค่าจริงในซอร์สโค้ด</p>
+  </div>
+</footer>
+
+</body>
+</html>

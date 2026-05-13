@@ -1,0 +1,178 @@
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0x1 (POWERON),boot:0x10f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x18e4
+load:0x4ff2abd0,len:0xd74
+load:0x4ff2cbd0,len:0x322c
+entry 0x4ff2abda
+I (25) boot: ESP-IDF v5.3.2-dirty 2nd stage bootloader
+I (26) boot: compile time May 10 2026 16:29:07
+I (26) boot: Multicore bootloader
+I (30) boot: chip revision: v1.3
+I (33) boot: efuse block revision: v0.3
+I (38) boot.esp32p4: SPI Speed      : 80MHz
+I (42) boot.esp32p4: SPI Mode       : DIO
+I (47) boot.esp32p4: SPI Flash Size : 16MB
+I (52) boot: Enabling RNG early entropy source...
+I (57) boot: Partition Table:
+I (61) boot: ## Label            Usage          Type ST Offset   Length
+I (68) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (76) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (83) boot:  2 factory          factory app      00 00 00010000 00300000
+I (90) boot:  3 coredump         Unknown data     01 03 00310000 00010000
+I (99) boot: End of partition table
+I (438) boot: Loaded app from partition at offset 0x10000
+I (439) boot: Disabling RNG early entropy source...
+I (504) MSPI DQS: tuning success, best phase id is 2
+I (683) MSPI DQS: tuning success, best delayline id is 11
+I (683) esp_psram: Found 32MB PSRAM device
+I (684) esp_psram: Speed: 200MHz
+I (691) cpu_start: Multicore app
+I (1601) esp_psram: SPI SRAM memory test OK
+W (1610) clk: esp_perip_clk_init() has not been implemented yet
+I (1617) cpu_start: Pro cpu start user code
+I (1617) cpu_start: cpu freq: 360000000 Hz
+I (1617) app_init: Application information:
+I (1620) app_init: Project name:     unified_cam
+I (1625) app_init: App version:      backup-camera-working-2026-05-0
+I (1633) app_init: Compile time:     May 10 2026 16:28:32
+I (1639) app_init: ELF file SHA256:  5c71457e2...
+I (1644) app_init: ESP-IDF:          v5.3.2-dirty
+I (1649) efuse_init: Min chip rev:     v0.1
+I (1654) efuse_init: Max chip rev:     v1.99
+I (1659) efuse_init: Chip rev:         v1.3
+I (1703) esp_psram: Adding pool of 32768K of PSRAM memory to heap allocator
+I (1711) spi_flash: detected chip: generic
+I (1715) spi_flash: flash io: dio
+I (1719) host_init: ESP Hosted : Host chip_ip[18]
+I (1753) H_API: ESP-Hosted starting. Hosted_Tasks: prio:23, stack: 5120 RPC_task_stack: 5120
+sdio_mempool_create free:33711892 min-free:33711892 lfb-def:33030144 lfb-8bit:33030144
+I (1815) H_API: ** add_esp_wifi_remote_channels **
+I (1838) esp_core_dump_flash: Init core dump to flash
+I (1843) esp_core_dump_flash: Found partition 'coredump' @ 310000 65536 bytes
+E (1884) esp_core_dump_flash: Core dump data check failed:
+Calculated checksum='8522db5e'
+Image checksum='ad0e2718'
+I (1885) main_task: Started on CPU0
+I (1895) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations
+I (1895) main_task: Calling app_main()
+I (1905) unified_cam: Starting Unified Cam & Modules (ESP32-P4 Nano)
+W (1905) unified_cam: Boot #1, reset reason: POWERON (1)
+I (1935) cloud_secrets: Cloud secrets loaded from NVS (telegram=set, sheets=set)
+I (1995) i2c_mgr: I2C_NUM_0 ready — SDA=7 SCL=8 @ 50000 Hz
+I (2005) ds3231: RTC seeded system time: 2026-05-11 10:53:18
+I (2005) unified_cam: Skipping bus scan (per-device pings only)
+W (2015) unified_cam: I2C scan begin (full bus)...
+W (2035) unified_cam: I2C ACK: 0x18 0x20 0x36 0x40 0x56 0x68 0x70
+W (2035) unified_cam: I2C scan end. Camera should be 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (2045) unified_cam: CAMERA INIT (early, before any peripheral driver init)
+I (2045) camera_init: Lazy camera_init triggered (first /capture or /photo)
+I (2235) camera_init: Initializing JPEG encoder for 800x640
+W (2235) jpeg_enc: DIAG-LEAK entry  PSRAM free=30478172 largest=30408704
+W (2235) jpeg_enc: DIAG-LEAK deinit PSRAM free=30478172
+I (2295) jpeg_enc: JPEG HW encoder initialized: 800x640, out_buf=1024000 bytes x2 + rot_buf=1024000
+W (2295) jpeg_enc: DIAG-LEAK exit   PSRAM free=26381048 largest=26214400
+I (2595) camera_init: MIPI PHY LDO power-cycled (200 ms off)
+I (2595) camera_init: XCLK 24000000 Hz generated on GPIO33
+I (2795) camera_init: VL53 XSHUT lowered before SCCB (chips offline)
+I (2865) camera_init: Shared I2C bus recovered before SCCB init
+W (3025) camera_init: I2C scan begin (looking for camera + others)...
+W (3035) camera_init: I2C scan ACK: 0x18 0x20 0x40 0x56 0x68 0x70
+W (3035) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (3325) camera_init: set_format readback 0x4837=0x00 (ESP_ERR_INVALID_STATE, expect 0x28)
+W (3335) camera_init: PCLK reg verify failed — forcing attempt retry
+W (4625) camera_init: set_format readback 0x4837=0x28 (ESP_OK, expect 0x28)
+I (4625) camera_init: Camera detect + format OK (attempt 4) — stream-on deferred until CSI ready
+I (4625) camera_init: VL53 XSHUT restored after SCCB
+I (4635) camera_init: ISP frame_cfg = 0x6031f27f, bayer_mode = 0 (00=BGGR 01=GBRG 10=GRBG 11=RGGB)
+I (4655) camera_init: Override 0x4800=0x10 (continuous clock + line sync): ESP_OK
+I (4655) camera_init: OV5647 SDE Y-offset = +64 (brightness boost, no chroma)
+I (4665) camera_init: Sensor stream-on issued AFTER CSI ready — first frame should arrive shortly
+I (4675) camera_init: Camera capture task started (MJPEG mode)
+I (4675) camera_init: Camera + JPEG HW Encoder Initialized OK
+I (4685) camera_init: Lazy camera_init -> ESP_OK
+W (5385) unified_cam: Early camera init → ESP_OK
+W (5675) camera_init: Frame wait timeout, retrying... (1/10)
+W (6675) camera_init: Frame wait timeout, retrying... (2/10)
+W (7675) camera_init: Frame wait timeout, retrying... (3/10)
+I (8555) unified_cam: FT6336U responded on initial ping
+I (8555) tca9548a: TCA9548A init OK at 0x70
+I (8555) pca9685: Servo configuration loaded from NVS
+I (8555) pca9685: PCA9685 initialized (prescale=121, ~50Hz)
+I (8565) unified_cam: PCF8574 initialized â€” all pins set to INPUT (0xFF)
+I (8575) FT6336U: Resetting touch controller
+W (8675) camera_init: Frame wait timeout, retrying... (4/10)
+W (8735) FT6336U: Touch chip-id 0x00 not recognised on attempt 1 — retrying
+W (8935) FT6336U: Touch chip-id 0x00 not recognised on attempt 2 — retrying
+W (9135) FT6336U: Touch chip-id 0x00 not recognised on attempt 3 — retrying
+W (9335) FT6336U: Touch chip-id check failed but I2C address ACKs (ping attempt 1) — enabling touch in fallback mode
+I (9335) vl53_multi: Ch0 cal loaded from NVS: full=50mm height=15mm max=16
+I (9335) vl53_multi: Bootstrapping VL53L0X sensors via TCA9548A
+W (9675) camera_init: Frame wait timeout, retrying... (5/10)
+W (9955) vl53_multi: Ch0 init fail: SPAD info
+W (9955) vl53_multi: Ch0: init_device failed on attempt 1
+I (9955) vl53_multi: Ch0: hard-reset retry 2/5 via XSHUT (progressive pulse)
+W (10435) vl53_multi: Ch0 init fail: SPAD info
+W (10435) vl53_multi: Ch0: init_device failed on attempt 2
+I (10435) vl53_multi: Ch0: hard-reset retry 3/5 via XSHUT (progressive pulse)
+W (10675) camera_init: Frame wait timeout, retrying... (6/10)
+W (11135) vl53_multi: Ch0 init fail: SPAD info
+W (11135) vl53_multi: Ch0: init_device failed on attempt 3
+I (11135) vl53_multi: Ch0: hard-reset retry 4/5 via XSHUT (progressive pulse)
+W (11675) camera_init: Frame wait timeout, retrying... (7/10)
+W (12655) vl53_multi: Ch0 init fail: ref_cal 0x00
+W (12655) vl53_multi: Ch0: init_device failed on attempt 4
+I (12665) vl53_multi: Ch0: hard-reset retry 5/5 via XSHUT (progressive pulse)
+W (12675) camera_init: Frame wait timeout, retrying... (8/10)
+W (13675) camera_init: Frame wait timeout, retrying... (9/10)
+W (14675) camera_init: Frame wait timeout, retrying... (10/10)
+E (14675) camera_init: Camera frames stuck for 10 s — performing full re-init
+W (14785) vl53_multi: Ch0 init fail: SPAD info
+W (14785) vl53_multi: Ch0: init_device failed on attempt 5
+W (14785) vl53_multi: Ch0: init failed after 5 attempts
+W (15475) camera_init: Capture task exiting — auto re-init in 2 s
+I (15635) vl53_multi: Ch1: ready, first=2047 mm
+I (16655) vl53_multi: Ch2: ready, first=0 mm
+I (18465) vl53_multi: Ch3: ready, first=0 mm
+I (19355) vl53_multi: Ch4: ready, first=0 mm
+W (19915) vl53_multi: Ch5 init fail: SPAD info
+W (19915) vl53_multi: Ch5: init_device failed on attempt 1
+I (19915) vl53_multi: Ch5: hard-reset retry 2/5 via XSHUT (progressive pulse)
+I (21155) vl53_multi: Ch5: ready, first=0 mm
+I (21185) vl53_multi: Starting VL53L0X poll task
+I (21185) display_clk: Init ST7796S 480x320 - Interactive UI Layout
+I (21255) display_clk: SPI2 OK 40MHz
+I (21255) display_clk: Display SPI ready
+W (21475) camera_init: Auto re-init starting (no user trigger needed)
+I (21475) camera_init: Lazy camera_init triggered (first /capture or /photo)
+I (21725) display_clk: Display controller initialized
+I (21725) display_clk: Display initialized
+I (21725) unified_cam: SD card init disabled
+I (21725) vl53_multi: vl53 raw[mm]: M1=--- M2=2047(f2047) M3=0(f0) M4=0(f0) M5=0(f0) M6=0(f0)
+I (21955) camera_init: Initializing JPEG encoder for 800x640
+W (21955) jpeg_enc: DIAG-LEAK entry  PSRAM free=26380800 largest=22020096
+I (21955) jpeg_enc: JPEG encoder already initialised 800x640 — reuse
+I (22265) camera_init: MIPI PHY LDO power-cycled (200 ms off)
+I (22265) camera_init: XCLK 24000000 Hz generated on GPIO33
+I (22455) display_clk: Clock task started
+[LIVENESS] canary armed (TWDT auto-reboot if stuck)
+I (22455) unified_cam: app_main: init complete, entering keepalive loop
+I (22465) camera_init: VL53 XSHUT lowered before SCCB (chips offline)
+I (22545) camera_init: Shared I2C bus recovered before SCCB init
+W (22705) camera_init: I2C scan begin (looking for camera + others)...
+W (22715) camera_init: I2C scan ACK: 0x18 0x20 0x40 0x56 0x68 0x70
+W (22715) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (23005) camera_init: set_format readback 0x4837=0x28 (ESP_OK, expect 0x28)
+I (23005) camera_init: Camera detect + format OK (attempt 1) — stream-on deferred until CSI ready
+I (23005) camera_init: VL53 XSHUT restored after SCCB
+I (23015) camera_init: ISP frame_cfg = 0x6031f27f, bayer_mode = 0 (00=BGGR 01=GBRG 10=GRBG 11=RGGB)
+I (23035) camera_init: Override 0x4800=0x10 (continuous clock + line sync): ESP_OK
+I (23035) camera_init: OV5647 SDE Y-offset = +64 (brightness boost, no chroma)
+I (23045) camera_init: Sensor stream-on issued AFTER CSI ready — first frame should arrive shortly
+I (23055) camera_init: Camera capture task started (MJPEG mode)
+I (23055) camera_init: Camera + JPEG HW Encoder Initialized OK
+I (23055) camera_init: MIPI first frame received — pipeline healthy
+I (23065) camera_init: Lazy camera_init -> ESP_OK
+W (23775) camera_init: Auto re-init -> ESP_OK
+I (24235)               

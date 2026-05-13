@@ -66,7 +66,7 @@ static void draw_menu_label(int16_t x, int16_t title_y, int16_t subtitle_y, cons
 
 static void draw_language_toggle(void)
 {
-    const int chip_y = 5;
+    const int chip_y = 16;
     const int chip_h = 36;
     const int chip_w = 62;
     const int chip_gap = 6;
@@ -139,7 +139,7 @@ static void draw_icon_gear(int cx, int cy, uint16_t color, uint16_t bg_color)
 
 static bool menu_back_hit(uint16_t x, uint16_t y)
 {
-    return (x >= 14 && x <= 118 && y >= 8 && y <= 34);
+    return (x >= 0 && x <= 130 && y >= 0 && y <= 52);
 }
 
 static void draw_icon_wifi(int cx, int cy, uint16_t color, uint16_t bg_color)
@@ -191,10 +191,10 @@ void ui_menu_render(void)
     fill_screen(THEME_BG);
     draw_top_bar_with_back(NULL);
     if (g_ui_language == UI_LANG_TH) {
-        draw_utf8_centered_line_scaled(LCD_W / 2, 8, "เมนูหลัก", THEME_TXT_MAIN, THEME_PANEL, 30);
+        draw_utf8_centered_line_scaled(LCD_W / 2, 16, "เมนูหลัก", THEME_TXT_MAIN, THEME_PANEL, 30);
     }
     if (g_ui_language != UI_LANG_TH) {
-        draw_label_boldish(140, 29, "Setup Menu", THEME_TXT_MAIN, THEME_PANEL, &FreeSans12pt7b);
+        draw_label_boldish(140, 39, "Setup Menu", THEME_TXT_MAIN, THEME_PANEL, &FreeSans12pt7b);
     }
     draw_language_toggle();
 
@@ -223,8 +223,8 @@ void ui_menu_render(void)
 
 void ui_menu_handle_touch(uint16_t tx_n, uint16_t ty_n)
 {
-    if (ty_n < 50) {
-        if (ty_n >= 4 && ty_n <= 44) {
+    if (ty_n < 56) {
+        if (ty_n >= 14 && ty_n <= 54) {
             if (tx_n >= (LCD_W - 146) && tx_n <= (LCD_W - 84)) {
                 if (g_ui_language != UI_LANG_EN) {
                     g_ui_language = UI_LANG_EN;

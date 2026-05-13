@@ -78,23 +78,51 @@ static void url_decode_inplace(char *text)
     *dst = '\0';
 }
 
-static bool extract_form_value(const char *body, const char *key, char *out, size_t out_len)
+// Bounded form-field extractor. Caller passes body_len (the number of
+// bytes physically in `body` excluding any terminator). Search/copy
+// stops at body_len; we never read past the caller's buffer even if
+// a stray null terminator is missing or a key spans the boundary.
+static bool extract_form_value_n(const char *body, size_t body_len,
+                                 const char *key, char *out, size_t out_len)
 {
     if (!body || !key || !out || out_len == 0) return false;
 
-    char pattern[96];
-    snprintf(pattern, sizeof(pattern), "%s=", key);
-    const char *start = strstr(body, pattern);
-    if (!start) return false;
-    start += strlen(pattern);
+    size_t key_len = strlen(key);
+    if (key_len == 0 || key_len + 1 >= body_len) return false;
 
-    const char *end = strchr(start, '&');
-    size_t len = end ? (size_t)(end - start) : strlen(start);
+    // Find "key=" within [body, body+body_len). Manual loop replaces
+    // strstr() so we can't run off the end if body lacks a terminator.
+    size_t i = 0;
+    size_t pat_end = body_len - key_len - 1;  // last possible start
+    const char *start = NULL;
+    while (i <= pat_end) {
+        if (body[i + key_len] == '=' &&
+            memcmp(body + i, key, key_len) == 0 &&
+            (i == 0 || body[i - 1] == '&' || body[i - 1] == '?')) {
+            start = body + i + key_len + 1;
+            break;
+        }
+        i++;
+    }
+    if (!start) return false;
+
+    // Find next '&' within bounds.
+    const char *limit = body + body_len;
+    const char *end = start;
+    while (end < limit && *end != '&') end++;
+    size_t len = (size_t)(end - start);
     if (len >= out_len) len = out_len - 1;
     memcpy(out, start, len);
     out[len] = '\0';
     url_decode_inplace(out);
     return true;
+}
+
+// Legacy wrapper kept for callers that still pass a null-terminated
+// body. New callers should use the _n variant with explicit length.
+static bool extract_form_value(const char *body, const char *key, char *out, size_t out_len)
+{
+    return body ? extract_form_value_n(body, strlen(body), key, out, out_len) : false;
 }
 
 static void html_escape(const char *src, char *dst, size_t dst_len)
@@ -781,18 +809,14 @@ esp_err_t cloud_setup_handler(httpd_req_t *req) {
 
     char token[200];
     char chat_id[48];
-    char gs_url[320];
     char token_html[400];
     char chat_html[96];
-    char url_html[640];
 
     snprintf(token, sizeof(token), "%s", cloud_secrets_get_telegram_token());
     snprintf(chat_id, sizeof(chat_id), "%s", cloud_secrets_get_telegram_chat_id());
-    snprintf(gs_url, sizeof(gs_url), "%s", cloud_secrets_get_google_script_url());
 
     html_escape(token, token_html, sizeof(token_html));
     html_escape(chat_id, chat_html, sizeof(chat_html));
-    html_escape(gs_url, url_html, sizeof(url_html));
 
     char *html = (char *)malloc(7168);
     if (!html) return ESP_ERR_NO_MEM;
@@ -803,7 +827,7 @@ esp_err_t cloud_setup_handler(httpd_req_t *req) {
         "<head>"
         "<meta charset='UTF-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>ตั้งค่าคลาวด์ &middot; เครื่องจ่ายยาอัตโนมัติ</title>"
+        "<title>ตั้งค่า Telegram &middot; เครื่องจ่ายยาอัตโนมัติ</title>"
         "<style>"
         ":root{color-scheme:dark;--text:#f4f8ff;--muted:#96acc8;--accent:#4dd7b0;--accent2:#6db8ff;}"
         "*{box-sizing:border-box}"
@@ -830,9 +854,9 @@ esp_err_t cloud_setup_handler(httpd_req_t *req) {
         "<body>"
         "<div class='shell'>"
         "<section class='card'>"
-        "<div class='eyebrow'>ตั้งค่าคลาวด์</div>"
-        "<h1>คลาวด์ &middot; Telegram / Google Sheets</h1>"
-        "<p class='lead'>หน้านี้ใช้ตั้งค่า Telegram Bot และ Google Sheets เท่านั้น &middot; ตั้งค่า WiFi / ช่าง / รหัสผ่าน ย้ายไปอยู่ในหน้า /tech แล้ว</p>"
+        "<div class='eyebrow'>ตั้งค่า Telegram</div>"
+        "<h1>Telegram Bot</h1>"
+        "<p class='lead'>หน้านี้ใช้ตั้งค่า Telegram Bot เท่านั้น &middot; ประวัติการจ่ายยาเก็บในเครื่อง (ใช้ /log ดูใน Telegram) &middot; ตั้งค่า WiFi / ช่าง / รหัสผ่าน อยู่ในหน้า /tech</p>"
         "<form method='POST' action='/cloud/save'>"
         "<div class='field'>"
         "<label for='tg_token'>Telegram Bot Token"
@@ -844,15 +868,10 @@ esp_err_t cloud_setup_handler(httpd_req_t *req) {
         "<span class='label-sub'>หมายเลข chat หรือ user ที่ต้องการให้ bot ส่งข้อความถึง</span></label>"
         "<input id='tg_chat' name='tg_chat' value=\"%s\" autocomplete='off' spellcheck='false' placeholder='8146728406'>"
         "</div>"
-        "<div class='field'>"
-        "<label for='gs_url'>Google Apps Script URL"
-        "<span class='label-sub'>ไม่บังคับ &middot; เว้นว่างถ้าไม่ใช้ Google Sheets</span></label>"
-        "<textarea id='gs_url' name='gs_url' spellcheck='false' placeholder='https://script.google.com/macros/s/.../exec'>%s</textarea>"
-        "</div>"
         "<div class='actions'>"
-        "<button class='btn btn-primary' type='submit'>บันทึก Cloud Settings</button>"
-        "<a class='btn btn-secondary' href='/cloud/test?mode=message'>ทดสอบส่งข้อความ Telegram</a>"
-        "<a class='btn btn-secondary' href='/cloud/test?mode=photo'>ทดสอบส่งรูป Telegram</a>"
+        "<button class='btn btn-primary' type='submit'>บันทึก Telegram Settings</button>"
+        "<a class='btn btn-secondary' href='/cloud/test?mode=message'>ทดสอบส่งข้อความ</a>"
+        "<a class='btn btn-secondary' href='/cloud/test?mode=photo'>ทดสอบส่งรูป</a>"
         "<a class='btn btn-secondary' href='/cloud/logout' style='background:rgba(255,138,128,.12);color:#ffb3a8;border:1px solid rgba(255,138,128,.32);margin-left:auto'>ออกจากระบบ</a>"
         "</div>"
         "</form>"
@@ -860,7 +879,7 @@ esp_err_t cloud_setup_handler(httpd_req_t *req) {
         "</section>"
         "</div>"
         "</body></html>",
-        token_html, chat_html, url_html);
+        token_html, chat_html);
 
     httpd_resp_set_type(req, "text/html; charset=UTF-8");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
@@ -940,17 +959,17 @@ esp_err_t cloud_save_handler(httpd_req_t *req) {
 
     char tg_token[200] = {0};
     char tg_chat[48] = {0};
-    char gs_url[320] = {0};
     extract_form_value(buf, "tg_token", tg_token, sizeof(tg_token));
     extract_form_value(buf, "tg_chat", tg_chat, sizeof(tg_chat));
-    extract_form_value(buf, "gs_url", gs_url, sizeof(gs_url));
     free(buf);
 
-    bool ok = cloud_secrets_store(tg_token, tg_chat, gs_url);
-    const char *status = ok ? "Cloud Settings Saved" : "Save Failed";
+    /* Google Sheets URL field removed 2026-05-12 — pass empty string to
+     * cloud_secrets_store so the existing NVS key is cleared. */
+    bool ok = cloud_secrets_store(tg_token, tg_chat, "");
+    const char *status = ok ? "Telegram Settings Saved" : "Save Failed";
     const char *msg = ok
-        ? "Telegram and Google Sheets settings were saved successfully."
-        : "The device could not save the cloud settings.";
+        ? "Telegram settings were saved successfully."
+        : "The device could not save the Telegram settings.";
     const char *accent = ok ? "#4dd7b0" : "#ff8a80";
     const char *card_glow = ok ? "rgba(77,215,176,.18)" : "rgba(255,138,128,.18)";
 
@@ -1315,6 +1334,26 @@ esp_err_t sensors_json_handler(httpd_req_t *req)
     esp_err_t auth = web_require_maintenance_api_auth(req);
     if (auth != ESP_OK) return auth;
 
+    /* Optional ?refresh=1 (or ?fresh=1) triggers an on-demand VL53 read
+     * before returning. Without this, the page shows the last cached
+     * values — fine for the diagnostic tab, but the live /vl53 page
+     * needs fresh numbers. The check_now call blocks up to ~6 s while
+     * the task polls all 6 channels through the TCA mux. Concurrent
+     * polls are throttled by the request semaphore inside vl53_task. */
+    char query[64];
+    if (httpd_req_get_url_query_len(req) > 0 &&
+        httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        char val[8];
+        bool want_refresh = false;
+        if (httpd_query_key_value(query, "refresh", val, sizeof(val)) == ESP_OK ||
+            httpd_query_key_value(query, "fresh",   val, sizeof(val)) == ESP_OK) {
+            if (val[0] == '1' || val[0] == 't' || val[0] == 'y') want_refresh = true;
+        }
+        if (want_refresh) {
+            (void)vl53l0x_multi_check_now(6000);
+        }
+    }
+
     const pill_sensor_status_t *s = pill_sensor_status_get_all();
     char json[2048];
     size_t off = 0;
@@ -1346,6 +1385,91 @@ esp_err_t sensors_json_handler(httpd_req_t *req)
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
     return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t vl53_live_handler(httpd_req_t *req)
+{
+    /* Self-contained HTML page that polls /sensors.json?refresh=1
+     * every 3 s. Each refresh triggers an on-demand VL53 read so the
+     * values shown are current to within 3-6 s. No login required —
+     * the page is read-only diagnostic. */
+    static const char html[] =
+        "<!doctype html><html lang=th><head>"
+        "<meta charset=utf-8>"
+        "<meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<title>VL53 Live</title>"
+        "<style>"
+        "body{margin:0;font-family:'Segoe UI',Tahoma,sans-serif;"
+        "background:radial-gradient(circle at top,#16345a,#0b1629 38%,#050b14);color:#f4f8ff;min-height:100vh;padding:24px}"
+        "h1{margin:0 0 8px;font-size:24px}"
+        ".sub{color:#9ab;margin-bottom:18px;font-size:14px}"
+        "table{width:100%;max-width:760px;border-collapse:collapse;background:rgba(15,28,48,.85);"
+        "border:1px solid #234;border-radius:14px;overflow:hidden}"
+        "th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #1e3a5a}"
+        "th{background:#1a3354;font-weight:600;font-size:13px;color:#9be}"
+        "tr:last-child td{border-bottom:none}"
+        ".st{font-weight:600;font-size:13px}"
+        ".st-full{color:#4ade80}"
+        ".st-med{color:#86efac}"
+        ".st-low{color:#fbbf24}"
+        ".st-empty{color:#f87171}"
+        ".st-na{color:#64748b}"
+        ".mm{color:#a8b8d0;font-family:monospace}"
+        ".stale{opacity:.5}"
+        "#status{margin-top:14px;font-size:12px;color:#7a8aa0}"
+        "</style>"
+        "</head><body>"
+        "<h1>📏 VL53L0X — ระยะวัดยา (Live)</h1>"
+        "<div class=sub>รีเฟรชอัตโนมัติทุก 3 วินาที &middot; แต่ละ refresh ปลุก VL53 อ่านค่าใหม่</div>"
+        "<table id=tbl>"
+        "<thead><tr><th>โมดูล</th><th>สถานะ</th><th>ระยะดิบ</th><th>ระยะกรอง</th><th>เม็ดยา</th></tr></thead>"
+        "<tbody id=rows>"
+        "<tr><td colspan=5 class=st-na>กำลังโหลด...</td></tr>"
+        "</tbody>"
+        "</table>"
+        "<div id=status></div>"
+        "<script>"
+        "const STATE={0:['ไม่ทราบ','st-na'],1:['ยาหมด','st-empty'],"
+        "2:['ยาน้อย','st-low'],3:['มียา','st-med'],4:['ยาเต็ม','st-full']};"
+        "function classify(ch){"
+          "if(!ch.present)return ['ไม่ต่อ','st-na'];"
+          "if(!ch.valid)return ['อ่านไม่ได้','st-na'];"
+          "const d=ch.filtered_mm;"
+          "if(d<0)return ['ไม่ทราบ','st-na'];"
+          "if(d>=230)return STATE[1];"
+          "if(d>=150)return STATE[2];"
+          "if(d>=60)return STATE[3];"
+          "return STATE[4];"
+        "}"
+        "async function refresh(){"
+          "try{"
+            "const t0=Date.now();"
+            "const r=await fetch('/sensors.json?refresh=1');"
+            "const j=await r.json();"
+            "const dt=Date.now()-t0;"
+            "let html='';"
+            "for(const ch of j.channels){"
+              "const [lbl,cls]=classify(ch);"
+              "const stale=ch.valid?'':' stale';"
+              "html+=`<tr class='${stale}'><td>โมดูล ${ch.idx}</td>"
+                "<td class='st ${cls}'>${lbl}</td>"
+                "<td class=mm>${ch.raw_mm} mm</td>"
+                "<td class=mm>${ch.filtered_mm} mm</td>"
+                "<td>${ch.pill_count<0?'-':ch.pill_count}</td></tr>`;"
+            "}"
+            "document.getElementById('rows').innerHTML=html;"
+            "document.getElementById('status').textContent="
+              "'อัปเดตล่าสุด '+new Date().toLocaleTimeString('th-TH')+' (อ่านใช้เวลา '+dt+' ms)';"
+          "}catch(e){"
+            "document.getElementById('status').textContent='Error: '+e.message;"
+          "}"
+        "}"
+        "refresh();setInterval(refresh,3000);"
+        "</script>"
+        "</body></html>";
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
 }
 
 esp_err_t sensors_config_handler(httpd_req_t *req)
@@ -1769,25 +1893,40 @@ esp_err_t audit_json_handler(httpd_req_t *req)
     esp_err_t auth = web_require_maintenance_api_auth(req);
     if (auth != ESP_OK) return auth;
 
-    dispenser_audit_entry_t entries[32];
-    size_t n = dispenser_audit_get(entries, 32);
+    /* Ring expanded from 32 to 256 (persistent in NVS as of 2026-05-12).
+     * Heap-allocate the snapshot since 256 * sizeof(entry) ≈ 3 KB is too
+     * big for the httpd worker stack. JSON payload is heap too — grows
+     * proportionally to the number of entries. */
+    size_t total = dispenser_audit_count();
+    if (total > 256) total = 256;
+    dispenser_audit_entry_t *entries = NULL;
+    size_t n = 0;
+    if (total > 0) {
+        entries = (dispenser_audit_entry_t *)calloc(total, sizeof(*entries));
+        if (!entries) return httpd_resp_send_500(req);
+        n = dispenser_audit_get(entries, total);
+    }
 
-    char *out = (char *)malloc(4096);
-    if (!out) return httpd_resp_send_500(req);
+    /* JSON output budget: header + ~120 bytes per entry + trailer. Cap
+     * at 32 KB (httpd default response buffer is big enough on P4). */
+    const size_t OUT_CAP = 32 * 1024;
+    char *out = (char *)malloc(OUT_CAP);
+    if (!out) { free(entries); return httpd_resp_send_500(req); }
     size_t off = 0;
 
     const netpie_shadow_t *sh = netpie_get_shadow();
-    off += snprintf(out + off, 4096 - off, "{\"ok\":true,\"count\":%u,\"entries\":[", (unsigned)n);
-    for (size_t i = 0; i < n && off < 4000; ++i) {
+    off += snprintf(out + off, OUT_CAP - off, "{\"ok\":true,\"count\":%u,\"entries\":[", (unsigned)n);
+    for (size_t i = 0; i < n && off < OUT_CAP - 200; ++i) {
         const dispenser_audit_entry_t *e = &entries[i];
         const char *name = (sh && e->med_idx >= 0 && e->med_idx < DISPENSER_MED_COUNT &&
                             sh->med[e->med_idx].name[0]) ? sh->med[e->med_idx].name : "";
-        off += snprintf(out + off, 4096 - off,
+        off += snprintf(out + off, OUT_CAP - off,
                         "%s{\"ts\":%lu,\"med\":%d,\"name\":\"%s\",\"from\":%d,\"to\":%d,\"src\":\"%c\"}",
                         i ? "," : "", (unsigned long)e->timestamp,
                         e->med_idx + 1, name, e->from_count, e->to_count, e->source);
     }
-    snprintf(out + off, 4096 - off, "]}");
+    snprintf(out + off, OUT_CAP - off, "]}");
+    free(entries);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");

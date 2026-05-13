@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd /c \"call C:\\\\Users\\\\peekz\\\\esp\\\\esp-idf\\\\export.bat && idf.py -B build_idf -p COM6 flash\")",
+      "Bash(where idf.py)",
+      "Bash(ls \"C:/Espressif/frameworks/esp-idf-v5.3.2/components/esp_driver_jpeg/include\")",
+      "Bash(ls __TRACKED_VAR__/esp/esp-idf/components/esp_driver_jpeg/include)",
+      "Bash(cmd //c \"build.bat\")",
+      "Bash(cmd //c \"D:\\\\\\\\project\\\\\\\\ddddddddd\\\\\\\\unified_cam\\\\\\\\build.bat\")",
+      "PowerShell(cmd.exe /c \"D:\\\\project\\\\ddddddddd\\\\unified_cam\\\\build.bat\" 2>&1 | Select-Object -Last 80)",
+      "PowerShell(cmd.exe /c \"D:\\\\project\\\\ddddddddd\\\\unified_cam\\\\build.bat\" 2>&1 | Select-Object -Last 25)",
+      "PowerShell(cmd.exe /c \"D:\\\\project\\\\ddddddddd\\\\unified_cam\\\\flash.bat\" 2>&1 | Select-Object -Last 60)"
+    ]
+  }
+}

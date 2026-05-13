@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unified Cam — Full Workflow & Design Rationale</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --text: #d0d7de;
+    --dim: #8b949e;
+    --accent: #58a6ff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --bad: #f85149;
+    --code-bg: #1c2128;
+    --border: #30363d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Sarabun", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .layout { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+  nav {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 24px 16px;
+    position: sticky; top: 0; height: 100vh;
+    overflow-y: auto;
+    font-size: 13px;
+  }
+  nav h2 { font-size: 11px; text-transform: uppercase; color: var(--dim); margin: 18px 0 6px; letter-spacing: 1px; }
+  nav h2:first-child { margin-top: 0; }
+  nav a { display: block; color: var(--text); text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+  nav a:hover { background: rgba(88, 166, 255, 0.1); color: var(--accent); }
+  main { padding: 32px 48px; max-width: 1100px; }
+  h1 { font-size: 32px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+  h2 { font-size: 24px; margin-top: 48px; color: var(--accent); }
+  h3 { font-size: 18px; color: var(--text); margin-top: 28px; }
+  h4 { font-size: 15px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 20px; }
+  code { background: var(--code-bg); padding: 2px 6px; border-radius: 3px; font-size: 0.9em; color: #e6edf3; }
+  pre {
+    background: var(--code-bg);
+    padding: 14px 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--panel); color: var(--accent); }
+  tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge.ok { background: rgba(63, 185, 80, 0.15); color: var(--ok); }
+  .badge.warn { background: rgba(210, 153, 34, 0.15); color: var(--warn); }
+  .badge.bad { background: rgba(248, 81, 73, 0.15); color: var(--bad); }
+  .callout {
+    background: rgba(88, 166, 255, 0.08);
+    border-left: 3px solid var(--accent);
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .callout.warn { background: rgba(210, 153, 34, 0.08); border-color: var(--warn); }
+  .callout.bad { background: rgba(248, 81, 73, 0.08); border-color: var(--bad); }
+  .callout.ok { background: rgba(63, 185, 80, 0.08); border-color: var(--ok); }
+  .ascii-diagram {
+    background: var(--code-bg);
+    padding: 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-family: "JetBrains Mono", "Cascadia Code", monospace;
+    font-size: 12px;
+    overflow-x: auto;
+    white-space: pre;
+    color: #d0d7de;
+  }
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+  .meta { color: var(--dim); font-size: 13px; margin-bottom: 24px; }
+  ul, ol { padding-left: 24px; }
+  li { margin: 4px 0; }
+  .kbd { background: #2d333b; border: 1px solid #444c56; border-bottom-width: 2px; padding: 1px 5px; border-radius: 3px; font-size: 11px; font-family: monospace; }
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+    nav { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    main { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav>
+  <h2>ภาพรวม</h2>
+  <a href="#intro">บทนำ + ที่มา</a>
+  <a href="#hardware">Hardware</a>
+  <a href="#architecture">Software architecture</a>
+
+  <h2>Flow</h2>
+  <a href="#boot">Boot sequence</a>
+  <a href="#dispense">การจ่ายยา</a>
+  <a href="#ir-detection">การตรวจจับยา (IR)</a>
+  <a href="#scheduler">Scheduler</a>
+  <a href="#network">Network stack</a>
+  <a href="#offline">Offline queue</a>
+  <a href="#display">Display + UI</a>
+
+  <h2>การออกแบบ</h2>
+  <a href="#i2c-race">IDF v5.3.2 I2C race</a>
+  <a href="#safe-mode-removed">เคย: safe_mode (ลบแล้ว)</a>
+  <a href="#why-decisions">หลักคิดสำคัญ</a>
+
+  <h2>Bug history</h2>
+  <a href="#bug-camera">Camera boot retry</a>
+  <a href="#bug-i2c-deadbus">Dead I2C bus</a>
+  <a href="#bug-tca-absent">TCA absent panic loop</a>
+  <a href="#bug-photo">Photo black (E2 revert)</a>
+  <a href="#bug-list">Bug list ทั้งหมด</a>
+
+  <h2>ต่อยอด</h2>
+  <a href="#future">งานที่ค้าง / ต่อยอด</a>
+  <a href="#operations">การใช้งาน / Operations</a>
+</nav>
+
+<main>
+<h1>Unified Cam — Full Workflow & Design Rationale</h1>
+<p class="meta">ESP32-P4-Nano Pill Dispenser • Branch <code>fix/cloud-networking-bugs</code> • อัพเดต 2026-05-11</p>
+
+<!-- ============================================================ -->
+<h2 id="intro">บทนำ + ที่มา</h2>
+
+<p>โปรเจกต์นี้คือ <strong>เครื่องจ่ายยาอัตโนมัติ (Automated Pill Dispenser)</strong> ที่ใช้ ESP32-P4-Nano เป็นสมองหลัก รวมระบบ: กล้อง MIPI-CSI (OV5647) สำหรับถ่ายภาพยืนยันการจ่าย, จอ TFT 480×320 ที่มี touch, servo 6 ช่องสำหรับหมุน carousel จ่ายยา, IR sensor 6 ตัวสำหรับตรวจการตกของยา, RTC สำหรับนาฬิกาแม่นยำ, WiFi + NETPIE MQTT + Telegram bot + Google Sheets สำหรับการแจ้งเตือนและ log ระยะไกล</p>
+
+<div class="callout">
+<strong>เป้าหมายของระบบ:</strong>
+<ul>
+  <li>จ่ายยาตามเวลาที่ผู้ใช้ตั้งไว้ (7 slot ต่อวัน — เช้าก่อน/หลังอาหาร, เที่ยงก่อน/หลัง, เย็นก่อน/หลัง, ก่อนนอน)</li>
+  <li>ตรวจสอบว่ายาถูกหยิบไปจริงผ่าน IR beam</li>
+  <li>แจ้งเตือน Telegram พร้อมรูปถ่ายเมื่อถึงเวลาจ่าย</li>
+  <li>log ทุก event ไป Google Sheets เก็บประวัติ</li>
+  <li>ทำงานต่อได้เมื่อ WiFi หลุด (queue events ใน NVS)</li>
+  <li>UI บนหน้าจอ touch สำหรับ on-device control</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="hardware">Hardware</h2>
+
+<h3>Pin map ปัจจุบัน</h3>
+
+<table>
+<thead><tr><th>Pin</th><th>หน้าที่</th><th>หมายเหตุ</th></tr></thead>
+<tbody>
+<tr><td>GPIO 7, 8</td><td>I2C SDA / SCL</td><td>ใช้ shared bus กับ peripherals ทั้งหมดที่ 50 kHz</td></tr>
+<tr><td>GPIO 14-19</td><td>SDIO ESP-Hosted (WiFi co-processor)</td><td>ESP32-P4 ไม่มี WiFi ในตัว — ใช้ ESP32-C6 ผ่าน SDIO</td></tr>
+<tr><td>GPIO 20, 22, 23, 47, 48, 53</td><td>VL53L0X XSHUT (เผื่อใช้)</td><td>ตอนนี้ user ยังไม่ใช้ VL53</td></tr>
+<tr><td>GPIO 21</td><td>FT6336U Touch RST</td><td>active-low pulse</td></tr>
+<tr><td>GPIO 24, 25, 26, 32, 36</td><td>TFT SPI (DC, RST, CS, MOSI, SCK)</td><td>ST7796S 40 MHz</td></tr>
+<tr><td>GPIO 33</td><td>Camera XCLK</td><td>24 MHz สำหรับ OV5647</td></tr>
+<tr><td>GPIO 37, 38</td><td>DFPlayer UART (TX/RX)</td><td>DY-HV20T audio @ 9600 baud</td></tr>
+<tr><td>GPIO 54</td><td>ESP-Hosted reset</td><td>reset C6 co-processor</td></tr>
+<tr><td>MIPI dedicated</td><td>Camera DPHY 2-lane</td><td>800×640 RAW8 @ 50 fps</td></tr>
+</tbody>
+</table>
+
+<h3>I2C peripherals</h3>
+
+<table>
+<thead><tr><th>Addr</th><th>Device</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><code>0x20</code></td><td>PCF8574</td><td>I2C input expander — อ่าน IR sensor 6 ตัว</td></tr>
+<tr><td><code>0x36</code></td><td>OV5647 (camera SCCB)</td><td>SCCB config ของ sensor — รัน MIPI ที่ DPHY lanes แยก</td></tr>
+<tr><td><code>0x38</code></td><td>FT6336U</td><td>Touch controller 5-point</td></tr>
+<tr><td><code>0x40</code></td><td>PCA9685</td><td>16-channel PWM driver — ขับ servo 6 ตัว</td></tr>
+<tr><td><code>0x68</code></td><td>DS3231</td><td>RTC พร้อม battery backup</td></tr>
+<tr><td><code>0x70</code></td><td>TCA9548A (optional)</td><td>I2C mux สำหรับ VL53L0X 6 ตัว — ตอนนี้ไม่ต่อ</td></tr>
+</tbody>
+</table>
+
+<h3>Power tree</h3>
+<div class="ascii-diagram">
+              5V 10A external supply (USB-C or DC jack)
+                              │
+              ┌───────────────┼────────────────┐
+              ▼               ▼                ▼
+         ESP32-P4 board    PCA9685 V+      Camera AVDD LDO
+              │             servos          (2.8V regulated)
+              ▼              (×6)
+         3.3V LDO         PCF8574 VCC      Display VCC 3.3V
+              │           (3.3V or 5V)
+              ▼
+         3.3V rail
+              │
+         I2C pull-ups (internal to modules)
+         IR sensor modules VCC
+         Touch IC VCC
+         DFPlayer logic
+</div>
+
+<!-- ============================================================ -->
+<h2 id="architecture">Software architecture</h2>
+
+<h3>FreeRTOS task structure (post-init)</h3>
+
+<table>
+<thead><tr><th>Task</th><th>Prio</th><th>Stack</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><code>main / app_main</code></td><td>1</td><td>8 KB</td><td>boot init + keepalive loop + alive log</td></tr>
+<tr><td><code>deferred_init</code></td><td>5</td><td>8 KB</td><td>init รอบสองหลัง main ready (dfplayer, wifi, web, etc.)</td></tr>
+<tr><td><code>clk_task</code></td><td>3</td><td>10 KB</td><td>display rendering + touch polling + clock tick</td></tr>
+<tr><td><code>dispenser</code></td><td>4</td><td>8 KB</td><td>scheduler — เช็คเวลา trigger slot, รัน dispense</td></tr>
+<tr><td><code>cam_retry</code></td><td>3</td><td>4 KB</td><td>retry camera init ถ้าครั้งแรก fail</td></tr>
+<tr><td><code>cam_task</code></td><td>7</td><td>8 KB</td><td>รับ MIPI frame → call JPEG encoder</td></tr>
+<tr><td><code>tg_poll</code></td><td>5</td><td>9 KB</td><td>poll Telegram bot getUpdates ทุก 3s</td></tr>
+<tr><td><code>tg_text_wrk</code></td><td>5</td><td>10 KB</td><td>HTTPS send สำหรับ text/photo</td></tr>
+<tr><td><code>mqtt_task</code></td><td>5</td><td>5 KB</td><td>NETPIE MQTT subscribe + publish</td></tr>
+<tr><td><code>offline_watch</code></td><td>3</td><td>4 KB</td><td>retry offline queue ทุก 5s — มี rate-limit log</td></tr>
+<tr><td><code>sync_time</code></td><td>5</td><td>4 KB</td><td>SNTP poll + update DS3231 ทุก 6 ชม</td></tr>
+<tr><td><code>liveness</code></td><td>1</td><td>4 KB</td><td>feed task watchdog ทุก 2s</td></tr>
+<tr><td><code>idle_music</code></td><td>3</td><td>3 KB</td><td>background music เมื่อ idle</td></tr>
+<tr><td><code>cli_task</code></td><td>5</td><td>4 KB</td><td>UART debug console</td></tr>
+<tr><td><code>httpd × 2</code></td><td>5</td><td>7.5 KB each</td><td>HTTP server (port 80 API + port 81 MJPEG)</td></tr>
+<tr><td><code>usb_lib / usb_class</code></td><td>2-3</td><td>4 KB</td><td>USB HID mouse (debug)</td></tr>
+</tbody>
+</table>
+
+<h3>Shared resources + sync</h3>
+<ul>
+  <li><strong>I2C bus mutex</strong> (<code>g_i2c_mutex</code>): กั้นทุก I2C op — ทุก task ที่ใช้ I2C ต้อง take ก่อน</li>
+  <li><strong>Dispense state mutex</strong> (<code>s_dispense_state_mux</code>): กั้น <code>s_waiting_confirm</code>, <code>s_dispense_approved</code>, <code>s_pending_slot_idx</code></li>
+  <li><strong>Display mutex</strong> (<code>s_disp_mutex</code>): กั้น <code>fill_rect</code> static buffer cache</li>
+  <li><strong>IP mux</strong> (<code>s_ip_mux</code>): กั้น <code>s_ip</code> string write</li>
+  <li><strong>NETPIE shadow mutex</strong>: กั้น parse_shadow + setter; <code>netpie_get_shadow()</code> คืน double-buffered snapshot</li>
+  <li><strong>Offline queue mutex</strong> (<code>s_lock</code>): กั้น queue arrays + NVS save/load</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="boot">Boot sequence</h2>
+
+<div class="ascii-diagram">
+t=0       POWERON / SW reset
+          │
+t=0.4s    ESP-IDF 2nd stage bootloader → load app
+          │
+t=1.6s    PSRAM init (32MB @ 200MHz)
+          │
+t=1.7s    ESP-Hosted SDIO init → handshake C6 co-processor
+          │
+t=1.9s    app_main()
+          │  ├─ NVS init + boot magic check
+          │  ├─ panic counter (last reset reason)
+          │  ├─ cloud_secrets_load (Telegram/Sheets tokens)
+          │  │
+t=2.0s    │ ├─ I2C bus init (SDA=7, SCL=8, 50kHz)
+          │  ├─ ds3231_seed_system_time() ← seed clock จาก RTC
+          │  ├─ I2C scan (per-device pings)
+          │  │
+t=2.1s    │ ├─ camera_init() (lazy — เริ่มจริงตอน /photo ครั้งแรก)
+          │  │  ├─ jpeg_encoder init (PSRAM buffers 3x1MB)
+          │  │  ├─ AVDD LDO power-cycle 200ms
+          │  │  ├─ XCLK 24MHz on GPIO33
+          │  │  ├─ VL53 XSHUT lowered (เพื่อให้ SCCB ไม่ชน)
+          │  │  ├─ SCCB read PID 0x5647 → set 800x640 RAW8
+          │  │  ├─ ISP cfg + LINESYNC override (0x4800=0x10)
+          │  │  └─ MIPI stream-on → first frame received
+          │  │
+          │  ├─ Probe FT6336U (touch) — fallback mode ถ้า chip-id ผิด
+          │  ├─ Probe TCA9548A — skip VL53 ถ้าไม่เจอ
+          │  ├─ PCA9685 init (servo PWM 50Hz, load NVS angles)
+          │  ├─ PCF8574 init (all pins input)
+          │  ├─ FT6336U full init (reset + verify)
+          │  ├─ display_clock_init (SPI2 40MHz, ST7796S init seq)
+          │  ├─ i2c_watchdog spawn (เฉพาะถ้า TCA up)
+          │  └─ display_clock_start_task (clock_task)
+          │
+t=14s     ├─ "app_main: init complete" → keepalive loop
+          │
+t=14s     deferred_init_task spawned:
+          │  ├─ dfplayer_init (UART 9600)
+          │  ├─ settings_load_nvs (volume, language)
+          │  ├─ start_webserver (port 80) + stream server (port 81)
+          │  ├─ dispenser_scheduler_start
+          │  ├─ usb_mouse_start
+          │  ├─ wifi_sta_init (อาจรอ 15s ถ้า SSID ผิด)
+          │  │  └─ ESP-Hosted reset → connect → GOT_IP
+          │  ├─ SNTP init → sync time → update DS3231
+          │  ├─ telegram_init (start polling task)
+          │  └─ netpie_init (MQTT subscribe)
+          │
+t=20-22s  All systems ready
+</div>
+
+<div class="callout warn">
+<strong>ทำไม camera ถูก init แบบ "lazy" / "early"?</strong><br>
+Camera SCCB ใช้ I2C bus เดียวกับ peripherals อื่น ถ้าเรา init camera ตอนที่ VL53 หรือ Touch กำลังโผล่ขึ้นมา จะชนกันแล้ว bus wedge. โค้ดเลย init camera ตั้งแต่ตอน I2C "บริสุทธิ์" สดๆ ก่อน peripheral ตัวอื่น แล้วค่อย restore VL53 XSHUT หลัง SCCB เสร็จ
+</div>
+
+<!-- ============================================================ -->
+<h2 id="dispense">การจ่ายยา (Dispense flow)</h2>
+
+<h3>Scheduled dispense (อัตโนมัติตามเวลา)</h3>
+<div class="ascii-diagram">
+dispenser_task (period ~10s):
+  ├─ get current HH:MM from system time
+  ├─ for each slot 0..6:
+  │   ├─ parse slot_time (e.g., "08:00")
+  │   ├─ delta = cur_minute - slot_minute (with day wrap)
+  │   ├─ skip if delta < 0 or > 5 min  ← grace window
+  │   ├─ skip if s_slot_last_fire[slot] within last 12h  ← refire guard
+  │   ├─ check meds assigned to slot (sh->med[i].slots bitmask)
+  │   ├─ check stock count > 0
+  │   ├─ send Telegram + audio "เตรียมยา"
+  │   ├─ set s_waiting_confirm = true, s_pending_slot_idx = slot
+  │   └─ wait for user CONFIRM via UI / Telegram
+  │
+  ├─ if confirmed → execute_dispense(slot):
+  │   ├─ pause vl53 polling (lock I2C)
+  │   ├─ for each med in slot:
+  │   │   ├─ pcf8574_block_during_servo_ramp(true) ← suppress phantom
+  │   │   ├─ pca9685_go_work(med)  ← ramp 1.35s
+  │   │   ├─ unblock + IR poll 7.5s for pill drop
+  │   │   ├─ debounce 3 LOW samples = real pill
+  │   │   ├─ pca9685_go_home(med) ← ramp 1.35s
+  │   │   └─ count++ if detected
+  │   ├─ play audio "จ่ายเสร็จ"
+  │   ├─ send Telegram photo + text summary
+  │   └─ log to Google Sheets (or queue if offline)
+</div>
+
+<h3>Manual dispense (กดผ่าน UI / Telegram /dispense)</h3>
+<p>เกือบเหมือน scheduled แต่:</p>
+<ul>
+  <li>ข้าม "waiting confirm" step</li>
+  <li>รัน <code>manual_dispense_task</code> เป็น task แยก ไม่ block scheduler</li>
+  <li>รองรับ qty arg: <code>qty=1..16</code> = จ่ายจำนวนเม็ดนี้, <code>qty=100</code> = eject all</li>
+  <li>Servo-trust mode: ถ้า IR ของ slot นั้น disabled → trust ทุก servo cycle = 1 pill</li>
+</ul>
+
+<h3>Return-pill flow (คืนยา)</h3>
+<p>หลักการเดียวกับ manual dispense — servo ทำงานสลับทิศ (work → home) → IR ตรวจการตกของยา → นับเข้า stock</p>
+
+<!-- ============================================================ -->
+<h2 id="ir-detection">การตรวจจับยา (IR + PCF8574)</h2>
+
+<h3>Hardware path</h3>
+<div class="ascii-diagram">
+IR module (FC-51, 6 ตัว, 1 ต่อ slot)
+   │ VCC 3.3V/5V
+   │ GND
+   │ OUT (open-collector + internal pull-up ~10kΩ)
+   │
+   ▼
+PCF8574 (0x20) — quasi-bidirectional, internal pull-up ~100µA
+   │
+   ▼ I2C
+   │
+ESP32-P4 — read byte → bit[N] for IR module N
+   - bit = 0 → DETECTED (active low — IR sees pill)
+   - bit = 1 → CLEAR
+</div>
+
+<h3>Software read logic</h3>
+<ul>
+  <li><code>pcf8574_read()</code> ส่ง 1-byte read ผ่าน I2C → คืน 8-bit state ของ pin ทั้งหมด</li>
+  <li>Dispense loop poll ที่ ~100 Hz</li>
+  <li><strong>Debounce: 3 LOW samples ติดต่อกัน</strong> (30ms) ถึงนับเป็น real pill</li>
+  <li><strong>Block during servo ramp:</strong> ระหว่าง <code>pca9685_set_angle_ramped</code> รัน (1.35s) → <code>pcf8574_read()</code> คืน 0xFF (no detection) → กัน phantom triggers จาก EMI servo</li>
+  <li>Error backoff: ถ้า I2C fail ติดต่อกัน → skip 50ms → ลองใหม่</li>
+</ul>
+
+<h3>ทำไมต้อง block ระหว่าง ramp?</h3>
+<div class="callout bad">
+<strong>EMI servo → PCF8574 → IR OUT line wobble</strong><br>
+Servo PWM 50Hz กระชากกระแสตอน edge transition → noise spike บนสาย power/ground → PCF8574 internal pull-up เพี้ยน → ดึง IR OUT line ของ IR module ขึ้น/ลงเป็นช่วงสั้นๆ → comparator ของ IR module toggle → LED indicator กระพริบ → PCF อ่านได้เป็น "detected" ผีๆ
+<br><br>
+Software-side mitigation: ปิดการอ่านระหว่าง ramp transition (จุดที่ noise สูง) → อ่านเฉพาะตอน servo นิ่งที่ WORK position (จุดที่ pill ตกจริง)
+<br><br>
+Hardware-side (ยังไม่ทำ): ใส่ 100nF cap คร่อม PCF8574 VCC↔GND + bulk 10µF จะลด noise ที่ source ได้มากกว่า
+</div>
+
+<h3>Servo-trust mode (IR ปิด)</h3>
+<p>ถ้า user ตั้งค่า IR ของ slot นั้นเป็น disabled (ผ่าน <code>/tech/ir</code> endpoint) → dispense loop จะ:</p>
+<ul>
+  <li>ไม่อ่าน PCF8574 (skip IR poll)</li>
+  <li>servo cycle 1 รอบ = นับเป็น 1 pill (trust ระบบกลไก)</li>
+  <li>"Return all" cap loop ที่ <code>stock_count</code> ของ shadow แทน 16</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="scheduler">Scheduler (การจัดเวลาจ่ายยา)</h2>
+
+<h3>Schedule source</h3>
+<p>เวลาแต่ละ slot ดึงจาก NETPIE MQTT shadow → cache ใน NVS เผื่อ offline</p>
+
+<pre><code>shadow.slot_time[0..6] = ["08:00", "08:30", "12:00", "12:30", "17:00", "17:30", "21:00"]
+shadow.med[0..5] = {
+  name: "Paracetamol",
+  count: 5,
+  slots: 0b0000011  // bit 0+1 = slot 0,1 (morning pre+post)
+}
+shadow.enabled = true</code></pre>
+
+<h3>Trigger logic (per-slot fire guard)</h3>
+<ul>
+  <li>scheduler ตื่นทุก ~10s</li>
+  <li>คำนวณ <code>delta = cur_minute - slot_minute</code> (fold รอบ midnight)</li>
+  <li>Fire ถ้า <code>0 ≤ delta ≤ 5</code> นาที <strong>AND</strong> <code>s_slot_last_fire[slot]</code> ไม่เคยยิงใน 12 ชม</li>
+  <li>หลังยิง → set <code>s_slot_last_fire[slot] = time(NULL)</code></li>
+</ul>
+
+<div class="callout warn">
+<strong>ทำไมต้องมี grace 5 นาที?</strong><br>
+ถ้า scheduler task ติด dispense ที่ slot ก่อนหน้า อาจตื่นช้าไป 1-2 นาที พอตื่นแล้ว slot ใหม่อาจเลยเวลาไป 1 นาที — strict "diff == 0" เดิมทำให้พลาด. Grace 5 นาทีเก็บความล่าช้าได้ + 12-ชม refire guard กันยิงซ้ำเพราะ grace กว้าง
+</div>
+
+<!-- ============================================================ -->
+<h2 id="network">Network stack</h2>
+
+<h3>WiFi STA via ESP-Hosted</h3>
+<p>ESP32-P4 ไม่มี WiFi ในตัว — ใช้ ESP32-C6 เป็น co-processor ผ่าน SDIO 4-bit 40MHz</p>
+
+<h4>Reconnect backoff</h4>
+<ul>
+  <li>WiFi disconnect event → <code>wifi_schedule_backoff_reconnect()</code></li>
+  <li>esp_timer one-shot 5s → call <code>esp_wifi_connect()</code></li>
+  <li>fixed_timer ใน firmware: ถ้า timer active แล้ว → ไม่ re-arm (กัน stuck pending flag)</li>
+</ul>
+
+<h3>SNTP (auto time sync)</h3>
+<ul>
+  <li>connect แล้ว → SNTP poll <code>pool.ntp.org</code></li>
+  <li>sync สำเร็จ → <code>ds3231_set_time()</code> update RTC ด้วย</li>
+  <li>resync ทุก 6 ชม กัน RTC drift</li>
+</ul>
+
+<h3>NETPIE 2020 MQTT</h3>
+<ul>
+  <li>broker <code>mqtt.netpie.io:1883</code></li>
+  <li>topic <code>@shadow/data/update</code> = receive schedule + med config</li>
+  <li>topic <code>@shadow/data/get</code> = request current shadow</li>
+  <li>parse_shadow JSON → update internal <code>s_shadow</code> → publish to double-buffered snapshot</li>
+  <li>auto reconnect บน event_disconnect</li>
+</ul>
+
+<h3>Telegram bot</h3>
+<ul>
+  <li>poll <code>getUpdates</code> ทุก 3s</li>
+  <li>commands: <code>/photo</code>, <code>/dispense N M</code>, <code>/return N M</code>, <code>/status</code>, <code>/report YYYY-MM</code></li>
+  <li>send: text (<code>sendMessage</code>), photo (<code>sendPhoto</code> multipart with JPEG)</li>
+  <li>HTTP lock — กั้น concurrent HTTP client</li>
+  <li>photo inflight gate: max 1 photo upload at a time (queue ถ้ามี dispatch ซ้อน)</li>
+</ul>
+
+<h3>Google Sheets logging</h3>
+<ul>
+  <li>POST JSON ไป Google Apps Script URL (ผู้ใช้ deploy เอง)</li>
+  <li>field: <code>event</code> (Dispensed/Skipped/Refilled), <code>meds</code>, <code>detail</code></li>
+  <li>endpoint dead detection: HTTP 404/405 → set <code>s_gsheet_endpoint_dead</code> = stop retrying, ค้าง queue ไว้รอ reboot</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="offline">Offline queue design</h2>
+
+<h3>ทำไมต้องมี</h3>
+<p>WiFi อาจหลุดเป็นช่วงๆ (router reboot, signal weak). ถ้าจ่ายยาตอน WiFi หลุด ก็ยังต้อง:</p>
+<ul>
+  <li>Update shadow.med.count ที่ NETPIE</li>
+  <li>ส่ง Telegram notification</li>
+  <li>Log Google Sheets event</li>
+</ul>
+<p>ทุก action ที่ network dependent → queue ใน RAM + persist NVS → flush เมื่อ network กลับมา</p>
+
+<h3>Queue structure (after NVS-size fix 2026-05-11)</h3>
+<table>
+<thead><tr><th>Queue</th><th>Items</th><th>Item size</th><th>Blob total</th></tr></thead>
+<tbody>
+<tr><td><code>shadow_queue</code></td><td>20</td><td>192 B (JSON payload)</td><td>3 840 B ✓ NVS limit</td></tr>
+<tr><td><code>event_queue</code></td><td>6</td><td>641 B (type + 3 fields)</td><td>3 846 B ✓ NVS limit</td></tr>
+</tbody>
+</table>
+
+<div class="callout warn">
+<strong>ก่อนหน้า:</strong> 24 items × 1025 B = 24 600 B ทำให้ <code>nvs_set_blob</code> fail ทุกครั้ง (ESP_ERR_NVS_VALUE_TOO_LONG = 4366) → events ไม่ persist ข้าม reboot
+<br><strong>ปัจจุบัน:</strong> fit ใต้ 4KB NVS blob limit → events อยู่รอด reboot
+</div>
+
+<h3>Flush logic</h3>
+<ul>
+  <li><code>offline_watch_task</code> ตื่นทุก 5s</li>
+  <li>ถ้ามี work pending + WiFi/MQTT connected → spawn <code>offline_flush_task</code></li>
+  <li>send each shadow_queue item via MQTT publish</li>
+  <li>send each event_queue item via Telegram or Google Sheets</li>
+  <li>success → ลบจาก queue + save NVS</li>
+  <li>fail → ทิ้งไว้ลองใหม่รอบหน้า</li>
+  <li>log rate-limited: max 1 ครั้ง/นาที (ไม่ spam)</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="display">Display + UI</h2>
+
+<h3>Hardware</h3>
+<ul>
+  <li>ST7796S 480×320 RGB565 SPI 40 MHz</li>
+  <li>Touch: FT6336U I2C 5-point (ตอนนี้รัน fallback mode เพราะ chip-id อ่านได้ 0x00 แต่ I2C address ACK)</li>
+</ul>
+
+<h3>Render task (clk_task)</h3>
+<ul>
+  <li>period: ตื่นทุก 80ms (12.5 fps)</li>
+  <li>force_redraw flag → full page repaint</li>
+  <li>per-element dirty tracking — ไม่ repaint ที่ไม่จำเป็น</li>
+  <li>fill_rect ทุกครั้งล็อก <code>s_disp_mutex</code> — กัน static buf race</li>
+</ul>
+
+<h3>Pages</h3>
+<table>
+<thead><tr><th>Page</th><th>เนื้อหา</th></tr></thead>
+<tbody>
+<tr><td>STANDBY</td><td>นาฬิกา + วันที่ + next dose countdown + 6 med status icons + emergency button</td></tr>
+<tr><td>MENU</td><td>Meds / Schedule / Settings / Wi-Fi / Info</td></tr>
+<tr><td>SETUP_MEDS</td><td>edit medicine name + count + slot bitmask (ภาษาไทย keyboard)</td></tr>
+<tr><td>SETUP_SCHEDULE</td><td>edit slot_time 7 × HH:MM</td></tr>
+<tr><td>SETTINGS</td><td>volume, language, quiet hours, IR per-slot toggle</td></tr>
+<tr><td>WIFI</td><td>SSID + password input</td></tr>
+<tr><td>KEYBOARD</td><td>Thai/English QWERTY virtual keyboard</td></tr>
+<tr><td>CONFIRM</td><td>OK/Cancel dialog</td></tr>
+</tbody>
+</table>
+
+<h3>UTF-8 Thai rendering</h3>
+<p>FreeSans font (Adafruit GFX format) ไม่มี Thai glyphs → firmware มี custom <code>ui_utf8_font_data.h</code> + <code>ui_utf8_text.h</code> ที่ render Thai characters เอง</p>
+
+<!-- ============================================================ -->
+<h2 id="i2c-race">IDF v5.3.2 i2c_master ISR race</h2>
+
+<div class="callout bad">
+<strong>Critical context:</strong> ESP-IDF v5.3.2 มี known bug ใน <code>i2c_master</code> driver — เมื่อ <code>i2c_master_probe()</code> ลอง probe device ที่ไม่มีอยู่จริง บางครั้ง <code>i2c_ll_read_rxfifo</code> ใน ISR จะ dereference NULL/invalid pointer → store fault → panic
+</div>
+
+<h3>Signature</h3>
+<pre><code>Core0 Saved PC: 0x4ff068f2 (i2c_master_isr_handler_default+656)
+Core1 Saved PC: 0x4ff06bd4 (i2c_master_isr_handler_default+682)
+ptr=0x6 in i2c_ll_read_rxfifo</code></pre>
+
+<h3>Mitigations ที่ shipped</h3>
+<ol>
+  <li><strong>late_detect_task DISABLED</strong> ([main.c]) — task เคย ping TCA ทุก 3s × 60 รอบ. ตอนนี้ถ้า user ต้องการตรวจ peripheral ที่เพิ่งต่อใหม่ → ต้อง reboot</li>
+  <li><strong>i2c_watchdog gated on TCA presence</strong> — task probe TCA ทุก 15s; ตอนนี้รันเฉพาะถ้า TCA เจอตอน boot</li>
+  <li><strong>g_tca_init_ok cache flag</strong> — ไม่ re-ping TCA หลัง init เพราะ spurious OK จาก noise ทำให้ VL53 bootstrap (45s I2C lockout) → panic</li>
+  <li><strong>recover_bus ไม่ esp_restart()</strong> — เดิมถ้า mutex timeout → restart → boot loop. ตอนนี้ return error ปกติ + main มี fallback path</li>
+  <li><strong>i2c_master state-reset retry</strong> ใน custom patched <code>components/esp_driver_i2c/</code> — retry on INVALID_STATE</li>
+  <li><strong>safe_mode / ultra_safe_mode REMOVED</strong> — logic recovery หลัง panic เดิมไม่มีประโยชน์เพราะอุดสาเหตุได้ตรงจุดแล้ว</li>
+</ol>
+
+<h3>Root fix (ยังไม่ได้ทำ)</h3>
+<p>upgrade ESP-IDF เป็น v5.3.3+ หรือเปลี่ยนไปใช้ legacy <code>driver/i2c.h</code> — ทั้งสองตัวเลือกใหญ่ ต้อง regression test ทุก peripheral</p>
+
+<!-- ============================================================ -->
+<h2 id="safe-mode-removed">เคย: safe_mode / ultra_safe_mode (ลบแล้ว 2026-05-10)</h2>
+
+<p>เดิมมี logic เพื่อจัดการ panic recovery — ถ้า boot ก่อนหน้า panic จะเข้า "safe_mode" (ข้าม VL53), ถ้า ≥3 panic ติดกันจะเข้า "ultra_safe_mode" (ข้าม I2C ทั้งหมด). ลบออกเพราะ:</p>
+<ul>
+  <li>Logic ซับซ้อน 18 references ใน main.c กระจาย</li>
+  <li>User เลือกใช้ flow เดียว (online/offline ทำงานเหมือนกัน) ไม่ต้องการ panic-recovery branch</li>
+  <li>Root cause ของ panic (i2c ISR race) ถูกอุดทั้งหมดที่ source แล้ว — ไม่ต้องการ post-panic fallback</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="why-decisions">หลักคิดสำคัญในการออกแบบ</h2>
+
+<h3>1. Lazy/early camera init</h3>
+<p><strong>ปัญหา:</strong> Camera SCCB ต้องการ I2C bus ที่บริสุทธิ์ (no stale state) — ถ้า VL53/touch/RTC ใช้ bus อยู่ก่อน → SCCB fail<br>
+<strong>วิธีแก้:</strong> Init camera "early" ก่อน peripheral อื่น ในขณะ I2C bus เพิ่ง init ใหม่ → SCCB ผ่าน → ปิด VL53 XSHUT ระหว่าง SCCB → restore หลังเสร็จ</p>
+
+<h3>2. Background camera retry</h3>
+<p><strong>ปัญหา:</strong> ~20-40% ของ cold boot OV5647 ไม่ตอบ SCCB ในรอบแรก (DPHY ยังไม่นิ่ง)<br>
+<strong>วิธีแก้:</strong> spawn <code>cam_retry_task</code> ทุก 8s × 38 ครั้ง (5 นาที total) — usually success ภายใน 1-3 retries</p>
+
+<h3>3. Servo ramp (soft motion)</h3>
+<p><strong>ปัญหา:</strong> servo snap ทันที → mechanical jolt → IR sensors สั่น → false detection + EMI กระชากแรง<br>
+<strong>วิธีแก้:</strong> ramp 2°/30ms × N steps → 90° throw ใช้ ~1.35s → smooth motion → ลด jolt + กระจาย current spike ออกไป → IR/I2C นิ่งขึ้น</p>
+
+<h3>4. PCF block during ramp</h3>
+<p><strong>ปัญหา:</strong> servo PWM EMI couple เข้า PCF8574 → IR OUT line wobble → phantom triggers<br>
+<strong>วิธีแก้:</strong> <code>pcf8574_block_during_servo_ramp(true)</code> ระหว่าง ramp — pcf8574_read คืน 0xFF (no detection) โดยไม่ไป I2C bus → debounce counter ไม่ latch noise → อ่านจริงเฉพาะตอน servo นิ่ง</p>
+
+<h3>5. Strict IR mode (default)</h3>
+<p><strong>หลักการ:</strong> IR เป็น authoritative counter — servo cycle ที่ IR ไม่เห็นยา = นับ 0 pill<br>
+<strong>เหตุผล:</strong> User ต้องการ "ใช้นับยาจริง" ไม่ใช่ trust กลไก (เพราะยาอาจติด ระดับน้ำมัน ฯลฯ)<br>
+<strong>Servo-trust mode เป็น opt-in</strong> เฉพาะ slot ที่ user disable IR ผ่าน UI</p>
+
+<h3>6. RTC seed at boot</h3>
+<p><strong>ปัญหา:</strong> System time = epoch 0 หลัง boot → display แสดง "1970-01-01" ก่อน SNTP มา (อาจ 15-30s)<br>
+<strong>วิธีแก้:</strong> <code>ds3231_seed_system_time()</code> ทันทีหลัง I2C ready (t≈2s) → display แสดงเวลาถูกต้องตั้งแต่ first render → SNTP ภายหลังจะ re-sync ทั้ง system time + RTC อีกที</p>
+
+<h3>7. Double-buffered shadow snapshot</h3>
+<p><strong>ปัญหา:</strong> parse_shadow update <code>s_shadow</code> fields ทีละตัว → reader ที่อ่านระหว่างนั้นเห็น half-updated data<br>
+<strong>วิธีแก้:</strong> 2 buffer + atomic pointer swap (32-bit aligned = atomic on RISC-V) → reader เห็น snapshot สมบูรณ์เสมอ ถึงแม้ parse กำลังรัน</p>
+
+<h3>8. Per-slot last-fire epoch + grace window</h3>
+<p><strong>ปัญหา:</strong> strict <code>diff == 0</code> minute match → ถ้า scheduler task ติด busy ในช่วง slot นั้น → พลาดทั้ง slot<br>
+<strong>วิธีแก้:</strong> grace 5 min + per-slot 12h refire guard — รับ delay ได้แต่ไม่ยิงซ้ำ</p>
+
+<h3>9. Endpoint dead detection (GSheet 405)</h3>
+<p><strong>ปัญหา:</strong> Google Apps Script URL ผิด/redeploy แล้ว → ทุก POST ได้ 405 → retry ทุก 5s → spam log + waste bandwidth<br>
+<strong>วิธีแก้:</strong> 404/405 = config error → set dead flag → stop retrying → log ครั้งเดียวพร้อมคำแนะนำ → events ค้างใน queue (รอด reboot) → user แก้ endpoint + reboot → flush ครั้งเดียว</p>
+
+<h3>10. Software block ก่อน hardware fix</h3>
+<p><strong>หลักคิด:</strong> หลายปัญหา (servo EMI, I2C race, NVS limit) มี hardware root cause แต่ user ไม่สะดวกเปลี่ยน hardware ทันที → ทำ software workaround ก่อน → user มีเวลาแก้ hardware ภายหลัง<br>
+<strong>ข้อแม้:</strong> software workaround ต้องไม่ปิดบัง bug — log ชัดเจน + ระบุว่าเป็น workaround</p>
+
+<!-- ============================================================ -->
+<h2 id="bug-camera">Bug: Camera ค้างที่ boot — backup firmware</h2>
+
+<h3>Symptom</h3>
+<p>Board boot → camera init fail × 9-16 ครั้ง → mutex deadlock → SW_CPU_RESET → boot loop ทุก ~50s</p>
+
+<h3>Diagnosis</h3>
+<ol>
+  <li>Capture serial log → เห็น <code>recover_bus: cannot take mutex (deadlocked) — restarting</code></li>
+  <li>Camera SCCB fail = OV5647 ไม่ตอบ <code>read pid_h</code></li>
+  <li>หลายครั้งของ recover_bus → mutex contention → restart</li>
+</ol>
+
+<h3>Fix</h3>
+<ul>
+  <li><code>i2c_manager.c:recover_bus</code> — เปลี่ยน 2s timeout → 15s + ลบ <code>esp_restart()</code> → return ESP_ERR_TIMEOUT แทน</li>
+  <li>Background camera retry task มี mutex-busy skip → ไม่ contend กับ recover_bus</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="bug-i2c-deadbus">Bug: Dead I2C bus (SDA=0 SCL=0)</h2>
+
+<h3>Symptom</h3>
+<ul>
+  <li>I2C scan เจอทุก address (0x09-0x6C = 97 ตัว) → ไม่ใช่ devices จริง</li>
+  <li>recover_bus log <code>Bus still stuck after 4 recovery rounds (SDA=0 SCL=0)</code></li>
+  <li>ทุก peripheral ขึ้น "OK" แต่อ่านได้ garbage</li>
+</ul>
+
+<h3>Root cause</h3>
+<p>SDA / SCL ค้าง LOW — ไม่มี/อ่อน pull-up resistor, หรือ peripheral พังดึง bus ลง</p>
+
+<h3>Fix</h3>
+<ul>
+  <li>Hardware: ใส่ pull-up R 4.7kΩ-10kΩ บน SDA, SCL → 3.3V (user ลอง 2.2kΩ ใช้ได้แต่หนัก, ภายหลังถอดออกเพราะ module มี internal pull-up เพียงพอ)</li>
+  <li>การปลด/เสียบ peripheral ระหว่าง debug บางครั้งช่วยปลดล็อก stuck device</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="bug-tca-absent">Bug: TCA absent → panic loop ทุก ~50s</h2>
+
+<h3>Symptom</h3>
+<p>หลังต่อ peripheral ครบ (camera + display + touch + servo + IR + RTC) แต่ไม่ต่อ TCA9548A — boot สำเร็จ แต่ panic ที่ t=50s หลัง init complete</p>
+
+<h3>Diagnosis</h3>
+<ul>
+  <li>Extract coredump → crashed task = <code>i2c_late</code>, function = <code>i2c_master_probe</code> address 0x70 (TCA)</li>
+  <li>late_detect_task ping TCA ทุก 3s → hit IDF v5.3.2 ISR race → panic</li>
+  <li>หลัง fix late_detect → ยังมี panic — coredump ครั้งใหม่ = <code>i2c_wdog</code> task ping TCA ทุก 15s</li>
+</ul>
+
+<h3>Fix</h3>
+<ol>
+  <li>Disable <code>late_detect_task</code> spawn เลย — TCA9548A เป็น soldered IC ไม่ hot-plug</li>
+  <li>Gate <code>i2c_watchdog_task</code> on <code>g_tca_init_ok</code> — ไม่สร้าง task ถ้า TCA absent</li>
+  <li>Cache TCA init result เป็น <code>g_tca_init_ok</code> — ไม่ re-ping (spurious OK จะทำให้ VL53 bootstrap)</li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="bug-photo">Bug: Telegram /photo คืนภาพดำ (E2 revert)</h2>
+
+<h3>Symptom</h3>
+<p>หลัง flash overnight patches → /photo ส่งภาพ JPEG ที่เปิดแล้วเป็นสีดำทั้งหมด — เดิมทำงานปกติ</p>
+
+<h3>Diagnosis</h3>
+<ul>
+  <li>Camera MIPI ยัง alive (frame counter ขึ้นปกติ 5500+ frames)</li>
+  <li>JPEG encoder ทำงาน — Telegram receive content length = 1197 (response, not request)</li>
+  <li>ภาพถูกส่งสำเร็จแต่ pixel data เป็น 0 → encoder อาจอ่าน buffer ที่ยังไม่ถูก write</li>
+</ul>
+
+<h3>Root cause</h3>
+<p>Audit ของ overnight patches เสนอ E2 fix: ใส่ <code>portENTER_CRITICAL_ISR</code> / <code>portENTER_CRITICAL</code> ใน camera ISR handlers + encoder task — ป้องกัน "race" ระหว่าง buffer index reads/writes.<br>
+แต่ critical sections เพิ่ม latency เล็กน้อยใน ISR — ทำให้ timing ระหว่าง DMA-finished + encoder-pickup เลื่อนนิดเดียว → encoder pick buffer ก่อน DMA flush ลง PSRAM → encode raw memory ว่าง</p>
+
+<h3>Fix</h3>
+<p>Revert E2 — กลับใช้ <code>volatile int</code> + atomic 32-bit read/write (ก่อนหน้านี้ทำงานหลายเดือนไม่มี race จริงๆ) → ภาพกลับมาปกติ</p>
+
+<div class="callout warn">
+<strong>บทเรียน:</strong> Audit's "Critical" severity ไม่ได้แปลว่าโค้ดเดิม buggy — บางครั้ง "theoretical race" ที่ตามทฤษฎีน่าจะมี practical impact 0 บนสถาปัตยกรรมจริง (RISC-V 32-bit aligned int = atomic read/write). Live test เท่านั้นที่จะรู้
+</div>
+
+<!-- ============================================================ -->
+<h2 id="bug-list">Bug list ทั้งหมด (chronological)</h2>
+
+<h3>2026-05-10 (Day 1)</h3>
+<table>
+<thead><tr><th>ID</th><th>Issue</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Boot loop จาก camera retry + mutex deadlock</td><td><span class="badge ok">FIXED</span> recover_bus 15s + no restart</td></tr>
+<tr><td>2</td><td>Dead I2C bus (SDA/SCL stuck low)</td><td><span class="badge ok">FIXED (HW)</span> pull-up + reseat connectors</td></tr>
+<tr><td>3</td><td>TCA absent → late_detect crash</td><td><span class="badge ok">FIXED</span> disable late_detect</td></tr>
+<tr><td>4</td><td>TCA absent → VL53 spurious bootstrap (45s I2C lockout)</td><td><span class="badge ok">FIXED</span> g_tca_init_ok cache</td></tr>
+<tr><td>5</td><td>TCA absent → i2c_wdog crash @ t=15s</td><td><span class="badge ok">FIXED</span> gate wdog on TCA</td></tr>
+<tr><td>6</td><td>Servo snap → mechanical jolt → IR phantom + EMI</td><td><span class="badge ok">FIXED</span> ramp 2°/30ms</td></tr>
+<tr><td>7</td><td>safe_mode / ultra_safe_mode dead code</td><td><span class="badge ok">REMOVED</span></td></tr>
+<tr><td>8</td><td>Web servo handlers always return ok:true on I2C fail</td><td><span class="badge ok">FIXED</span> check return + error JSON</td></tr>
+<tr><td>9</td><td>Scheduled dispense ignore go_work failure</td><td><span class="badge ok">FIXED</span> bail on fail</td></tr>
+<tr><td>10</td><td>Dispense state racy (s_waiting_confirm / s_dispense_approved)</td><td><span class="badge ok">FIXED</span> wrap in s_dispense_state_mux</td></tr>
+</tbody>
+</table>
+
+<h3>2026-05-11 (Day 2 morning)</h3>
+<table>
+<thead><tr><th>ID</th><th>Issue</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>A1</td><td>netpie_get_shadow returns raw pointer (race vs parse_shadow)</td><td><span class="badge ok">FIXED</span> double-buffered snapshot + atomic swap</td></tr>
+<tr><td>B2</td><td>Telegram photo write loop retry logic</td><td><span class="badge ok">HARDENED</span> bail on socket err / 5 consecutive zero writes</td></tr>
+<tr><td>E2</td><td>Camera ISR buffer index race (theoretical)</td><td><span class="badge bad">REVERTED</span> broke /photo, reverted to volatile-only</td></tr>
+<tr><td>I1</td><td>extract_form_value unbounded scan</td><td><span class="badge ok">FIXED</span> extract_form_value_n with body_len</td></tr>
+<tr><td>H2</td><td>Midnight slot miss (strict diff==0)</td><td><span class="badge ok">FIXED</span> grace 5 min + per-slot 12h guard</td></tr>
+<tr><td>L1</td><td>dfplayer UART fail → permanently muted</td><td><span class="badge ok">FIXED</span> auto-reinit after 5s cooldown</td></tr>
+<tr><td>L2</td><td>dfplayer vol cache before confirming write</td><td><span class="badge ok">FIXED</span> only cache on success</td></tr>
+<tr><td>B3</td><td>telegram_extract_arg1 silent truncation</td><td><span class="badge ok">FIXED</span> reject overflow + log</td></tr>
+<tr><td>D1</td><td>wifi reconnect timer stuck pending flag</td><td><span class="badge ok">FIXED</span> check esp_timer_is_active</td></tr>
+<tr><td>D2</td><td>nvs_get_wifi no null-term guarantee</td><td><span class="badge ok">FIXED</span> cap at 63 bytes</td></tr>
+<tr><td>F1</td><td>fill_rect static buffer racy across tasks</td><td><span class="badge ok">FIXED</span> s_disp_mutex</td></tr>
+<tr><td>F2</td><td>display_clock_set_ip racy with render</td><td><span class="badge ok">FIXED</span> s_ip_mux</td></tr>
+<tr><td>C1</td><td>offline_sync NVS save silent fail</td><td><span class="badge ok">FIXED</span> log set return codes</td></tr>
+<tr><td>RTC</td><td>System time = epoch 0 until SNTP</td><td><span class="badge ok">FIXED</span> ds3231_seed_system_time at boot</td></tr>
+<tr><td>NVS-size</td><td>Offline queue blob > 4KB → save fails</td><td><span class="badge ok">FIXED</span> 24→6 events, 24→20 shadow, shrunk fields</td></tr>
+<tr><td>GSheet 405</td><td>Endpoint dead → retry storm spam log</td><td><span class="badge ok">FIXED</span> detect + dead flag + rate-limit log</td></tr>
+<tr><td>PCF EMI</td><td>Servo PWM noise → IR phantom triggers via PCF</td><td><span class="badge ok">MITIGATED</span> pcf8574_block_during_servo_ramp</td></tr>
+<tr><td>Date 1970</td><td>Date validation rejects year &lt; 2001 → blank date</td><td><span class="badge ok">FIXED</span> via RTC seed</td></tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="future">งานที่ค้าง / ต่อยอด</h2>
+
+<h3>Hardware (สำคัญ)</h3>
+<ul>
+  <li><strong>ใส่ 100nF cap คร่อม PCF8574 VCC↔GND</strong> ที่ตัว chip — ลด EMI coupling ที่ source (ปัจจุบัน software block แค่ mitigate)</li>
+  <li><strong>ตรวจ pull-up เพิ่ม</strong> ถ้า bus เพี้ยนหลังต่อ peripheral ครบ</li>
+  <li><strong>ปรับ IR pot ทีละตัว</strong> ให้ LED ดับสนิทเวลาไม่มียา</li>
+  <li><strong>(ทางเลือก) ย้าย IR จาก PCF8574 ไป GPIO ตรง</strong> ใช้ GPIO 2-6, 46 — ตัด PCF ออกจาก path = ตัด noise คัปเพิล</li>
+</ul>
+
+<h3>Software (Medium)</h3>
+<ul>
+  <li><strong>J1 — jpeg_enc release frame watchdog</strong>: ถ้า caller ไม่ release ใน N วินาที → auto-release (กัน buffer pool leak)</li>
+  <li><strong>J2 — DMA2D timeout tune based on PSRAM load</strong></li>
+  <li><strong>M2 — pca9685 servo angle atomicity</strong> ตอน ramp กับ web /servo/set</li>
+  <li><strong>Per-key NVS storage</strong> สำหรับ offline_sync — ลบ 4KB blob limit</li>
+  <li><strong>Wakeup จาก deep sleep</strong> ตอน scheduled slot ใกล้ถึง (ประหยัดไฟ)</li>
+</ul>
+
+<h3>IDF</h3>
+<ul>
+  <li>Upgrade ESP-IDF เป็น v5.3.3+ หรือ v5.4 → root fix ของ i2c_master ISR race</li>
+  <li>หลังอัพ → ลบ <code>components/esp_driver_i2c/</code> custom patch ออก</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="operations">การใช้งาน / Operations</h2>
+
+<h3>Build & Flash</h3>
+<pre><code># Build
+cd D:\project\ddddddddd\unified_cam
+idf.py build
+
+# Flash (with auto-reset)
+idf.py -p COM8 flash
+
+# Manual download mode (ถ้า auto-reset เพี้ยน)
+python -c "import serial,time; s=serial.Serial('COM8',115200); s.setDTR(False); s.setRTS(True); time.sleep(0.1); s.setDTR(True); s.setRTS(False); time.sleep(0.05); s.setDTR(False); s.close()"
+python -m esptool --chip esp32p4 -p COM8 -b 460800 --before=no_reset --after=hard_reset write_flash \
+  --flash_mode dio --flash_freq 80m --flash_size 16MB \
+  0x2000 build/bootloader/bootloader.bin \
+  0x10000 build/unified_cam.bin \
+  0x8000 build/partition_table/partition-table.bin</code></pre>
+
+<h3>Serial monitor</h3>
+<pre><code>idf.py -p COM8 monitor
+# หรือ
+python overnight_capture.py  # filtered + persistent + auto-reconnect</code></pre>
+
+<h3>Coredump retrieval</h3>
+<pre><code>python -m esptool --chip esp32p4 -p COM8 -b 460800 read_flash 0x310000 0x10000 build/coredump.bin
+python -m esp_coredump info_corefile -t raw -c build/coredump.bin build/unified_cam.elf</code></pre>
+
+<h3>HTTP endpoints (port 80 unless noted)</h3>
+<ul>
+  <li><code>GET /dispenser.json</code> — current med counts + schedule</li>
+  <li><code>GET /audit.json</code> — last 32 audit events</li>
+  <li><code>GET/POST /settings</code> — UI settings</li>
+  <li><code>GET /capture</code> — single JPEG snapshot</li>
+  <li><code>GET /stream.mjpeg</code> — MJPEG stream (port 81)</li>
+  <li><code>GET /servo/home?ch=N</code>, <code>/servo/work?ch=N</code>, <code>/servo/test?ch=N</code> — manual servo</li>
+  <li><code>GET /tech/ir?m=N&v=0|1</code> — toggle IR usage for med N</li>
+  <li><code>GET /log</code> — system log</li>
+  <li><code>POST /cloud/login</code> — entry/cloud code login</li>
+</ul>
+
+<h3>Telegram commands</h3>
+<ul>
+  <li><code>/photo</code> — capture + send snapshot</li>
+  <li><code>/status</code> — current dispenser state</li>
+  <li><code>/dispense N M</code> — manual dispense N pills of med M</li>
+  <li><code>/return N M</code> — return N pills to med M's cartridge</li>
+  <li><code>/report YYYY-MM</code> — monthly summary report</li>
+</ul>
+
+<hr>
+<p class="meta">เอกสารนี้สร้างจาก firmware ที่ branch <code>fix/cloud-networking-bugs</code> วันที่ 2026-05-11 — สถานะ patches v12+revert E2. ทุกหัวข้อสะท้อนการทำงานจริงในขณะนั้น</p>
+
+</main>
+</div>
+</body>
+</html>

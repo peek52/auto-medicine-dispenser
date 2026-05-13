@@ -278,8 +278,9 @@ static void ui_keyboard_render_th(void)
 
         for (int i = 0; i < page_count; ++i) {
             const kb_th_key_t *k = &page[i];
-            fill_rect(k->x + 1, k->y + 1, k->w - 2, k->h - 2, KB_KEY);
-            fill_rect(k->x + 1, k->y + k->h - 3, k->w - 2, 3, KB_KEY_BD);
+            /* iOS-style: rounded white keys with 4px gap between them
+             * (key rect inset by 2 px each side). 6 px corner radius. */
+            fill_round_rect(k->x + 2, k->y + 2, k->w - 4, k->h - 4, 6, KB_KEY);
             draw_th_key_label(k->label, k->x, k->y, k->w, k->h, KB_TXT, KB_KEY);
         }
 
@@ -291,8 +292,7 @@ static void ui_keyboard_render_th(void)
             else if (i == 4) { face = KB_DEL; }
             else if (i == 5) { face = KB_ENT; }
 
-            fill_rect(k->x + 1, k->y + 1, k->w - 2, k->h - 2, face);
-            if (i == 3) fill_rect(k->x + 1, k->y + k->h - 3, k->w - 2, 3, KB_KEY_BD);
+            fill_round_rect(k->x + 2, k->y + 2, k->w - 4, k->h - 4, 6, face);
 
             if (i == 0) draw_th_key_label(kb_th_page == 0 ? "P2" : "P1", k->x, k->y, k->w, k->h, txt, face);
             else if (i == 3) draw_keyboard_bitmap_label(k->x + ((k->w - kThKbSpace.width) / 2), k->y + ((k->h - kThKbSpace.height) / 2), &kThKbSpace);
@@ -336,11 +336,8 @@ static void ui_keyboard_render_ascii(void)
             else if (k->letter == ' ')  { face = KB_SPACE; txt = KB_TXT; }
             else                        { face = KB_KEY; txt = KB_TXT; }
 
-            fill_rect(k->x + 1, k->y + 1, k->w - 2, k->h - 2, face);
-
-            if (face == KB_KEY || face == KB_SPACE) {
-                fill_rect(k->x + 1, k->y + k->h - 3, k->w - 2, 3, KB_KEY_BD);
-            }
+            /* iOS-style: rounded keys with 4px gap (inset 2 px each side). */
+            fill_round_rect(k->x + 2, k->y + 2, k->w - 4, k->h - 4, 6, face);
 
             if (k->letter == '\b') {
                 draw_string_gfx(k->x + 6, k->y + 36, "<X", txt, face, &FreeSans12pt7b);

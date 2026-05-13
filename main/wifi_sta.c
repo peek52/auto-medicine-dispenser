@@ -48,7 +48,14 @@ static void wifi_reconnect_timer_cb(void *arg)
 
 static void wifi_schedule_backoff_reconnect(void)
 {
-    if (s_reconnect_pending) return;
+    // If a backoff is already armed, leave it alone — we don't want
+    // to start a new timer while the old one is still pending.
+    if (s_reconnect_pending && esp_timer_is_active(s_reconnect_timer)) {
+        return;
+    }
+    // Stale flag (timer fired, callback set pending=false but somehow
+    // we re-entered with pending still true) — clear and rearm.
+    s_reconnect_pending = false;
     if (!s_reconnect_timer) {
         const esp_timer_create_args_t args = {
             .callback = wifi_reconnect_timer_cb,
@@ -62,8 +69,14 @@ static void wifi_schedule_backoff_reconnect(void)
         }
     }
     s_reconnect_pending = true;
-    if (esp_timer_start_once(s_reconnect_timer,
-                             (uint64_t)WIFI_BACKOFF_MS * 1000ULL) != ESP_OK) {
+    esp_err_t r = esp_timer_start_once(s_reconnect_timer,
+                                       (uint64_t)WIFI_BACKOFF_MS * 1000ULL);
+    if (r == ESP_ERR_INVALID_STATE) {
+        // Already armed by someone else — fine, leave the existing
+        // timer alone. Don't reconnect synchronously here either.
+        return;
+    }
+    if (r != ESP_OK) {
         s_reconnect_pending = false;
         s_retry_num = 0;
         esp_wifi_connect();
@@ -82,15 +95,29 @@ static esp_err_t wifi_soft_check(esp_err_t err, const char *what)
     return err;
 }
 
-/* NVS helpers */
+/* NVS helpers — caller must pass buffers of at least 64 bytes. nvs_get_str
+ * writes the null terminator within the size we pass, so we cap at 63 to
+ * guarantee room for the terminator even if a 64-byte SSID was somehow
+ * written by an earlier firmware. Also force-terminate on read failure.
+ */
 void nvs_get_wifi(char *ssid, char *pass)
 {
+    if (ssid) ssid[0] = '\0';
+    if (pass) pass[0] = '\0';
     nvs_handle_t h;
     if (nvs_open("wifi_cfg", NVS_READONLY, &h) == ESP_OK) {
-        size_t sz = 64;
-        nvs_get_str(h, "ssid", ssid, &sz);
-        sz = 64;
-        nvs_get_str(h, "pass", pass, &sz);
+        if (ssid) {
+            size_t sz = 63;
+            esp_err_t r = nvs_get_str(h, "ssid", ssid, &sz);
+            if (r != ESP_OK) ssid[0] = '\0';
+            else ssid[63] = '\0';
+        }
+        if (pass) {
+            size_t sz = 63;
+            esp_err_t r = nvs_get_str(h, "pass", pass, &sz);
+            if (r != ESP_OK) pass[0] = '\0';
+            else pass[63] = '\0';
+        }
         nvs_close(h);
     }
 }

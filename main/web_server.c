@@ -91,6 +91,7 @@ httpd_handle_t start_webserver(void) {
         { "/sound/save",   HTTP_POST, sound_save_handler,   NULL },
         { "/sound/play",   HTTP_GET,  sound_play_handler,   NULL },
         { "/sensors.json",    HTTP_GET,  sensors_json_handler,   NULL },
+        { "/vl53",            HTTP_GET,  vl53_live_handler,      NULL },
         { "/sensors/config",  HTTP_POST, sensors_config_handler, NULL },
         { "/sensors/cal_capture", HTTP_POST, sensors_capture_handler, NULL },
         { "/sensors/offset",      HTTP_POST, sensors_offset_handler, NULL },
@@ -105,6 +106,7 @@ httpd_handle_t start_webserver(void) {
         { "/tech/ir",         HTTP_POST, tech_ir_handler,        NULL },
         { "/tech/ir_cal",     HTTP_GET,  tech_ir_cal_page_handler, NULL },
         { "/tech/ir_cal/run", HTTP_POST, tech_ir_cal_run_handler,  NULL },
+        { "/api/factory-reset", HTTP_POST, factory_reset_handler,  NULL },
     };
 
     for (int i = 0; i < sizeof(routes)/sizeof(routes[0]); i++) {

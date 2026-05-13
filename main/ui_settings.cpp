@@ -7,6 +7,7 @@
 #include "telegram_bot.h"
 #include "ui_settings_thai_labels.h"
 #include "ui_utf8_text.h"
+#include "idle_music.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <stdio.h>
@@ -32,6 +33,12 @@ int g_nav_volume         = 15;
 bool g_nav_sound_enabled = true;
 enum ui_language_t g_ui_language = UI_LANG_TH;
 
+/* Background music: when no touch for 1 minute, play track 99 in a loop
+ * at this volume (0-30). Defaults to OFF so a fresh device is silent
+ * unless the user explicitly enables it from the settings page. */
+int  g_bg_music_volume    = 12;
+bool g_bg_music_enabled   = false;
+
 /* ── Sound track numbers (configurable via web) ── */
 int g_snd_alarm     = 1;   // Main alarm
 int g_snd_disp_th   = 83;  // TH: จ่ายยาสำเร็จ
@@ -47,19 +54,23 @@ int g_snd_voldn_th  = 96;  // TH: ลด
 int g_snd_voldn_en  = 98;  // EN: decrease
 // Loop interval (seconds) for the dose-confirm alarm — pause this long
 // between back-to-back replays so a long voice prompt finishes before
-// the next trigger. Range 5..120; default 15 fits most TH/EN prompts.
-int g_snd_alarm_interval_s = 15;
+// the next trigger. Range 5..120; default 5 keeps the reminder
+// insistent so the user hears it even briefly walking past the device.
+int g_snd_alarm_interval_s = 5;
 
 #define CARD_X          12
 #define CARD_W          (LCD_W - 24)
-#define CONTENT_TOP     52
+#define CONTENT_TOP     62
 #define VOL_CARD_H      72
 #define STATUS_CARD_H   96
 #define CARD_GAP        10
 
 #define ALERT_Y         CONTENT_TOP
 #define NAV_Y           (ALERT_Y + VOL_CARD_H + CARD_GAP)
-#define STATUS_Y        (NAV_Y + VOL_CARD_H + CARD_GAP)
+#define BG_MUSIC_Y      (NAV_Y + VOL_CARD_H + CARD_GAP)
+/* Status card moved off the settings page — same info is shown on the
+ * standby foot card (network / IP / sync). The space is reused for
+ * the new Background Music card. */
 
 #define BTN_W           34
 #define BTN_H           28
@@ -77,6 +88,7 @@ int g_snd_alarm_interval_s = 15;
 static bool s_settings_layout_ready = false;
 static bool s_settings_alert_dirty = true;
 static bool s_settings_nav_dirty = true;
+static bool s_settings_bg_dirty = true;
 static bool s_settings_status_dirty = true;
 
 static void draw_label_bitmap(int16_t x, int16_t y, const ui_label_bitmap_t *label)
@@ -136,6 +148,8 @@ void settings_save_nvs(void)
         nvs_set_i16(h, "snd_vdnth",  (int16_t)g_snd_voldn_th);
         nvs_set_i16(h, "snd_vden",   (int16_t)g_snd_voldn_en);
         nvs_set_i16(h, "snd_alrmint",(int16_t)g_snd_alarm_interval_s);
+        nvs_set_u8 (h, "bg_en",      (uint8_t)g_bg_music_enabled);
+        nvs_set_i16(h, "bg_vol",     (int16_t)g_bg_music_volume);
         nvs_commit(h);
         nvs_close(h);
         ESP_LOGI(TAG, "Settings saved: alt=%d nav=%d en=%d lang=%d",
@@ -198,8 +212,15 @@ void settings_load_nvs(void)
         int16_t aint = g_snd_alarm_interval_s;
         nvs_get_i16(h, "snd_alrmint", &aint);
         if (aint >= 5 && aint <= 120) g_snd_alarm_interval_s = aint;
-        ESP_LOGI(TAG, "Settings loaded: alt=%d nav=%d en=%d lang=%d",
-                 g_alert_volume, g_nav_volume, g_nav_sound_enabled, g_ui_language);
+        uint8_t bg_en = (uint8_t)g_bg_music_enabled;
+        nvs_get_u8(h, "bg_en", &bg_en);
+        g_bg_music_enabled = (bg_en != 0);
+        int16_t bg_vol = (int16_t)g_bg_music_volume;
+        nvs_get_i16(h, "bg_vol", &bg_vol);
+        if (bg_vol >= 0 && bg_vol <= 30) g_bg_music_volume = bg_vol;
+        ESP_LOGI(TAG, "Settings loaded: alt=%d nav=%d en=%d lang=%d bg=%d/%d",
+                 g_alert_volume, g_nav_volume, g_nav_sound_enabled, g_ui_language,
+                 g_bg_music_enabled, g_bg_music_volume);
     }
 
     telegram_set_language((g_ui_language == UI_LANG_TH) ? TELEGRAM_LANG_TH : TELEGRAM_LANG_EN);
@@ -321,6 +342,81 @@ static void draw_volume_card(int y, int vol, bool is_alert)
     draw_volume_controls(y, vol, is_alert);
 }
 
+/* Background-music card — same physical layout as the nav-volume card
+ * (title + value + -/bar/+ row + ON/OFF toggle on the right) but with
+ * its own state (g_bg_music_enabled / g_bg_music_volume). */
+static void draw_bg_music_card(int y)
+{
+    const bool is_off = !g_bg_music_enabled;
+
+    draw_card_shell(y, VOL_CARD_H, COLOR_BTN_TEAL);
+
+    /* Title */
+    if (g_ui_language == UI_LANG_TH) {
+        draw_utf8_text_line(CARD_X + 12, y + 18 + THAI_TEXT_NUDGE,
+                            "เพลงพื้นหลัง", SB_COLOR_TXT_MAIN);
+    } else {
+        draw_string_gfx(CARD_X + 12, y + 20, "Background music",
+                        SB_COLOR_TXT_MAIN, SB_COLOR_CARD, &FreeSans9pt7b);
+    }
+
+    /* Value text (volume / OFF) */
+    char value_str[16];
+    if (is_off) safe_copy(value_str, sizeof(value_str), "OFF");
+    else snprintf(value_str, sizeof(value_str), "%d/30", g_bg_music_volume);
+
+    if (g_ui_language == UI_LANG_TH && is_off) {
+        draw_label_bitmap(CARD_X + CARD_W - kThValueOff.width - 12, y + 8, &kThValueOff);
+    } else {
+        int16_t w = (g_ui_language == UI_LANG_TH)
+                        ? ui_utf8_text_width(value_str)
+                        : gfx_text_width(value_str, &FreeSans9pt7b);
+        int16_t x = CARD_X + CARD_W - w - 12;
+        if (g_ui_language == UI_LANG_TH) {
+            draw_utf8_text_line(x, y + 18 + THAI_VALUE_NUDGE, value_str,
+                                is_off ? SB_COLOR_TXT_MUTED : THEME_OK);
+        } else {
+            draw_string_gfx(x, y + 20, value_str,
+                            is_off ? SB_COLOR_TXT_MUTED : THEME_OK,
+                            SB_COLOR_CARD, &FreeSans9pt7b);
+        }
+    }
+
+    /* -/bar/+ + ON/OFF toggle (same layout as nav card) */
+    int btn_y   = y + BTN_ROW_Y_OFF;
+    int minus_x = settings_minus_x();
+    int plus_x  = settings_plus_x(false);
+    int bar_x   = minus_x + BTN_W + 10;
+    int bar_y   = btn_y + 4;
+    int bar_w   = plus_x - bar_x - 10;
+    uint16_t btn_bg  = is_off ? SB_COLOR_BG : SB_COLOR_MUTED;
+    uint16_t plus_bg = is_off ? SB_COLOR_BG : THEME_WARN;
+
+    fill_round_rect(minus_x, btn_y, BTN_W, BTN_H, 6, btn_bg);
+    fill_round_rect(plus_x,  btn_y, BTN_W, BTN_H, 6, plus_bg);
+    draw_string_centered(minus_x + (BTN_W / 2), btn_y + 19, "-", 0xFFFF, btn_bg, &FreeSans12pt7b);
+    draw_string_centered(plus_x  + (BTN_W / 2), btn_y + 19, "+", 0xFFFF, plus_bg, &FreeSans12pt7b);
+
+    fill_round_rect(bar_x, bar_y, bar_w, BAR_H, 4, THEME_INACTIVE);
+    if (!is_off && g_bg_music_volume > 0) {
+        int filled = (g_bg_music_volume * bar_w) / 30;
+        if (filled < 8) fill_rect(bar_x, bar_y, filled, BAR_H, THEME_OK);
+        else fill_round_rect(bar_x, bar_y, filled, BAR_H, 4, THEME_OK);
+    }
+
+    int toggle_x = settings_toggle_x();
+    uint16_t toggle_bg = is_off ? THEME_BAD : THEME_OK;
+    fill_round_rect(toggle_x, btn_y, TOGGLE_W, BTN_H, 6, toggle_bg);
+    if (g_ui_language == UI_LANG_TH) {
+        const ui_label_bitmap_t *toggle_label = is_off ? &kThOff : &kThOn;
+        draw_label_bitmap(toggle_x + (TOGGLE_W - toggle_label->width) / 2, btn_y + 8, toggle_label);
+    } else {
+        draw_string_centered(toggle_x + (TOGGLE_W / 2), btn_y + 19,
+                             is_off ? "OFF" : "ON",
+                             0xFFFF, toggle_bg, &FreeSans9pt7b);
+    }
+}
+
 static void draw_status_label(int16_t x, int16_t y, const char *text)
 {
     if (g_ui_language == UI_LANG_TH) {
@@ -429,14 +525,14 @@ void ui_settings_render(void)
         fill_screen(SB_COLOR_BG);
         draw_top_bar_with_back(g_ui_language == UI_LANG_TH ? NULL : "System");
         if (g_ui_language == UI_LANG_TH) {
-            draw_label_bitmap((LCD_W - kThTopSettings.width) / 2, 8, &kThTopSettings);
+            draw_label_bitmap((LCD_W - kThTopSettings.width) / 2, 20, &kThTopSettings);
         }
-        fill_rect(0, 44, LCD_W, LCD_H - 44, SB_COLOR_BG);
+        fill_rect(0, 56, LCD_W, LCD_H - 56, SB_COLOR_BG);
 
         s_settings_layout_ready = true;
         s_settings_alert_dirty = true;
         s_settings_nav_dirty = true;
-        s_settings_status_dirty = true;
+        s_settings_bg_dirty = true;
     }
 
     if (s_settings_alert_dirty) {
@@ -449,9 +545,9 @@ void ui_settings_render(void)
         s_settings_nav_dirty = false;
     }
 
-    if (s_settings_status_dirty) {
-        draw_system_status_card(STATUS_Y);
-        s_settings_status_dirty = false;
+    if (s_settings_bg_dirty) {
+        draw_bg_music_card(BG_MUSIC_Y);
+        s_settings_bg_dirty = false;
     }
 
     force_redraw = false;
@@ -459,7 +555,7 @@ void ui_settings_render(void)
 
 void ui_settings_handle_touch(uint16_t tx_n, uint16_t ty_n)
 {
-    if (tx_n >= 14 && tx_n <= 118 && ty_n >= 8 && ty_n <= 34) {
+    if (tx_n >= 0 && tx_n <= 130 && ty_n >= 0 && ty_n <= 52) {
         dfplayer_play_track(g_snd_button);
         pending_page = PAGE_MENU;
         s_settings_layout_ready = false;
@@ -509,11 +605,50 @@ void ui_settings_handle_touch(uint16_t tx_n, uint16_t ty_n)
         }
     }
 
+    /* Background music card: same button layout as nav card. */
+    bool changed_bg = false;
+    if (ty_n >= BG_MUSIC_Y + BTN_ROW_Y_OFF && ty_n <= BG_MUSIC_Y + BTN_ROW_Y_OFF + BTN_H) {
+        if (tx_n >= minus_x && tx_n <= minus_x + BTN_W) {
+            if (g_bg_music_enabled && g_bg_music_volume > 0) {
+                g_bg_music_volume--;
+                changed_bg = true;
+                s_settings_bg_dirty = true;
+            }
+        } else if (tx_n >= settings_plus_x(false) && tx_n <= settings_plus_x(false) + BTN_W) {
+            if (g_bg_music_enabled && g_bg_music_volume < 30) {
+                g_bg_music_volume++;
+                changed_bg = true;
+                s_settings_bg_dirty = true;
+            }
+        } else if (tx_n >= settings_toggle_x() && tx_n <= settings_toggle_x() + TOGGLE_W) {
+            g_bg_music_enabled = !g_bg_music_enabled;
+            changed = true;
+            s_settings_bg_dirty = true;
+            /* ON/OFF voice tracks for the bg-music toggle:
+             *   ON  → 0100 (TH) / 0102 (EN)
+             *   OFF → 0101 (TH) / 0103 (EN)
+             * Played at bg_music_volume so the confirmation sound
+             * matches the level the music itself will play at. */
+            bool is_th = (g_ui_language == UI_LANG_TH);
+            int tk;
+            if (g_bg_music_enabled) tk = is_th ? 100 : 102;
+            else                    tk = is_th ? 101 : 103;
+            dfplayer_stop();
+            vTaskDelay(pdMS_TO_TICKS(50));
+            dfplayer_play_track_force_vol((uint16_t)tk, g_bg_music_volume);
+            /* If we just turned bg OFF and the music is currently
+             * playing, force-stop the current track. */
+            if (!g_bg_music_enabled) {
+                idle_music_suppress_seconds(2);
+            }
+        }
+    }
+
     // Voice feedback for +/- presses: เพิ่ม / ลด (TH) or increase / decrease
     // (EN). Uses the dedicated track numbers stored in NVS so the technician
     // can swap them from the web panel.
     int feedback_track = 0;
-    if (changed_alert || changed_nav) {
+    if (changed_alert || changed_nav || changed_bg) {
         bool is_th = (g_ui_language == UI_LANG_TH);
         // alert volume + : we know it changed if g_alert_volume just went up
         // We can't know direction from the changed_* flags above so derive
@@ -545,6 +680,20 @@ void ui_settings_handle_touch(uint16_t tx_n, uint16_t ty_n)
         } else {
             dfplayer_play_track_force_vol(g_snd_button, g_nav_volume);
         }
+    } else if (changed_bg) {
+        settings_save_nvs();
+        dfplayer_stop();
+        vTaskDelay(pdMS_TO_TICKS(50));
+        /* +/- preview at the actual bg_music_volume so the user can
+         * hear exactly how loud the background music will be at the
+         * level they just set. Use volup/voldn voice tracks for
+         * direction feedback (เพิ่ม / ลด in TH, increase / decrease
+         * in EN). */
+        bool is_th = (g_ui_language == UI_LANG_TH);
+        int track = (feedback_track > 0)
+                        ? feedback_track
+                        : (is_th ? g_snd_volup_th : g_snd_volup_en);
+        dfplayer_play_track_force_vol((uint16_t)track, g_bg_music_volume);
     } else if (changed) {
         settings_save_nvs();
     }

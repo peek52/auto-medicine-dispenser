@@ -8,11 +8,14 @@
 #include "jpeg_encoder.h"
 #include "camera_init.h"
 #include "ds3231.h"
+#include "vl53l0x_multi.h"
+#include "pill_sensor_status.h"
 #include "cJSON.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -126,7 +129,7 @@ static bool telegram_add_customer_keyboard(cJSON *root)
 
     const bool is_th = (s_tg_language == TELEGRAM_LANG_TH);
     cJSON_AddItemToArray(row1, cJSON_CreateString(is_th ? "สถานะยา" : "Medication Status"));
-    cJSON_AddItemToArray(row1, cJSON_CreateString(is_th ? "รายงานเดือนนี้" : "Monthly Report"));
+    cJSON_AddItemToArray(row1, cJSON_CreateString(is_th ? "ประวัติการจ่ายยา" : "Dose History"));
     cJSON_AddItemToArray(row2, cJSON_CreateString(is_th ? "ถ่ายภาพล่าสุด" : "Live Photo"));
     cJSON_AddItemToArray(row2, cJSON_CreateString(is_th ? "วิธีใช้" : "Help"));
 
@@ -268,6 +271,102 @@ static void telegram_trim_ascii_inplace(char *text)
     }
 }
 
+/* Strip consistency/adherence summary lines from a monthly-report
+ * payload so /report shows only the raw date/time log of doses taken.
+ * Operates in-place by collapsing dropped lines. Conservative match:
+ * drops a line if it contains any of the listed Thai/English keywords
+ * OR if it consists mostly of a single "X%" / "X / Y" statistic.
+ *
+ * Why client-side: the Apps Script that produces this report ships
+ * adherence stats by default. We pass detail=log as a hint, but if the
+ * script doesn't honor it we still want a clean result. */
+static void telegram_strip_consistency_sections(char *text)
+{
+    if (!text || !*text) return;
+
+    /* Substrings (case-sensitive) — any line containing one of these
+     * is dropped. Add new patterns here as needed. */
+    static const char *DROP_KEYWORDS[] = {
+        "ความสม่ำเสมอ",
+        "ความสมำเสมอ",      /* common typo */
+        "อัตราการ",
+        "อัตรา ",
+        "ตรงเวลา",
+        "พลาดมื้อ",
+        "พลาดยา",
+        "สรุปประจำเดือน",
+        "สรุปเดือน",
+        "เฉลี่ย",
+        "Consistency",
+        "Adherence",
+        "On-time",
+        "Overall",
+        "Summary",
+        "Avg",
+        "Average",
+        "Missed doses",
+    };
+    const int N_KW = sizeof(DROP_KEYWORDS) / sizeof(DROP_KEYWORDS[0]);
+
+    char *src = text;
+    char *dst = text;
+    bool prev_blank = true;   /* collapse leading blank line(s) */
+    while (*src) {
+        /* Find end of this line. */
+        char *eol = src;
+        while (*eol && *eol != '\n') ++eol;
+        size_t line_len = (size_t)(eol - src);
+
+        bool drop = false;
+        for (int k = 0; k < N_KW && !drop; ++k) {
+            const char *kw = DROP_KEYWORDS[k];
+            size_t kw_len = strlen(kw);
+            if (kw_len > line_len) continue;
+            /* manual substring search inside [src .. eol) */
+            for (size_t i = 0; i + kw_len <= line_len; ++i) {
+                if (memcmp(src + i, kw, kw_len) == 0) {
+                    drop = true;
+                    break;
+                }
+            }
+        }
+        /* Drop lines that look like "X%" stats (have a digit followed
+         * by a percent sign with no other useful content). */
+        if (!drop) {
+            bool has_pct = false;
+            for (size_t i = 0; i < line_len; ++i) {
+                if (src[i] == '%' && i > 0 &&
+                    (src[i-1] >= '0' && src[i-1] <= '9')) {
+                    has_pct = true;
+                    break;
+                }
+            }
+            if (has_pct) drop = true;
+        }
+
+        bool is_blank = (line_len == 0);
+        if (!drop) {
+            /* Avoid stacking consecutive blank lines after dropping
+             * something — looks nicer in Telegram. */
+            if (!(is_blank && prev_blank)) {
+                memmove(dst, src, line_len);
+                dst += line_len;
+                if (*eol == '\n') { *dst++ = '\n'; }
+            }
+            prev_blank = is_blank;
+        } else {
+            prev_blank = true;
+        }
+
+        src = (*eol == '\n') ? eol + 1 : eol;
+    }
+    *dst = '\0';
+    /* Tidy up trailing blank lines. */
+    while (dst > text && (dst[-1] == '\n' || dst[-1] == ' ' || dst[-1] == '\r' || dst[-1] == '\t')) {
+        *--dst = '\0';
+    }
+}
+
 static bool telegram_json_id_to_string(const cJSON *obj, const char *field, char *out, size_t out_len)
 {
     if (!obj || !field || !out || out_len == 0) return false;
@@ -351,8 +450,8 @@ static bool telegram_map_friendly_text_to_command(const char *text, char *out, s
         snprintf(out, out_cap, "/status");
         return true;
     }
-    if (strcmp(normalized, "รายงานเดือนนี้") == 0 || strcmp(normalized, "Monthly Report") == 0) {
-        snprintf(out, out_cap, "/report");
+    if (strcmp(normalized, "ประวัติการจ่ายยา") == 0 || strcmp(normalized, "Dose History") == 0) {
+        snprintf(out, out_cap, "/log");
         return true;
     }
     if (strcmp(normalized, "ถ่ายภาพล่าสุด") == 0 || strcmp(normalized, "Live Photo") == 0) {
@@ -380,7 +479,14 @@ static bool telegram_extract_arg1(const char *text, char *out, size_t out_cap)
 
     size_t arg_len = strcspn(text, " \t\r\n");
     if (arg_len == 0) return false;
-    if (arg_len >= out_cap) arg_len = out_cap - 1;
+    // Reject (instead of silently truncate) over-long args so the
+    // caller can tell the user the command was malformed instead of
+    // running a misparsed report month / med name / etc.
+    if (arg_len >= out_cap) {
+        ESP_LOGW(TAG, "extract_arg1: arg too long (%u) for buf %u — rejecting",
+                 (unsigned)arg_len, (unsigned)out_cap);
+        return false;
+    }
 
     memcpy(out, text, arg_len);
     out[arg_len] = '\0';
@@ -513,6 +619,8 @@ static bool telegram_http_get_text_follow(const char *url, char *out, size_t out
 {
     if (!url || !url[0] || !out || out_cap == 0) return false;
     if (redirect_depth > 4) return false;
+    /* LwIP-mbox guard — see telegram_do_send_text for full rationale. */
+    if (!wifi_sta_connected()) return false;
     if (!telegram_http_lock(pdMS_TO_TICKS(15000))) {
         ESP_LOGW(TAG, "TG report GET lock timeout");
         return false;
@@ -578,6 +686,8 @@ static bool telegram_http_post_json_text_follow(const char *url, const char *pos
 {
     if (!url || !url[0] || !post_data || !post_data[0] || !out || out_cap == 0) return false;
     if (redirect_depth > 4) return false;
+    /* LwIP-mbox guard — see telegram_do_send_text. */
+    if (!wifi_sta_connected()) return false;
     if (!telegram_http_lock(pdMS_TO_TICKS(15000))) {
         ESP_LOGW(TAG, "TG report POST lock timeout");
         return false;
@@ -642,76 +752,10 @@ static bool telegram_http_post_json_text(const char *url, const char *post_data,
     return telegram_http_post_json_text_follow(url, post_data, out, out_cap, out_status, 0);
 }
 
-static void telegram_report_task(void *pvParameters)
-{
-    tg_task_args_t *args = (tg_task_args_t *)pvParameters;
-    char month_key[16] = {0};
-    if (args && args->message) {
-        snprintf(month_key, sizeof(month_key), "%s", args->message);
-    }
-    telegram_trim_ascii_inplace(month_key);
-
-    char gs_url[512] = {0};
-    snprintf(gs_url, sizeof(gs_url), "%s", cloud_secrets_get_google_script_url());
-    telegram_trim_ascii_inplace(gs_url);
-    if (!gs_url[0]) {
-        telegram_send_text(telegram_pick("Google Sheets is not configured yet.",
-                                         "ยังไม่ได้ตั้งค่า Google Sheets"));
-        telegram_free_text_args(args);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    char *report_text = (char *)calloc(1, 4096);
-    char *url = (char *)calloc(1, 768);
-    if (!report_text || !url) {
-        free(report_text);
-        free(url);
-        telegram_send_text(telegram_pick("Unable to allocate memory for the report task.",
-                                         "ยังไม่สามารถจองหน่วยความจำสำหรับรายงานได้"));
-        telegram_free_text_args(args);
-        vTaskDelete(NULL);
-        return;
-    }
-    const char *lang = (s_tg_language == TELEGRAM_LANG_TH) ? "th" : "en";
-    char separator = strchr(gs_url, '?') ? '&' : '?';
-    snprintf(url, 768, "%s%caction=monthly_report&month=%s&lang=%s&source=telegram",
-             gs_url, separator, month_key[0] ? month_key : "current", lang);
-    ESP_LOGI(TAG, "TG report start month=%s url=%s",
-             month_key[0] ? month_key : "current", url);
-
-    int status = 0;
-    bool ok = telegram_http_get_text(url, report_text, 4096, &status);
-    ESP_LOGI(TAG, "TG report GET result ok=%d status=%d", ok ? 1 : 0, status);
-
-    if (ok && report_text[0]) {
-        if (strlen(report_text) > 3800) {
-            report_text[3800] = '\0';
-        }
-        telegram_trim_ascii_inplace(report_text);
-        if (strcmp(report_text, "Report Sent") != 0 &&
-            strcmp(report_text, "Success") != 0 &&
-            strcmp(report_text, "OK") != 0) {
-            telegram_send_text(report_text);
-        }
-    } else {
-        char fallback[512];
-        snprintf(fallback, sizeof(fallback), "%s",
-                 telegram_pick(
-                     "Unable to fetch the monthly Google Sheets report right now.\n"
-                     "Expected Apps Script support: action=monthly_report with month=YYYY-MM.\n"
-                     "Example: /report 04/2026",
-                     "ตอนนี้ยังดึงรายงานรายเดือนจาก Google Sheets ไม่ได้\n"
-                     "ฝั่ง Apps Script ต้องรองรับ action=monthly_report และ month=YYYY-MM\n"
-                     "ตัวอย่าง: /report 04/2026"));
-        telegram_send_text(fallback);
-    }
-
-    free(report_text);
-    free(url);
-    telegram_free_text_args(args);
-    vTaskDelete(NULL);
-}
+/* telegram_report_task removed 2026-05-12 — Google Sheets backend
+ * dropped in favor of the on-device persistent audit ring (/log).
+ * The HTTP GET helper that this task used is still available for
+ * other callers if needed. */
 
 static void telegram_send_snapshot_reply(const char *caption)
 {
@@ -754,6 +798,21 @@ static void telegram_send_snapshot_reply(const char *caption)
 static void telegram_do_send_text(tg_task_args_t *args)
 {
     if (!args || !args->message) {
+        telegram_free_text_args(args);
+        return;
+    }
+
+    /* WiFi-readiness gate. Without this guard, calling esp_http_client_*
+     * while STA is disconnected (or in mid-reconnect) reaches into the
+     * LwIP TCP/IP thread mailbox which may have been torn down and
+     * asserts inside tcpip_send_msg_wait_sem:449 "Invalid mbox" — that
+     * brings down the WHOLE board, not just this task. Observed in
+     * core-dump from 2026-05-12 (3 reboots/10 min). Queue the message
+     * to offline_sync instead and exit cleanly; offline_sync drains it
+     * when WiFi is back. */
+    if (!wifi_sta_connected()) {
+        ESP_LOGW(TAG, "WiFi not connected — deferring Telegram text to offline_sync");
+        offline_sync_queue_telegram_text(args->message);
         telegram_free_text_args(args);
         return;
     }
@@ -852,7 +911,16 @@ static bool telegram_text_dispatcher_ready(void)
         }
     }
     if (!s_tg_text_worker) {
-        if (xTaskCreate(telegram_text_worker, "tg_text_wrk", 10240,
+        /* Stack 10 KB → 16 KB: panic 2026-05-13 traced to TCB corruption
+         * from stack overflow. Crash dump showed task name field zeroed
+         * (was "tg_text_wrk") and xTaskPriorityDisinherit asserting that
+         * the mutex holder ≠ current task — classic symptom of the
+         * canary value at the bottom of the stack getting trampled.
+         * The worker's hot path = esp_http_client_init + esp_http_client_perform
+         * + TLS handshake via mbedtls + esp_crt_bundle + offline_sync
+         * write — each is ~2 KB of stack, and the sum easily exceeds
+         * 10 KB once nested into telegram_do_send_text's local buffers. */
+        if (xTaskCreate(telegram_text_worker, "tg_text_wrk", 16384,
                         NULL, 5, &s_tg_text_worker) != pdPASS) {
             s_tg_text_worker = NULL;
             ESP_LOGE(TAG, "Failed to create Telegram text worker");
@@ -866,6 +934,23 @@ static void telegram_enqueue_text(const char *msg, bool with_keyboard)
 {
     if (!msg || !cloud_secrets_has_telegram()) return;
     if (!telegram_text_dispatcher_ready()) return;
+
+    /* When WiFi is down, every enqueue ultimately strdups the message,
+     * fails xQueueSend, falls through to offline_sync which ALSO copies
+     * the message into its NVS-backed queue. A flurry of low-pill
+     * alerts during a long outage was eating heap until malloc returned
+     * NULL → crash. Throttle to one offline persist per 30 s when STA
+     * is disconnected; the user gets the next live alert as soon as
+     * WiFi is back. */
+    if (!wifi_sta_connected()) {
+        static uint32_t s_last_offline_ms = 0;
+        uint32_t now_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+        if (s_last_offline_ms != 0 && (now_ms - s_last_offline_ms) < 30000) {
+            ESP_LOGW(TAG, "Telegram enqueue dropped — WiFi offline, throttling");
+            return;
+        }
+        s_last_offline_ms = (now_ms == 0) ? 1 : now_ms;
+    }
 
     tg_task_args_t *args = malloc(sizeof(tg_task_args_t));
     if (!args) return;
@@ -902,6 +987,18 @@ typedef struct {
 
 static void telegram_send_photo_task(void *pvParameters) {
     tg_photo_args_t *args = (tg_photo_args_t *)pvParameters;
+    /* Same WiFi-readiness gate as telegram_do_send_text — calling
+     * esp_http_client_* with STA disconnected asserts inside LwIP's
+     * tcpip_send_msg_wait_sem and reboots the board. Drop the photo
+     * silently (offline_sync doesn't carry photos) but log it. */
+    if (!wifi_sta_connected()) {
+        ESP_LOGW(TAG, "WiFi not connected — dropping Telegram photo");
+        free(args->photo_buf);
+        free(args->caption);
+        free(args);
+        vTaskDelete(NULL);
+        return;
+    }
     const char *bot_token = cloud_secrets_get_telegram_token();
     if (!bot_token || !bot_token[0]) {
         free(args->photo_buf);
@@ -969,23 +1066,37 @@ static void telegram_send_photo_task(void *pvParameters) {
     if (err == ESP_OK) {
         esp_http_client_write(client, header, header_len);
         
-        // JPEG buffer is huge (~100KB+), esp_http_client_write will drop data if we don't loop it!
+        // JPEG buffer is huge (~100KB+), esp_http_client_write will drop
+        // data if we don't loop it. Bail on negative return (socket died)
+        // or after 5 consecutive zero-length writes (TCP send buffer
+        // truly stuck). Footer is gated on total_written==photo_len at
+        // line 990, so partial writes never produce a corrupt multipart.
         int total_written = 0;
-        int retries = 0;
-        while (total_written < args->photo_len && retries < 10) {
-            int w = esp_http_client_write(client, (const char *)args->photo_buf + total_written, args->photo_len - total_written);
+        int zero_streak = 0;
+        bool socket_err = false;
+        while (total_written < (int)args->photo_len) {
+            int w = esp_http_client_write(client,
+                                          (const char *)args->photo_buf + total_written,
+                                          args->photo_len - total_written);
             if (w < 0) {
-                ESP_LOGE(TAG, "Write photo binary failed at offset %d", total_written);
+                ESP_LOGE(TAG, "Photo write socket error at offset %d (errno err=%d)",
+                         total_written, w);
+                socket_err = true;
                 break;
             }
             if (w == 0) {
-                 vTaskDelay(pdMS_TO_TICKS(10));
-                 retries++;
-                 continue;
+                if (++zero_streak >= 5) {
+                    ESP_LOGE(TAG, "Photo write stuck (5 consecutive zero writes) at offset %d",
+                             total_written);
+                    break;
+                }
+                vTaskDelay(pdMS_TO_TICKS(10));
+                continue;
             }
             total_written += w;
-            retries = 0;
+            zero_streak = 0;
         }
+        (void)socket_err;
         
         if (total_written == (int)args->photo_len) {
             esp_http_client_write(client, footer, footer_len);
@@ -1119,70 +1230,262 @@ static void handle_telegram_command_safe(const char *cmd_text)
             return;
         }
 
-        char msg[1024];
+        /* Wake VL53 for a fresh fill-level reading. The sensor is idle
+         * 99% of the time (no auto-polling) to keep the I2C bus quiet,
+         * so a /status command is the user's one chance to probe it.
+         * Retry up to 3 times — VL53 + TCA mux can need one or two
+         * warmup polls before all 6 channels come back valid. We accept
+         * the result as soon as every present channel has a valid
+         * reading, or after the third attempt either way. */
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            (void)vl53l0x_multi_check_now(8000);
+            bool all_valid = true;
+            for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
+                const pill_sensor_status_t *ps = pill_sensor_status_get(i);
+                if (!ps || !ps->present) continue;
+                if (!ps->valid) { all_valid = false; break; }
+            }
+            if (all_valid) break;
+            vTaskDelay(pdMS_TO_TICKS(200));
+        }
+
+        bool any_recommend_return = false;
+        char msg[2048];
         int len = snprintf(msg, sizeof(msg), "%s",
                            telegram_pick("Medication status for all 6 modules\n\n",
                                          "สถานะยาทั้ง 6 โมดูล\n\n"));
 
-        bool has_med = false;
         for (int i = 0; i < DISPENSER_MED_COUNT && len < (int)sizeof(msg) - 1; i++) {
-            if (sh->med[i].name[0] && strlen(sh->med[i].name) > 0) {
-                int written = snprintf(msg + len, sizeof(msg) - (size_t)len,
-                                       (s_tg_language == TELEGRAM_LANG_TH)
-                                           ? "โมดูล %d: %s\nคงเหลือ: %d เม็ด\n\n"
-                                           : "Module %d: %s\nRemaining: %d pills\n\n",
-                                       i + 1, sh->med[i].name, sh->med[i].count);
-                if (written < 0) break;
-                if (written >= (int)(sizeof(msg) - (size_t)len)) {
-                    len = (int)sizeof(msg) - 1;
-                } else {
-                    len += written;
+            /* Always report all 6 modules — user explicitly asked for
+             * a complete report regardless of whether a name has been
+             * assigned. Show "(ยังไม่ได้ตั้งชื่อ)" placeholder for unset. */
+            bool th = (s_tg_language == TELEGRAM_LANG_TH);
+            const char *name = (sh->med[i].name[0])
+                                   ? sh->med[i].name
+                                   : (th ? "(ยังไม่ได้ตั้งชื่อ)" : "(unnamed)");
+
+            /* Fill-state label. Prefer the 4-state classification when
+             * ps->valid, otherwise fall back to a best-guess based on
+             * the raw distance reading so the user still sees SOMETHING
+             * from VL53 (the user explicitly removed the "sensor not
+             * responding" line — they want a hint either way). The raw
+             * mm is appended in parentheses so flaky channels are
+             * obvious at a glance. */
+            char fill_buf[96] = "";
+            const pill_sensor_status_t *ps = pill_sensor_status_get(i);
+            if (ps && ps->present) {
+                const char *state = NULL;
+                if (ps->valid) {
+                    switch (ps->fill) {
+                        case PILL_FILL_EMPTY:
+                            state = th ? "🔴 ยาหมด" : "🔴 Empty";
+                            any_recommend_return = true;
+                            break;
+                        case PILL_FILL_LOW:
+                            state = th ? "🟡 ยาน้อย ควรเติมเร็วๆ นี้"
+                                       : "🟡 Low — refill soon";
+                            break;
+                        case PILL_FILL_MEDIUM:
+                            state = th ? "🟢 มียา" : "🟢 OK";
+                            break;
+                        case PILL_FILL_FULL:
+                            state = th ? "🟢 มียาเต็ม" : "🟢 Full";
+                            break;
+                        default:
+                            break;
+                    }
+                } else if (ps->raw_mm >= 0) {
+                    /* Not "valid" by VL53 strict criteria but the raw
+                     * value is still informative. 0 mm = sensor saw
+                     * something very close (lens-pressed or full tube);
+                     * > VL53_MAX_VALID_MM (~2 m) = sensor saw no target
+                     * = empty tube. */
+                    if (ps->raw_mm == 0) {
+                        state = th ? "🟢 ตรวจพบใกล้เซ็นเซอร์ (น่าจะมียา)"
+                                   : "🟢 Near (likely has pills)";
+                    } else if (ps->raw_mm > 2000) {
+                        state = th ? "🔴 ระยะเกินช่วงวัด (น่าจะหมด)"
+                                   : "🔴 Out of range (likely empty)";
+                        any_recommend_return = true;
+                    } else {
+                        /* In-range but rejected as invalid by the
+                         * sample filter (e.g. still warming up).
+                         * Show the raw number without a verdict. */
+                        state = th ? "⏳ กำลังตรวจ" : "⏳ Reading";
+                    }
                 }
-                has_med = true;
+                if (state) {
+                    if (ps->raw_mm >= 0) {
+                        snprintf(fill_buf, sizeof(fill_buf), "%s (%d mm)", state, ps->raw_mm);
+                    } else {
+                        snprintf(fill_buf, sizeof(fill_buf), "%s", state);
+                    }
+                }
             }
+
+            int written;
+            if (fill_buf[0]) {
+                written = snprintf(msg + len, sizeof(msg) - (size_t)len,
+                                   th ? "โมดูล %d: %s\nคงเหลือ: %d เม็ด\n%s\n\n"
+                                      : "Module %d: %s\nRemaining: %d pills\n%s\n\n",
+                                   i + 1, name, sh->med[i].count, fill_buf);
+            } else {
+                written = snprintf(msg + len, sizeof(msg) - (size_t)len,
+                                   th ? "โมดูล %d: %s\nคงเหลือ: %d เม็ด\n\n"
+                                      : "Module %d: %s\nRemaining: %d pills\n\n",
+                                   i + 1, name, sh->med[i].count);
+            }
+            if (written < 0) break;
+            if (written >= (int)(sizeof(msg) - (size_t)len)) {
+                len = (int)sizeof(msg) - 1;
+                break;
+            }
+            len += written;
         }
 
-        if (!has_med && len < (int)sizeof(msg) - 1) {
+        /* Trailing recommendation when ANY module is fully empty —
+         * suggest using the Return-All flow so the user clears the
+         * empty cartridge in one shot and refills cleanly. */
+        if (any_recommend_return && len < (int)sizeof(msg) - 1) {
             (void)snprintf(msg + len, sizeof(msg) - (size_t)len, "%s",
-                           telegram_pick("No medicine has been configured yet.",
-                                         "ยังไม่มีการตั้งค่ายาในระบบ"));
+                           (s_tg_language == TELEGRAM_LANG_TH)
+                               ? "💊 แนะนำให้คืนยาทั้งหมดแล้วเติมยาใหม่"
+                               : "💊 Tip: return all remaining pills and refill.");
         }
 
         telegram_send_text(msg);
-    } else if (strcmp(cmd, "/report") == 0) {
-        char month_key[16] = {0};
-        if (!telegram_normalize_report_month(cmd_text, month_key, sizeof(month_key))) {
-            telegram_send_text(telegram_pick("Usage: /report or /report 04/2026 or /report 2026-04",
-                                             "วิธีใช้: /report หรือ /report 04/2026 หรือ /report 2026-04"));
+    } else if (strcmp(cmd, "/log") == 0 || strcmp(cmd, "/history") == 0) {
+        /* /report removed 2026-05-12 — Google Sheets dependency dropped.
+         * Use /log instead (persistent on-device, up to 256 events). */
+        /* Detailed activity log from the persistent audit ring —
+         * up to 256 most-recent events (≈ 2-3 months of typical use),
+         * each with full DD/MM HH:MM timestamp. Stored in NVS so it
+         * survives reboots. The device is the source of truth — no
+         * Google Sheets dependency. */
+        size_t total = dispenser_audit_count();
+        bool th = (s_tg_language == TELEGRAM_LANG_TH);
+        if (total == 0) {
+            telegram_send_text(th ? "ยังไม่มีประวัติการจ่ายยา"
+                                  : "No dose history yet.");
             return;
         }
 
-        char ack[160];
-        snprintf(ack, sizeof(ack), "%s %s",
-                 telegram_pick("Generating monthly report for", "กำลังสร้างรายงานประจำเดือน"),
-                 month_key);
-        telegram_send_text(ack);
+        /* Fetch into a heap buffer — 256 * sizeof(entry) ≈ 3 KB which
+         * is too big for the BSS stack of this handler. */
+        dispenser_audit_entry_t *entries =
+            (dispenser_audit_entry_t *)calloc(total, sizeof(*entries));
+        if (!entries) {
+            telegram_send_text(th ? "หน่วยความจำไม่พอสำหรับดึงประวัติ"
+                                  : "Out of memory while fetching log.");
+            return;
+        }
+        size_t n = dispenser_audit_get(entries, total);
+        const netpie_shadow_t *sh = netpie_get_shadow();
 
-        tg_task_args_t *args = (tg_task_args_t *)calloc(1, sizeof(tg_task_args_t));
-        if (!args) {
-            telegram_send_text(telegram_pick("Unable to start report task right now.",
-                                             "ยังไม่สามารถเริ่มงานสร้างรายงานได้ในตอนนี้"));
+        /* Count only the entry kinds the user wants to see ('M', 'S',
+         * 'L', 'N') so the header total reflects what they'll actually
+         * read. 'V' (VL53 sync) and 'W' (web stock edit) are hidden. */
+        size_t visible_n = 0;
+        for (size_t i = 0; i < n; ++i) {
+            char src = entries[i].source;
+            if (src != 'V' && src != 'W') ++visible_n;
+        }
+        if (visible_n == 0) {
+            telegram_send_text(th ? "ยังไม่มีประวัติการจ่ายยา"
+                                  : "No dose history yet.");
+            free(entries);
             return;
         }
 
-        args->message = strdup(month_key);
-        if (!args->message) {
-            telegram_free_text_args(args);
-            telegram_send_text(telegram_pick("Unable to allocate memory for the report request.",
-                                             "ยังไม่สามารถจองหน่วยความจำสำหรับการขอรายงานได้"));
-            return;
+        /* Telegram caps each message at 4096 chars — flush whenever the
+         * buffer crosses ~3500 so we always have headroom for the next
+         * entry + trailing footer. The header is reprinted on each
+         * chunk so the recipient knows the chunks belong together. */
+        const int FLUSH_AT = 3500;
+        char msg[4000];
+        int chunk_idx = 0;
+        int len = snprintf(msg, sizeof(msg),
+                           th ? "📋 ประวัติการจ่ายยา (ทั้งหมด %u รายการ)\n\n"
+                              : "📋 Dose history (%u entries total)\n\n",
+                           (unsigned)visible_n);
+
+        for (size_t i = 0; i < n; ++i) {
+            const dispenser_audit_entry_t *e = &entries[i];
+            /* Hide internal source kinds that the user explicitly said
+             * shouldn't appear in /log: VL53 sync ('V') and web/UI
+             * stock adjustments ('W'). Only successful dispenses ('M',
+             * 'S'), missed doses ('L') and no-stock skips ('N') survive
+             * the filter. */
+            if (e->source == 'V' || e->source == 'W') continue;
+
+            char ts[24] = "--/-- --:--";
+            if (e->timestamp > 0) {
+                time_t t = (time_t)e->timestamp;
+                struct tm tmv = {0};
+                if (localtime_r(&t, &tmv) && tmv.tm_year >= 100) {
+                    strftime(ts, sizeof(ts), th ? "%d/%m/%y %H:%M" : "%d %b %y %H:%M", &tmv);
+                }
+            }
+            const char *name = (e->med_idx >= 0 && e->med_idx < DISPENSER_MED_COUNT &&
+                                sh->med[e->med_idx].name[0])
+                                   ? sh->med[e->med_idx].name
+                                   : (th ? "(ไม่ทราบชื่อ)" : "(unnamed)");
+            const char *what;
+            const char *icon;
+            switch (e->source) {
+                case 'S':
+                    icon = "✅"; what = th ? "จ่ายยาสำเร็จ" : "Dispensed";
+                    break;
+                case 'M':
+                    icon = "✅"; what = th ? "จ่าย/คืนยาแมนวล" : "Manual";
+                    break;
+                case 'L':
+                    icon = "⏳"; what = th ? "พลาดยามื้อนั้น" : "Missed dose";
+                    break;
+                case 'N':
+                    icon = "🔴"; what = th ? "ยาหมด ไม่ได้จ่าย" : "Out of stock — skipped";
+                    break;
+                default:
+                    icon = "•";  what = th ? "อื่นๆ" : "Other";
+                    break;
+            }
+            int written;
+            if (e->source == 'L' || e->source == 'N') {
+                /* No count change to display for missed / out-of-stock. */
+                written = snprintf(msg + len, sizeof(msg) - (size_t)len,
+                                   th ? "%s %s — โมดูล %d (%s)\n   %s\n\n"
+                                      : "%s %s — Module %d (%s)\n   %s\n\n",
+                                   icon, ts, e->med_idx + 1, name, what);
+            } else {
+                int delta = (int)e->to_count - (int)e->from_count;
+                written = snprintf(msg + len, sizeof(msg) - (size_t)len,
+                                   th ? "%s %s — โมดูล %d (%s)\n   %s: %d → %d (%s%d)\n\n"
+                                      : "%s %s — Module %d (%s)\n   %s: %d → %d (%s%d)\n\n",
+                                   icon, ts, e->med_idx + 1, name, what,
+                                   e->from_count, e->to_count,
+                                   delta >= 0 ? "+" : "", delta);
+            }
+            if (written < 0) break;
+            if (written >= (int)(sizeof(msg) - (size_t)len)) {
+                /* Entry too big to fit — shouldn't happen, but bail
+                 * gracefully. */
+                break;
+            }
+            len += written;
+
+            if (len >= FLUSH_AT && i + 1 < n) {
+                telegram_send_text(msg);
+                ++chunk_idx;
+                len = snprintf(msg, sizeof(msg),
+                               th ? "📋 (ต่อ %d)\n\n" : "📋 (cont. %d)\n\n",
+                               chunk_idx + 1);
+                /* Small spacing delay so Telegram delivers in order. */
+                vTaskDelay(pdMS_TO_TICKS(300));
+            }
         }
 
-        if (xTaskCreate(telegram_report_task, "tg_report", 12288, args, 4, NULL) != pdPASS) {
-            telegram_free_text_args(args);
-            telegram_send_text(telegram_pick("Unable to start report task right now.",
-                                             "ยังไม่สามารถเริ่มงานสร้างรายงานได้ในตอนนี้"));
-        }
+        telegram_send_text(msg);
+        free(entries);
     } else if (strcmp(cmd, "/lang") == 0) {
         char arg[16];
         if (!telegram_extract_arg1(cmd_text, arg, sizeof(arg))) {
@@ -1224,19 +1527,18 @@ static void handle_telegram_command_safe(const char *cmd_text)
         telegram_send_text_with_keyboard(telegram_pick(
             "Automatic Pill Dispenser Bot is ready.\n\n"
             "Use the menu buttons below for the easiest workflow.\n"
-            "- Medication Status\n"
-            "- Monthly Report\n"
-            "- Live Photo\n"
+            "- Medication Status (/status)\n"
+            "- Dose History (/log)\n"
+            "- Live Photo (/photo)\n"
             "- Help\n\n"
             "You can still use /lang en or /lang th anytime.",
             "บอทเครื่องจ่ายยาพร้อมใช้งาน\n\n"
             "กดปุ่มเมนูด้านล่างเพื่อใช้งานได้ง่ายที่สุด\n"
-            "- สถานะยา\n"
-            "- รายงานเดือนนี้\n"
-            "- ถ่ายภาพล่าสุด\n"
+            "- สถานะยา (/status)\n"
+            "- ประวัติการจ่ายยา (/log)\n"
+            "- ถ่ายภาพล่าสุด (/photo)\n"
             "- Help\n\n"
-            "ถ้าต้องการเปลี่ยนภาษา ใช้ /lang en หรือ /lang th\n"
-            "ถ้าต้องการดูรายงานของเดือนอื่น ใช้ /report 04/2026"));
+            "ถ้าต้องการเปลี่ยนภาษา ใช้ /lang en หรือ /lang th"));
     } else {
         telegram_send_text(telegram_pick("Unknown command. Type /help to see available commands.",
                                          "ไม่รู้จักคำสั่งนี้ พิมพ์ /help เพื่อดูคำสั่งที่ใช้ได้"));

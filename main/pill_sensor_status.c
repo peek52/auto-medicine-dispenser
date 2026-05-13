@@ -13,6 +13,7 @@ void pill_sensor_status_init_defaults(void)
         s_sensors[i].raw_mm        = -1;
         s_sensors[i].filtered_mm   = -1;
         s_sensors[i].pill_count    = -1;
+        s_sensors[i].fill          = PILL_FILL_UNKNOWN;
         s_sensors[i].is_empty      = false;
         s_sensors[i].is_full       = false;
         s_sensors[i].full_dist_mm  = VL53_FULL_DIST_MM;
@@ -31,6 +32,7 @@ void pill_sensor_status_mark_present(int idx, bool present)
         s_sensors[idx].raw_mm      = -1;
         s_sensors[idx].filtered_mm = -1;
         s_sensors[idx].pill_count  = -1;
+        s_sensors[idx].fill        = PILL_FILL_UNKNOWN;
         s_sensors[idx].is_empty    = false;
         s_sensors[idx].is_full     = false;
     }
@@ -42,6 +44,16 @@ void pill_sensor_status_set_reading(int idx, int raw_mm, int filtered_mm, bool v
     s_sensors[idx].raw_mm      = raw_mm;
     s_sensors[idx].filtered_mm = filtered_mm;
     s_sensors[idx].valid       = valid;
+    pill_sensor_status_recalc(idx);
+}
+
+void pill_sensor_status_invalidate(int idx)
+{
+    if (idx < 0 || idx >= PILL_SENSOR_COUNT) return;
+    s_sensors[idx].valid       = false;
+    s_sensors[idx].filtered_mm = -1;
+    // raw_mm intentionally preserved so the diagnostic UI shows what
+    // the sensor returned just before it went stale.
     pill_sensor_status_recalc(idx);
 }
 
@@ -70,6 +82,7 @@ void pill_sensor_status_recalc(int idx)
 
     if (!s->valid || s->filtered_mm < 0) {
         s->pill_count = -1;
+        s->fill       = PILL_FILL_UNKNOWN;
         s->is_empty   = false;
         s->is_full    = false;
         return;
@@ -80,17 +93,25 @@ void pill_sensor_status_recalc(int idx)
     int full = s->full_dist_mm;
     int maxp = s->max_pills;
 
-    // จำนวนยาที่หายไป = (ระยะ - ระยะยาเต็ม) / ความสูง 1 เม็ด
-    int removed = (dist - full + (h / 2)) / h;  // round
+    /* Legacy pill_count kept for any old call sites that still read it.
+     * The user-facing state is the 4-level fill instead — set below. */
+    int removed = (dist - full + (h / 2)) / h;
     if (removed < 0) removed = 0;
-
-    int count = maxp - removed + s->count_offset;  // signed +/- fine-tune
+    int count = maxp - removed + s->count_offset;
     if (count < 0) count = 0;
     if (count > maxp) count = maxp;
-
     s->pill_count = count;
-    s->is_empty   = (count == 0);
-    s->is_full    = (count >= maxp);
+
+    /* 4-level fill state — direct distance buckets so the user doesn't
+     * have to interpret a number. Thresholds chosen for a typical 260mm
+     * tube with 15mm pills (15 pills max). */
+    if      (dist >= 230) s->fill = PILL_FILL_EMPTY;
+    else if (dist >= 150) s->fill = PILL_FILL_LOW;
+    else if (dist >=  60) s->fill = PILL_FILL_MEDIUM;
+    else                  s->fill = PILL_FILL_FULL;
+
+    s->is_empty = (s->fill == PILL_FILL_EMPTY);
+    s->is_full  = (s->fill == PILL_FILL_FULL);
 }
 
 const pill_sensor_status_t *pill_sensor_status_get_all(void)

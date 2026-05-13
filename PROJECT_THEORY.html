@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Pill Dispenser — ทฤษฎีและหลักการของโปรเจกต์</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --ink: #0b1220;
+  --ink-2: #334155;
+  --ink-3: #64748b;
+  --line: #e2e8f0;
+  --brand: #4f46e5;
+  --brand-2: #7c3aed;
+  --accent: #0ea5e9;
+  --shadow: 0 1px 3px rgba(15,23,42,.05), 0 8px 24px rgba(15,23,42,.07);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Inter','IBM Plex Sans Thai',sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.75;
+  font-size: 15.5px; -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 28px; }
+
+/* ====== HERO ====== */
+header.hero {
+  background:
+    radial-gradient(900px 500px at 80% -10%, rgba(124,58,237,.40), transparent 60%),
+    radial-gradient(700px 400px at -10% 30%, rgba(14,165,233,.30), transparent 60%),
+    linear-gradient(135deg,#0b1220 0%, #1e1b4b 100%);
+  color: #fff; padding: 70px 0 80px; position: relative; overflow: hidden;
+}
+header.hero::before {
+  content: ""; position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask: radial-gradient(ellipse at center, #000 30%, transparent 80%);
+  -webkit-mask: radial-gradient(ellipse at center, #000 30%, transparent 80%);
+}
+header.hero .inner { position: relative; z-index: 1; }
+.eyebrow {
+  display: inline-block; padding: 6px 14px; border-radius: 999px;
+  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14);
+  font-size: 11px; font-weight: 700; letter-spacing: .12em;
+  color: #c7d2fe; margin-bottom: 16px; text-transform: uppercase;
+}
+header.hero h1 {
+  font-size: clamp(36px, 5.5vw, 60px); font-weight: 800;
+  letter-spacing: -0.02em; line-height: 1.05;
+  background: linear-gradient(180deg,#fff 30%, #c7d2fe 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  margin-bottom: 14px;
+}
+header.hero p.subtitle {
+  font-size: 18px; color: #cbd5e1; max-width: 760px; line-height: 1.6;
+}
+header.hero .meta {
+  display: flex; flex-wrap: wrap; gap: 14px 28px; margin-top: 28px;
+  font-size: 13px; color: #94a3b8;
+}
+header.hero .meta b { color: #fff; }
+
+/* ====== TOC ====== */
+nav.toc {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 14px; padding: 22px 28px;
+  box-shadow: var(--shadow); margin: -42px auto 36px;
+  position: relative; z-index: 2; max-width: 1100px;
+}
+nav.toc h3 {
+  font-size: 12px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--brand); margin-bottom: 12px;
+}
+nav.toc ol {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px 24px; padding-left: 18px;
+}
+nav.toc li { font-size: 14px; }
+nav.toc a {
+  color: var(--ink-2); text-decoration: none;
+  transition: color .15s;
+}
+nav.toc a:hover { color: var(--brand); }
+
+/* ====== SECTION ====== */
+section { padding: 36px 0 18px; scroll-margin-top: 24px; }
+section h2 {
+  font-size: 28px; font-weight: 700; letter-spacing: -0.01em;
+  color: var(--ink); margin-bottom: 6px;
+  border-left: 5px solid var(--brand); padding-left: 14px;
+}
+section .ksub {
+  font-size: 12px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--brand); margin-bottom: 4px;
+}
+section .lead {
+  font-size: 16px; color: var(--ink-2); margin-bottom: 22px; max-width: 820px;
+}
+section h3 {
+  font-size: 19px; font-weight: 700; margin: 28px 0 10px;
+  color: var(--ink);
+}
+section h4 {
+  font-size: 16px; font-weight: 700; margin: 18px 0 8px;
+  color: var(--ink-2);
+}
+section p { margin-bottom: 12px; color: var(--ink-2); }
+section ul, section ol { margin: 8px 0 14px 22px; }
+section li { margin-bottom: 6px; color: var(--ink-2); }
+
+/* ====== CARDS ====== */
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; padding: 22px 26px; margin: 16px 0;
+  box-shadow: var(--shadow);
+}
+.card h4 {
+  margin-top: 0; font-size: 17px; color: var(--ink);
+  display: flex; align-items: center; gap: 10px;
+}
+.card h4 .pill {
+  display: inline-block; padding: 3px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  background: #eef2ff; color: var(--brand);
+}
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px,1fr)); gap: 14px; }
+
+/* ====== TABLE ====== */
+.tbl-wrap {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; overflow: hidden; box-shadow: var(--shadow);
+  margin: 16px 0;
+}
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+thead th {
+  background: #f1f5f9; color: var(--ink); font-weight: 700;
+  text-align: left; padding: 12px 16px; font-size: 11.5px;
+  letter-spacing: .06em; text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+}
+tbody td {
+  padding: 12px 16px; border-bottom: 1px solid var(--line);
+  color: var(--ink-2); vertical-align: top;
+}
+tbody tr:last-child td { border-bottom: 0; }
+
+/* ====== CODE / CALLOUTS ====== */
+code, .mono {
+  font-family: 'JetBrains Mono', monospace; font-size: 13px;
+  background: #f1f5f9; color: var(--brand);
+  padding: 2px 6px; border-radius: 4px;
+}
+.eq {
+  background: #fff; border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  padding: 14px 18px; border-radius: 8px;
+  font-family: 'JetBrains Mono', monospace; font-size: 14px;
+  color: var(--ink); margin: 12px 0;
+  white-space: pre-wrap; line-height: 1.5;
+}
+.note {
+  background: #fffbeb; border-left: 4px solid #f59e0b;
+  padding: 14px 18px; border-radius: 8px; margin: 14px 0;
+  font-size: 14px; color: #78350f;
+}
+.note b { color: #451a03; }
+.tip {
+  background: #ecfeff; border-left: 4px solid var(--accent);
+  padding: 14px 18px; border-radius: 8px; margin: 14px 0;
+  font-size: 14px; color: #155e75;
+}
+.tip b { color: #0e7490; }
+
+/* ====== DIAGRAMS ====== */
+.diagram {
+  background: #0f1424; color: #cbd5e1;
+  padding: 18px 24px; border-radius: 10px;
+  font-family: 'JetBrains Mono', monospace; font-size: 13px;
+  white-space: pre; overflow-x: auto; line-height: 1.5;
+  margin: 14px 0;
+}
+
+/* ====== FOOTER ====== */
+footer {
+  background: #0b1220; color: #94a3b8;
+  padding: 30px 0; text-align: center; font-size: 13px;
+  margin-top: 48px;
+}
+footer b { color: #fff; }
+
+@media print {
+  body { background: white; }
+  header.hero { -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 32px 0; }
+  section { page-break-inside: avoid; }
+  nav.toc { display: none; }
+  .card, .tbl-wrap { box-shadow: none !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===================== HERO ===================== -->
+<header class="hero">
+  <div class="wrap inner">
+    <div class="eyebrow">📚 Project Theory · IoT-based Smart Healthcare</div>
+    <h1>ทฤษฎีและหลักการ<br>ของ Smart Pill Dispenser</h1>
+    <p class="subtitle">เครื่องจ่ายยาอัตโนมัติแบบเชื่อมต่อคลาวด์สำหรับผู้สูงอายุและผู้ป่วยเรื้อรัง โดยใช้ ESP32-P4-Nano เป็นแกนกลางควบคุม sensor, actuator และเชื่อมต่ออินเทอร์เน็ตแบบ real-time</p>
+    <div class="meta">
+      <div><b>Platform</b> · ESP32-P4-Nano (RISC-V dual-core)</div>
+      <div><b>Framework</b> · ESP-IDF v5.3.2</div>
+      <div><b>Cloud</b> · NETPIE 2020 + Telegram Bot</div>
+      <div><b>Updated</b> · 2026-05-03</div>
+    </div>
+  </div>
+</header>
+
+<!-- ===================== TOC ===================== -->
+<nav class="toc wrap">
+  <h3>📑 สารบัญ</h3>
+  <ol>
+    <li><a href="#intro">1. บทนำ &amp; วัตถุประสงค์</a></li>
+    <li><a href="#scope">2. ขอบเขตของระบบ</a></li>
+    <li><a href="#mcu">3. ทฤษฎี ESP32-P4 (MCU)</a></li>
+    <li><a href="#i2c">4. โปรโตคอล I²C &amp; การขยายบัส</a></li>
+    <li><a href="#spi">5. โปรโตคอล SPI (จอแสดงผล)</a></li>
+    <li><a href="#mipi">6. MIPI-CSI &amp; การประมวลผลภาพ</a></li>
+    <li><a href="#uart">7. UART (โมดูลเสียง)</a></li>
+    <li><a href="#sensors">8. ทฤษฎี Sensor: IR &amp; ToF</a></li>
+    <li><a href="#actuators">9. ทฤษฎี Actuator: Servo + PWM</a></li>
+    <li><a href="#display">10. จอ TFT &amp; capacitive touch</a></li>
+    <li><a href="#cloud">11. โปรโตคอลคลาวด์: MQTT &amp; HTTPS</a></li>
+    <li><a href="#algo">12. อัลกอริทึมสำคัญ</a></li>
+    <li><a href="#fault">13. ทฤษฎี Fault-tolerance &amp; Watchdog</a></li>
+    <li><a href="#summary">14. สรุปและประโยชน์</a></li>
+  </ol>
+</nav>
+
+<div class="wrap">
+
+<!-- ===================== 1. INTRO ===================== -->
+<section id="intro">
+  <div class="ksub">บทที่ 1</div>
+  <h2>บทนำและวัตถุประสงค์</h2>
+  <p class="lead">การลืมรับประทานยาเป็นปัญหาที่พบบ่อยในผู้สูงอายุและผู้ป่วยโรคเรื้อรัง ส่งผลต่อประสิทธิภาพการรักษาและคุณภาพชีวิต โครงการนี้พัฒนาเครื่องจ่ายยาอัตโนมัติที่ผสมผสานระหว่าง embedded system, IoT, และ cloud computing เพื่อช่วยให้ผู้ใช้รับประทานยาตรงเวลาและลดภาระของผู้ดูแล</p>
+
+  <h3>ปัญหาที่ต้องการแก้</h3>
+  <ul>
+    <li><b>ลืมรับประทานยา</b> — ไม่มีการแจ้งเตือนหรือนับจำนวนเม็ดยา</li>
+    <li><b>รับประทานผิดมื้อ/ผิดขนาด</b> — สาเหตุของยา overdose หรือขาด</li>
+    <li><b>ผู้ดูแลตรวจสอบยาก</b> — ต้องเดินทางมาดูถึงที่</li>
+    <li><b>ไม่มีบันทึกประวัติ</b> — สำหรับแพทย์ตรวจสอบ adherence</li>
+  </ul>
+
+  <h3>วัตถุประสงค์</h3>
+  <ol>
+    <li>ออกแบบและสร้างเครื่องจ่ายยาที่จัดเก็บยาได้ <b>6 ชนิด</b> และจ่ายยาอัตโนมัติตามตารางเวลา</li>
+    <li>นับจำนวนเม็ดยาที่จ่ายได้แม่นยำด้วย IR sensor ป้องกัน over/under dispense</li>
+    <li>วัดปริมาณยาคงเหลือในแต่ละช่อง (stock) ด้วย ToF sensor และ sync ขึ้น cloud</li>
+    <li>เชื่อมต่อกับ <b>NETPIE 2020</b>, <b>Telegram Bot</b>, และ <b>Google Sheets</b> เพื่อให้ผู้ดูแลตรวจสอบจากระยะไกล</li>
+    <li>มีกล้องสำหรับดูสถานะเครื่องจากระยะไกล (live + capture on demand)</li>
+    <li>มี UI บนจอ touchscreen สำหรับใช้งาน standalone โดยไม่ต้องพึ่ง smartphone</li>
+  </ol>
+</section>
+
+<!-- ===================== 2. SCOPE ===================== -->
+<section id="scope">
+  <div class="ksub">บทที่ 2</div>
+  <h2>ขอบเขตของระบบ</h2>
+
+  <div class="grid-2">
+    <div class="card">
+      <h4>ขอบเขตด้าน Hardware <span class="pill">HW</span></h4>
+      <ul>
+        <li>ใช้ <b>ESP32-P4-Nano</b> เป็น microcontroller (RISC-V, 360 MHz, 32 MB PSRAM)</li>
+        <li>กล้อง <b>OV5647 5 MP</b> ผ่านบัส MIPI-CSI</li>
+        <li>จอ <b>4.0" TFT 480×320</b> capacitive touch (ST7796S + FT6336U)</li>
+        <li>Servo 6 ตัวควบคุมผ่าน <b>PCA9685</b></li>
+        <li>IR sensor 6 ช่องผ่าน <b>PCF8574</b> IO expander</li>
+        <li>ToF sensor 6 ตัว (<b>VL53L0X</b>) ผ่าน I²C mux <b>TCA9548A</b></li>
+        <li>RTC <b>DS3231</b> + battery backup</li>
+        <li>โมดูลเสียง <b>DY-HV20T</b> ผ่าน UART</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h4>ขอบเขตด้าน Software <span class="pill">SW</span></h4>
+      <ul>
+        <li>Firmware เขียนด้วย <b>C/C++</b> บน <b>ESP-IDF v5.3.2</b></li>
+        <li>ใช้ <b>FreeRTOS</b> เป็น real-time OS (multi-task scheduling)</li>
+        <li>WiFi station mode + <b>MQTT over TLS</b> ไปยัง NETPIE</li>
+        <li><b>Telegram Bot API</b> รับคำสั่ง /photo /status</li>
+        <li><b>Google Apps Script</b> webhook บันทึก log ลง Google Sheets</li>
+        <li>เว็บ UI ในตัว (HTTP server) รองรับ /capture, /status, MJPEG /stream</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>สถาปัตยกรรมโดยรวม</h3>
+  <div class="diagram">
+┌─────────────────────────── INTERNET ───────────────────────────┐
+│                                                                │
+│  ┌──────────┐   ┌────────────┐   ┌──────────┐                 │
+│  │  NETPIE  │   │  Telegram  │   │  Google  │                 │
+│  │   MQTT   │   │    Bot     │   │  Sheets  │                 │
+│  └─────┬────┘   └─────┬──────┘   └────┬─────┘                 │
+└────────┼───────────────┼─────────────────┼──────────────────── ┘
+         │               │                 │
+         │  WiFi (esp_hosted SDIO co-processor)
+         │               │                 │
+   ┌─────▼───────────────▼─────────────────▼──────┐
+   │           ESP32-P4-Nano (RTOS)              │
+   │  ┌─────────────────────────────────────┐    │
+   │  │ Tasks: dispenser, vl53, mqtt,       │    │
+   │  │   tg_poll, httpd, clk, cam, audio   │    │
+   │  └──────┬──────────────┬──────────┬────┘    │
+   └─────────┼──────────────┼──────────┼─────────┘
+        I²C │         SPI  │   MIPI   │
+   ┌────────▼────────┐  ┌───▼──┐  ┌───▼────┐
+   │ Servo / IR /    │  │ TFT  │  │ OV5647 │
+   │ ToF / RTC /     │  │ +    │  │ 5 MP   │
+   │ Touch / Mux     │  │ FT63 │  │ Camera │
+   └─────────────────┘  └──────┘  └────────┘
+  </div>
+</section>
+
+<!-- ===================== 3. MCU ===================== -->
+<section id="mcu">
+  <div class="ksub">บทที่ 3</div>
+  <h2>ทฤษฎี ESP32-P4 (Microcontroller)</h2>
+  <p class="lead">ESP32-P4 เป็นชิป microcontroller สถาปัตยกรรม <b>RISC-V</b> ออกแบบโดย Espressif Systems รองรับงานประมวลผลภาพ, จอ HMI, และเชื่อมต่อ peripheral หลากหลาย เหมาะกับโครงการที่ต้องการ AI / vision / multimedia</p>
+
+  <h3>คุณสมบัติเด่น</h3>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>คุณสมบัติ</th><th>รายละเอียด</th></tr></thead>
+      <tbody>
+        <tr><td>CPU</td><td>RISC-V dual-core HP400 MHz + LP40 MHz</td></tr>
+        <tr><td>หน่วยความจำ</td><td>768 KB SRAM + 32 MB PSRAM (octal)</td></tr>
+        <tr><td>Flash ภายนอก</td><td>16 MB</td></tr>
+        <tr><td>I/O</td><td>54 GPIO, รองรับ MIPI-CSI, MIPI-DSI, USB 2.0 HS, SDIO</td></tr>
+        <tr><td>Hardware accelerators</td><td>JPEG codec, PPA (Pixel Processing Accelerator), H.264 encoder</td></tr>
+        <tr><td>การสื่อสารไร้สาย</td><td>ไม่มีในตัว — ใช้ <b>esp_hosted</b> co-processor (SDIO) สำหรับ WiFi</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>FreeRTOS — Real-Time Operating System</h3>
+  <p>โปรเจกต์ใช้ FreeRTOS สำหรับ task scheduling แบบ <b>preemptive priority-based</b>. แต่ละ task ทำงานอิสระ (ดูแลโดย scheduler) และสื่อสารกันผ่าน queue, semaphore, mutex.</p>
+  <p>หลักการสำคัญ:</p>
+  <ul>
+    <li><b>Priority</b> — task ที่มี priority สูงกว่าจะ preempt task ที่ priority ต่ำกว่า</li>
+    <li><b>Round-robin</b> — task ที่ priority เท่ากันจะแบ่ง CPU แบบเวียน</li>
+    <li><b>Blocking</b> — task ที่รอ event (queue, semaphore) จะถูก suspend ไม่กิน CPU</li>
+    <li><b>Mutex</b> — ป้องกันสองตัวเข้าถึง resource เดียวกันพร้อมกัน (เช่น I²C bus)</li>
+  </ul>
+</section>
+
+<!-- ===================== 4. I2C ===================== -->
+<section id="i2c">
+  <div class="ksub">บทที่ 4</div>
+  <h2>โปรโตคอล I²C และการขยายบัส</h2>
+  <p class="lead">I²C (Inter-Integrated Circuit) เป็นโปรโตคอลแบบ 2-wire (SDA + SCL) ใช้แบบ master-slave ที่นิยมมากในงาน embedded เพราะเดินสายน้อยและรองรับ device หลายตัวบนบัสเดียว</p>
+
+  <h3>หลักการทำงาน</h3>
+  <ul>
+    <li><b>SDA</b> (Serial Data) — ส่งข้อมูล bit-by-bit แบบ open-drain (ต้องมี pull-up)</li>
+    <li><b>SCL</b> (Serial Clock) — clock ที่ master เป็นผู้กำเนิด</li>
+    <li><b>Address 7-bit</b> — แต่ละ slave มี address ไม่ซ้ำ master ส่ง address + bit R/W เพื่อระบุ slave</li>
+    <li>ความเร็วมาตรฐาน 100 kHz (Standard mode), 400 kHz (Fast mode), 1 MHz (Fast mode plus)</li>
+  </ul>
+
+  <div class="eq">
+SDA  ─┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──┐ ┌──┐
+      │ │  A6  │ │  A5  │ │  ..  │ │A0│ │RW│  ACK  ...
+SCL  ──┘ └──────┘ └──────┘ └──────┘ └──┘ └──┘ ───
+      ↑                                       ↑
+   START                                    SLAVE ACK
+  </div>
+
+  <h3>ปัญหา: Address ซ้ำกัน → ใช้ I²C Multiplexer</h3>
+  <p>VL53L0X ทุกตัวมี default address เดียวกัน (0x29) ทำให้ต่อบัสเดียวกันไม่ได้. แก้ปัญหาด้วย <b>TCA9548A</b> ซึ่งเป็น I²C mux 8 ช่อง — เลือกได้ทีละช่องผ่าน register ของ mux</p>
+
+  <h4>วิธีใช้ TCA9548A</h4>
+  <ol>
+    <li>Master เขียน byte ไปที่ address ของ mux (0x70) เพื่อเลือก channel (bit 0..7)</li>
+    <li>หลังจากเลือก channel, การสื่อสารต่อไปจะ "ทะลุ" ไปยัง slave ในช่องนั้น</li>
+    <li>เปลี่ยน channel ใหม่เมื่อจะคุยกับ slave อื่น</li>
+  </ol>
+
+  <p>ในโปรเจกต์เราใช้ TCA9548A เพื่อต่อ VL53L0X 6 ตัว และในขณะ boot ใช้ XSHUT (sleep pin) ของแต่ละตัวเพื่อ <b>reassign address</b> เป็น 0x71-0x76 ทำให้สามารถสลับช่องได้รวดเร็วโดยไม่ต้องเปลี่ยน address ทุกครั้ง</p>
+
+  <div class="note">
+    <b>ข้อควรระวัง:</b> Pull-up resistor ของ I²C ต้องเหมาะสมกับ <i>bus capacitance</i> ปกติใช้ 4.7 kΩ ที่ 100 kHz, 2.2 kΩ ที่ 400 kHz หากค่ามากเกินไป rise time จะช้าทำให้ noise margin แคบและเกิด error ได้ง่าย
+  </div>
+</section>
+
+<!-- ===================== 5. SPI ===================== -->
+<section id="spi">
+  <div class="ksub">บทที่ 5</div>
+  <h2>โปรโตคอล SPI (จอแสดงผล)</h2>
+  <p class="lead">SPI (Serial Peripheral Interface) เป็นโปรโตคอลแบบ synchronous full-duplex 4-wire ที่นิยมใช้กับอุปกรณ์ที่ต้องการ throughput สูงเช่น display, SD card, และ flash</r></p>
+
+  <h3>4 สายมาตรฐาน</h3>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Signal</th><th>หน้าที่</th><th>โปรเจกต์เรา</th></tr></thead>
+      <tbody>
+        <tr><td><b>MOSI</b></td><td>Master → Slave data</td><td>GPIO 32</td></tr>
+        <tr><td><b>MISO</b></td><td>Slave → Master data</td><td>ไม่ใช้ (จอเป็น write-only)</td></tr>
+        <tr><td><b>SCK</b></td><td>Clock</td><td>GPIO 36 @ 40 MHz</td></tr>
+        <tr><td><b>CS</b></td><td>Chip Select (active LOW)</td><td>GPIO 26</td></tr>
+        <tr><td><b>DC</b></td><td>Data/Command (ของ display เท่านั้น)</td><td>GPIO 24</td></tr>
+        <tr><td><b>RST</b></td><td>Hardware reset</td><td>GPIO 25</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>ความเร็วของ SPI สำคัญต่อการ refresh จอ — โปรเจกต์ใช้ 40 MHz ซึ่งให้ throughput ประมาณ <b>5 MB/s</b> เพียงพอสำหรับการ render UI 480×320 RGB565 ที่ 1 fps (≈300 KB/frame)</p>
+</section>
+
+<!-- ===================== 6. MIPI ===================== -->
+<section id="mipi">
+  <div class="ksub">บทที่ 6</div>
+  <h2>MIPI-CSI และการประมวลผลภาพ</h2>
+  <p class="lead">MIPI-CSI (Camera Serial Interface) ของ MIPI Alliance เป็นมาตรฐาน high-speed differential serial สำหรับเชื่อมต่อ image sensor กับ application processor นิยมในโทรศัพท์มือถือและ embedded camera</p>
+
+  <h3>คุณสมบัติ</h3>
+  <ul>
+    <li><b>Differential signaling</b> — แต่ละ lane มี 2 สาย (D±) ลด noise</li>
+    <li><b>Multi-lane</b> — โปรเจกต์เราใช้ 2-lane ได้ throughput ~ 1 Gbps/lane</li>
+    <li><b>D-PHY layer</b> — physical layer พร้อม high-speed mode (HS) และ low-power mode (LP)</li>
+    <li><b>Configuration ผ่าน SCCB</b> — Serial Camera Control Bus (เป็น I²C ที่ปรับเล็กน้อย)</li>
+  </ul>
+
+  <h3>กล้อง OV5647</h3>
+  <p>เซ็นเซอร์ภาพ 5 MP ของ OmniVision รุ่นเดียวกับที่ใช้ใน Raspberry Pi Camera v1 รองรับ resolution สูงสุด 2592×1944 ที่ 15 fps. ในโปรเจกต์เราใช้ <b>800×640 RAW8 ที่ 50 fps</b> เพื่อความ responsive ของ live stream</p>
+
+  <h3>JPEG encoding (hardware-accelerated)</h3>
+  <p>ESP32-P4 มี <b>JPEG codec ในตัว</b> ทำให้สามารถแปลง raw frame เป็น JPEG ได้โดยไม่กิน CPU. โปรเจกต์เราใช้สำหรับ:</p>
+  <ul>
+    <li><b>/capture</b> — ส่งภาพ JPEG ไป Telegram bot</li>
+    <li><b>/stream</b> — MJPEG streaming ผ่าน HTTP (Multipart MIME)</li>
+  </ul>
+</section>
+
+<!-- ===================== 7. UART ===================== -->
+<section id="uart">
+  <div class="ksub">บทที่ 7</div>
+  <h2>UART (Universal Asynchronous Receiver/Transmitter)</h2>
+  <p>UART เป็นโปรโตคอล serial แบบ asynchronous (ไม่มี clock) ใช้ start/stop bit ในการ frame ข้อมูล โปรเจกต์เราใช้สำหรับสื่อสารกับโมดูลเสียง <b>DY-HV20T</b></p>
+
+  <h3>หลักการ</h3>
+  <ul>
+    <li>2 สาย: TX (transmit) + RX (receive)</li>
+    <li>Frame: 1 start bit + 8 data bits + (parity) + stop bit</li>
+    <li>Baud rate ต้องตรงกันทั้งสองฝั่ง (ใช้ 9600 หรือ 115200 ทั่วไป)</li>
+    <li>โปรเจกต์ใช้ <b>UART1</b> ที่ baud 9600 ส่ง command 5-byte ให้ DY-HV20T เล่น track</li>
+  </ul>
+
+  <p>ตัวอย่าง command: <code>AA 07 02 00 0F BD</code> แปลว่า "เล่น track 15"</p>
+</section>
+
+<!-- ===================== 8. SENSORS ===================== -->
+<section id="sensors">
+  <div class="ksub">บทที่ 8</div>
+  <h2>ทฤษฎี Sensor: IR และ ToF</h2>
+
+  <h3>1️⃣ IR Photointerruptor (นับเม็ดยา)</h3>
+  <p>เซ็นเซอร์ IR ทำงานบนหลักการ <b>break-beam</b>: LED ส่ง infrared ตรงไปยัง phototransistor ฝั่งตรงข้าม. เมื่อมีวัตถุผ่านลำแสง output จะเปลี่ยนจาก LOW เป็น HIGH (หรือกลับกัน)</p>
+
+  <h4>การ debounce และ edge detection</h4>
+  <p>เซ็นเซอร์ IR มี noise spike จาก ambient light, EMI, และ signal bouncing ตอนยาผ่าน. โปรเจกต์ใช้สองชั้น:</p>
+  <ol>
+    <li><b>Debounce</b>: ต้องอ่านได้ค่า LOW ติดต่อกัน ≥ 5 ครั้ง (~2.5 ms) จึงนับว่าเป็นการตรวจจับจริง</li>
+    <li><b>Edge detection</b>: ต้องเห็น HIGH ก่อน → LOW (ไม่ใช่ค้าง LOW) เพื่อกันการนับซ้ำเมื่อยาค้างในลำแสง</li>
+  </ol>
+  <div class="eq">
+IF current = LOW AND previous = HIGH AND debounce_count ≥ 5:
+    pill_count += 1
+    state = "armed"
+  </div>
+
+  <h3>2️⃣ Time-of-Flight (วัดยอดยาคงเหลือ)</h3>
+  <p><b>VL53L0X</b> ของ STMicroelectronics วัดระยะทางด้วยหลักการ <i>time-of-flight</i> โดย:</p>
+  <ol>
+    <li>ยิงแสง laser 940 nm (Class 1, ปลอดภัยต่อตา)</li>
+    <li>วัดเวลาที่แสงเดินทางไป-กลับ (round trip)</li>
+    <li>คำนวณระยะทาง: <b>d = c × Δt / 2</b> (c = ความเร็วแสง)</li>
+  </ol>
+
+  <p>VL53L0X ทำงานในระยะ 30-2000 mm มีความแม่นยำ ±3% (ที่ 1 m ความผิดพลาด ≤ 30 mm)</p>
+
+  <h4>การประยุกต์</h4>
+  <p>ติดตั้ง VL53L0X ที่ฝาด้านบนของช่องเก็บยา วัดระยะลงไปยังกองยา. ยิ่งยาเยอะ → ระยะใกล้ (ค่าน้อย). ยิ่งยาน้อย → ระยะไกล (ค่ามาก)</p>
+  <div class="eq">
+pill_count_estimate = (max_distance − measured_distance) / pill_height
+  </div>
+
+  <p>เนื่องจาก servo ทำให้กระบอกยาสั่น ค่าจึงแกว่ง ±2 mm. โปรเจกต์ใช้ <b>stable-tick filter</b>: ต้องอ่านได้ค่าใกล้เคียงกัน 5 ครั้งต่อกันก่อนจะ sync ขึ้น cloud (ลด MQTT flood)</p>
+</section>
+
+<!-- ===================== 9. ACTUATORS ===================== -->
+<section id="actuators">
+  <div class="ksub">บทที่ 9</div>
+  <h2>ทฤษฎี Actuator: Servo + PWM</h2>
+  <p class="lead">Servo motor ทำงานจาก <b>PWM (Pulse-Width Modulation)</b> — สัญญาณที่มีความถี่คงที่แต่ความกว้างของ pulse แปรผัน. ตำแหน่งของ servo ถูกกำหนดโดย duty cycle</p>
+
+  <h3>PCA9685 — PWM Driver IC</h3>
+  <p>เนื่องจาก ESP32 มี hardware PWM จำกัด (และต้องใช้ pin ของ MCU ตรง ๆ) เราใช้ <b>PCA9685</b> ของ NXP ซึ่งเป็น I²C-controlled PWM driver 16 ช่อง:</p>
+  <ul>
+    <li>ความละเอียด 12-bit (4096 ระดับต่อ cycle)</li>
+    <li>Frequency ปรับได้ 24-1526 Hz (โปรเจกต์ใช้ 50 Hz สำหรับ servo)</li>
+    <li>ควบคุมผ่าน I²C address 0x40</li>
+  </ul>
+
+  <h3>การคำนวณ duty cycle ของ Servo</h3>
+  <p>Servo มาตรฐานคาดหวัง pulse 1.0-2.0 ms ทุก 20 ms (50 Hz):</p>
+  <ul>
+    <li>1.0 ms = 0° (สุดด้านซ้าย)</li>
+    <li>1.5 ms = 90° (ตำแหน่งกลาง)</li>
+    <li>2.0 ms = 180° (สุดด้านขวา)</li>
+  </ul>
+  <div class="eq">
+pulse_us = 1000 + (angle / 180) × 1000
+duty_4096 = pulse_us × 4096 × 50 / 1,000,000
+  </div>
+
+  <h3>ลำดับการจ่ายยา</h3>
+  <ol>
+    <li>Servo หมุนจากตำแหน่ง <b>HOME</b> → <b>WORK</b> (ดันกระบอกยาเปิด)</li>
+    <li>รอ 1.5 วินาที (ให้ยาตกลงราง)</li>
+    <li>Servo หมุนกลับ <b>HOME</b> (ดันยาผ่าน IR sensor)</li>
+    <li>IR detection event ระหว่าง 4.5 วินาที (รวมเวลา HOME return + bail margin)</li>
+    <li>นับยา ทำซ้ำจนครบจำนวน</li>
+  </ol>
+</section>
+
+<!-- ===================== 10. DISPLAY ===================== -->
+<section id="display">
+  <div class="ksub">บทที่ 10</div>
+  <h2>จอ TFT &amp; Capacitive Touch</h2>
+
+  <h3>ST7796S — TFT controller</h3>
+  <p>ST7796S เป็น TFT controller รองรับ resolution 480×320 16-bit color (RGB565) ผ่าน SPI. โปรเจกต์ใช้คำสั่งหลัก:</p>
+  <ul>
+    <li><code>0x36</code> MADCTL — กำหนด orientation (landscape/portrait, mirror)</li>
+    <li><code>0x2A</code> CASET / <code>0x2B</code> RASET — กำหนดหน้าต่าง draw</li>
+    <li><code>0x2C</code> RAMWR — เขียน pixel data</li>
+    <li><code>0x29</code> DISPON — เปิดจอ</li>
+  </ul>
+
+  <h3>FT6336U — Capacitive Touch</h3>
+  <p>Touch controller capacitive แบบ 2-finger ใช้หลัก <b>mutual capacitance</b>: เมื่อนิ้วแตะจอ ค่า capacitance ของจุดนั้นเปลี่ยน. controller ตรวจจับจุดที่เปลี่ยนแล้ว report (x, y) ผ่าน I²C (address 0x38)</p>
+  <p>โปรเจกต์ใช้ <b>polling mode</b> (อ่าน register ทุก 20 ms) แทน interrupt — เพื่อความเรียบง่ายและไม่ต้องเดิน INT pin</p>
+
+  <h3>UI Framework</h3>
+  <p>เขียนเองด้วย C++ ใช้ primitive ระดับ pixel/rectangle (fill_rect, draw_string) บน framebuffer. ปรับ rendering ให้ <b>partial-redraw</b> เพื่อหลีกเลี่ยง flicker:</p>
+  <ul>
+    <li>วาดเฉพาะส่วนที่ค่าเปลี่ยน (diff-based)</li>
+    <li>ไม่ clear ทั้งหน้าจอ ทำให้ผู้ใช้ไม่เห็น flash สีดำ</li>
+  </ul>
+</section>
+
+<!-- ===================== 11. CLOUD ===================== -->
+<section id="cloud">
+  <div class="ksub">บทที่ 11</div>
+  <h2>โปรโตคอลคลาวด์: MQTT &amp; HTTPS</h2>
+
+  <h3>MQTT — Message Queuing Telemetry Transport</h3>
+  <p>MQTT เป็น lightweight publish-subscribe protocol สำหรับ IoT พัฒนาโดย IBM, มาตรฐาน OASIS</p>
+  <ul>
+    <li><b>Broker</b> — server กลาง (เราใช้ NETPIE 2020)</li>
+    <li><b>Topic</b> — เส้นทางข้อความแบบ hierarchical (เช่น <code>@shadow/data/update</code>)</li>
+    <li><b>QoS levels</b> — 0 (at most once), 1 (at least once), 2 (exactly once)</li>
+    <li><b>Retained messages</b> — Broker เก็บข้อความล่าสุดของ topic</li>
+  </ul>
+
+  <h3>NETPIE Shadow Concept</h3>
+  <p>NETPIE 2020 ของ NECTEC มีคอนเซ็ปต์ <b>"Device Shadow"</b> — เป็น JSON object ที่เก็บสถานะของ device. เราเขียน update ผ่าน topic <code>@shadow/data/update</code> และ web/mobile app อ่านได้ผ่าน <code>@shadow/data/get</code></p>
+
+  <div class="eq">
+{
+  "data": {
+    "med1_count": 12,
+    "med1_name": "Paracetamol",
+    "med1_slots": 7,
+    "last_dispense": "2026-05-03 08:30:15"
+  }
+}
+  </div>
+
+  <h3>Telegram Bot API</h3>
+  <p>ใช้ HTTPS ไปยัง <code>api.telegram.org</code>:</p>
+  <ul>
+    <li><code>getUpdates</code> — long-polling รับคำสั่งจากผู้ใช้</li>
+    <li><code>sendMessage</code> — ส่งข้อความ</li>
+    <li><code>sendPhoto</code> — upload JPEG จาก /capture endpoint</li>
+  </ul>
+
+  <h3>Google Sheets ผ่าน Apps Script</h3>
+  <p>สร้าง Apps Script ที่รับ POST request → append row ลง Spreadsheet. โปรเจกต์ส่ง POST ทุกครั้งที่จ่ายยา/คืนยาเพื่อบันทึก audit log</p>
+</section>
+
+<!-- ===================== 12. ALGORITHMS ===================== -->
+<section id="algo">
+  <div class="ksub">บทที่ 12</div>
+  <h2>อัลกอริทึมสำคัญ</h2>
+
+  <h3>1. Edge-Triggered IR Detection with Debouncing</h3>
+  <div class="eq">
+const int DEBOUNCE_SAMPLES = 5;
+int consecutive_low = 0;
+bool ir_seen_high   = false;
+
+while (in_dispense_window) {
+    bool low = read_ir() == 0;
+    if (!low) {
+        ir_seen_high   = true;
+        consecutive_low = 0;
+    } else if (ir_seen_high) {
+        if (++consecutive_low >= DEBOUNCE_SAMPLES) {
+            pill_count++;
+            ir_seen_high   = false;
+            consecutive_low = 0;
+        }
+    }
+}
+  </div>
+  <p>อัลกอริทึมนี้แก้ 2 ปัญหา: (1) noise spike → ใช้ debounce, (2) ยาค้างในลำแสง → ต้องเห็น HIGH ก่อนนับครั้งถัดไป</p>
+
+  <h3>2. ToF Stable-Tick Filter (ลด MQTT flood)</h3>
+  <div class="eq">
+const int STABLE_TICKS = 5;
+int last_published = -1;
+int candidate      = -1;
+int stable_count   = 0;
+
+every 1 second:
+    new_count = read_pill_count_from_vl53();
+    if (new_count == candidate)
+        stable_count++;
+    else {
+        candidate    = new_count;
+        stable_count = 1;
+    }
+    if (stable_count >= STABLE_TICKS && candidate != last_published) {
+        publish_to_netpie(candidate);
+        last_published = candidate;
+    }
+  </div>
+  <p>กันการ publish flood เมื่อค่า oscillate (เช่น 14↔16 จาก servo vibration)</p>
+
+  <h3>3. Mid-Cycle Bail (หยุดถ้ายาหมด)</h3>
+  <p>เมื่อ servo ทำงานครบ cycle แต่ไม่เจอยาผ่าน IR ภายใน 4.5 วินาที → ยุติ loop ทันที (ไม่ต้องวนต่อจนครบจำนวน)</p>
+
+  <h3>4. I²C Race Mitigation (retry wrapper)</h3>
+  <p>ESP-IDF v5.3.2 มี race condition ใน i2c_master ISR ที่ทำให้ INVALID_STATE หรือ TIMEOUT. แก้ที่ root level ด้วย retry:</p>
+  <div class="eq">
+esp_err_t i2c_safe_op(...) {
+    esp_err_t r;
+    for (int retry = 0; retry &lt; 3; retry++) {
+        r = i2c_master_transmit(...);
+        if (r == ESP_OK) return r;
+        if (r != ESP_ERR_INVALID_STATE && r != ESP_ERR_TIMEOUT) return r;
+        esp_rom_delay_us(2000);  // 2 ms backoff
+    }
+    return r;
+}
+  </div>
+</section>
+
+<!-- ===================== 13. FAULT ===================== -->
+<section id="fault">
+  <div class="ksub">บทที่ 13</div>
+  <h2>Fault-tolerance &amp; Watchdog Theory</h2>
+  <p class="lead">ระบบ embedded ที่ทำงานต่อเนื่อง 24/7 ต้องมีกลไกฟื้นตัวจากความผิดพลาด เราใช้ <b>Three-Tier Watchdog Strategy</b></p>
+
+  <h3>Tier 1: Task Watchdog Timer (TWDT)</h3>
+  <p>FreeRTOS task ต้อง "feed" watchdog ภายในเวลาที่กำหนด (30 s). ถ้าไม่ feed → panic → reboot</p>
+
+  <h3>Tier 2: Liveness Canary Task</h3>
+  <p>Task ที่ priority ต่ำที่สุดทำงานเพียงอย่างเดียวคือ feed TWDT ทุก 2 s. ถ้า scheduler ปกติ task นี้ <b>ต้อง</b> ได้ CPU time</p>
+
+  <h3>Tier 3: esp_timer Zombie Detector</h3>
+  <p>ใช้ hardware timer (esp_timer task) ตรวจสอบ heartbeat counter ทุก 10 s. ถ้า counter ไม่ tick &gt; 120 s → call <code>esp_restart()</code> โดยตรง</p>
+
+  <div class="diagram">
+┌─ Tier 3: esp_timer (HW timer) ─ 120 s zombie threshold
+│  └─ Tier 2: Liveness canary task ─ 2 s heartbeat
+│     └─ Tier 1: TWDT ─ 30 s panic threshold
+└─ ระดับล่างฟื้นไม่ได้ → ระดับบนยังจับได้
+  </div>
+</section>
+
+<!-- ===================== 14. SUMMARY ===================== -->
+<section id="summary">
+  <div class="ksub">บทที่ 14</div>
+  <h2>สรุปและประโยชน์</h2>
+
+  <h3>สิ่งที่โปรเจกต์ครอบคลุม</h3>
+  <ol>
+    <li>การออกแบบ embedded system ระดับ production: hardware integration + firmware + cloud</li>
+    <li>การประยุกต์ใช้โปรโตคอล I²C, SPI, MIPI-CSI, UART, MQTT, HTTPS ในระบบเดียว</li>
+    <li>การออกแบบ multi-task firmware บน FreeRTOS พร้อม fault-tolerance</li>
+    <li>การประยุกต์ใช้ sensor IR + ToF ในการนับและวัดวัตถุจริง</li>
+    <li>การเชื่อมต่อ IoT cloud (NETPIE), bot interface (Telegram), และ logging (Google Sheets)</li>
+  </ol>
+
+  <h3>ประโยชน์ต่อผู้ใช้</h3>
+  <ul>
+    <li><b>ผู้สูงอายุ / ผู้ป่วย</b> — รับประทานยาตรงเวลา ลดการลืม / ผิดขนาด</li>
+    <li><b>ผู้ดูแล</b> — ตรวจสอบจากระยะไกลผ่าน Telegram / web dashboard</li>
+    <li><b>แพทย์ / เภสัชกร</b> — ดู audit log ใน Google Sheets เพื่อประเมิน adherence</li>
+    <li><b>โรงพยาบาล</b> — ลดภาระพยาบาลในการเตือนคนไข้</li>
+  </ul>
+
+  <h3>ทักษะที่ใช้</h3>
+  <div class="grid-2">
+    <div class="card">
+      <h4>Hardware & Embedded</h4>
+      <ul>
+        <li>การอ่าน datasheet</li>
+        <li>การออกแบบ pin assignment + bus topology</li>
+        <li>การใช้ logic analyzer / multimeter ดีบัก</li>
+        <li>การจัดการ power supply (3.3V / 5V / GND)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Software & Cloud</h4>
+      <ul>
+        <li>C/C++ บน ESP-IDF + FreeRTOS</li>
+        <li>HTML/CSS/JavaScript สำหรับ web UI</li>
+        <li>JSON, MQTT, REST APIs</li>
+        <li>Git workflow + CI/CD</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <p><b>Smart Pill Dispenser — Project Theory</b></p>
+    <p style="margin-top:6px;opacity:.8">เอกสารทฤษฎีประกอบโครงงาน · ESP32-P4-Nano · 2026</p>
+    <p style="margin-top:6px;font-size:11.5px;opacity:.6">เอกสารนี้สามารถ print เป็น PDF ได้ (Ctrl+P) เพื่อนำไปประกอบรายงาน</p>
+  </div>
+</footer>
+
+</body>
+</html>

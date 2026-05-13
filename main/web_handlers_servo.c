@@ -33,11 +33,17 @@ esp_err_t servo_home_handler(httpd_req_t *req) {
     if (auth != ESP_OK) return auth;
 
     int ch = get_ch(req);
-    pca9685_go_home(ch);
-    ESP_LOGD(TAG, "ch%d -> HOME", ch);
-    char r[64];
-    snprintf(r, sizeof(r), "{\"ok\":true,\"ch\":%d}", ch);
+    esp_err_t err = pca9685_go_home(ch);
+    char r[128];
     httpd_resp_set_type(req, "application/json");
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "ch%d HOME failed: %s", ch, esp_err_to_name(err));
+        snprintf(r, sizeof(r), "{\"ok\":false,\"ch\":%d,\"error\":\"%s\"}",
+                 ch, esp_err_to_name(err));
+        return httpd_resp_send(req, r, strlen(r));
+    }
+    ESP_LOGD(TAG, "ch%d -> HOME", ch);
+    snprintf(r, sizeof(r), "{\"ok\":true,\"ch\":%d}", ch);
     return httpd_resp_send(req, r, strlen(r));
 }
 
@@ -47,20 +53,28 @@ esp_err_t servo_work_handler(httpd_req_t *req) {
     if (auth != ESP_OK) return auth;
 
     int ch = get_ch(req);
-    pca9685_go_work(ch);
-    ESP_LOGD(TAG, "ch%d -> WORK", ch);
-    char r[64];
-    snprintf(r, sizeof(r), "{\"ok\":true,\"ch\":%d}", ch);
+    esp_err_t err = pca9685_go_work(ch);
+    char r[128];
     httpd_resp_set_type(req, "application/json");
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "ch%d WORK failed: %s", ch, esp_err_to_name(err));
+        snprintf(r, sizeof(r), "{\"ok\":false,\"ch\":%d,\"error\":\"%s\"}",
+                 ch, esp_err_to_name(err));
+        return httpd_resp_send(req, r, strlen(r));
+    }
+    ESP_LOGD(TAG, "ch%d -> WORK", ch);
+    snprintf(r, sizeof(r), "{\"ok\":true,\"ch\":%d}", ch);
     return httpd_resp_send(req, r, strlen(r));
 }
 
 /* ── Test task: Work → รอ 700ms → Home (background) ── */
 static void servo_test_task(void *arg) {
     int ch = (int)(intptr_t)arg;
-    pca9685_go_work(ch);
+    esp_err_t e1 = pca9685_go_work(ch);
+    if (e1 != ESP_OK) ESP_LOGE(TAG, "test ch%d WORK failed: %s", ch, esp_err_to_name(e1));
     vTaskDelay(pdMS_TO_TICKS(700));
-    pca9685_go_home(ch);
+    esp_err_t e2 = pca9685_go_home(ch);
+    if (e2 != ESP_OK) ESP_LOGE(TAG, "test ch%d HOME failed: %s", ch, esp_err_to_name(e2));
     vTaskDelete(NULL);
 }
 
@@ -70,8 +84,11 @@ esp_err_t servo_test_handler(httpd_req_t *req) {
     if (auth != ESP_OK) return auth;
 
     int ch = get_ch(req);
-    /* spawn background task เพื่อไม่บล็อก httpd → MJPEG stream ไม่หลุด */
-    if (xTaskCreate(servo_test_task, "sv_test", 2048, (void *)(intptr_t)ch, 5, NULL) != pdPASS) {
+    /* spawn background task เพื่อไม่บล็อก httpd → MJPEG stream ไม่หลุด
+     * Stack 2 KB → 4 KB: pca9685_go_work/home fan out through ESP_LOGE
+     * (esp_err_to_name(...)) on errors — log macro alone needs ~300 B
+     * and a back-to-back I2C-failure path left 2 KB uncomfortably tight. */
+    if (xTaskCreate(servo_test_task, "sv_test", 4096, (void *)(intptr_t)ch, 5, NULL) != pdPASS) {
         return httpd_resp_send_500(req);
     }
     char r[64];

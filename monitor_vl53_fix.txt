@@ -1,0 +1,216 @@
+--- Warning: GDB cannot open serial ports accessed as COMx
+--- Using \\.\COM6 instead...
+--- esp-idf-monitor 1.9.0 on \\.\COM6 115200
+--- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H
+Executing action: monitor
+Running idf_monitor in directory D:\project\ddddddddd\unified_cam
+Executing "C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\Scripts\python.exe C:\Users\peekz\esp\esp-idf\tools/idf_monitor.py -p COM6 -b 115200 --toolchain-prefix riscv32-esp-elf- --target esp32p4 --revision 1 --decode-panic backtrace D:\project\ddddddddd\unified_cam\build_idf\unified_cam.elf --force-color -m 'C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\Scripts\python.exe' 'C:\Users\peekz\esp\esp-idf\tools\idf.py' '-B' 'build_idf' '-p' 'COM6'"...
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0x1 (POWERON),boot:0xf (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x18e4
+load:0x4ff2abd0,len:0xd74
+load:0x4ff2cbd0,len:0x322c
+entry 0x4ff2abda
+I (25) boot: ESP-IDF v5.3.2-dirty 2nd stage bootloader
+I (26) boot: compile time May  6 2026 23:05:10
+I (26) boot: Multicore bootloader
+I (30) boot: chip revision: v1.3
+I (33) boot: efuse block revision: v0.3
+I (37) boot.esp32p4: SPI Speed      : 80MHz
+I (42) boot.esp32p4: SPI Mode       : DIO
+I (47) boot.esp32p4: SPI Flash Size : 16MB
+I (52) boot: Enabling RNG early entropy source...
+I (57) boot: Partition Table:
+I (61) boot: ## Label            Usage          Type ST Offset   Length
+I (68) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (75) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (83) boot:  2 factory          factory app      00 00 00010000 00300000
+I (90) boot:  3 coredump         Unknown data     01 03 00310000 00010000
+I (99) boot: End of partition table
+I (102) esp_image: segment 0: paddr=00010020 vaddr=400e0020 size=cdfd8h (843736) map
+I (252) esp_image: segment 1: paddr=000de000 vaddr=30100000 size=0005ch (    92) load
+I (253) esp_image: segment 2: paddr=000de064 vaddr=4ff00000 size=01fb4h (  8116) load
+I (260) esp_image: segment 3: paddr=000e0020 vaddr=40000020 size=d599ch (874908) map
+I (412) esp_image: segment 4: paddr=001b59c4 vaddr=4ff01fb4 size=13960h ( 80224) load
+I (429) esp_image: segment 5: paddr=001c932c vaddr=4ff15980 size=02c40h ( 11328) load
+I (437) boot: Loaded app from partition at offset 0x10000
+I (438) boot: Disabling RNG early entropy source...
+I (450) hex_psram: vendor id    : 0x0d (AP)
+I (451) hex_psram: Latency      : 0x01 (Fixed)
+I (451) hex_psram: DriveStr.    : 0x00 (25 Ohm)
+I (454) hex_psram: dev id       : 0x03 (generation 4)
+I (460) hex_psram: density      : 0x07 (256 Mbit)
+I (466) hex_psram: good-die     : 0x06 (Pass)
+I (471) hex_psram: SRF          : 0x02 (Slow Refresh)
+I (476) hex_psram: BurstType    : 0x00 ( Wrap)
+I (481) hex_psram: BurstLen     : 0x03 (2048 Byte)
+I (487) hex_psram: BitMode      : 0x01 (X16 Mode)
+I (492) hex_psram: Readlatency  : 0x04 (14 cycles@Fixed)
+I (498) hex_psram: DriveStrength: 0x00 (1/1)
+I (503) MSPI DQS: tuning success, best phase id is 2
+I (682) MSPI DQS: tuning success, best delayline id is 11
+I (682) esp_psram: Found 32MB PSRAM device
+I (682) esp_psram: Speed: 200MHz
+I (686) hex_psram: psram CS IO is dedicated
+I (690) cpu_start: Multicore app
+I (1600) esp_psram: SPI SRAM memory test OK
+W (1608) clk: esp_perip_clk_init() has not been implemented yet
+I (1615) cpu_start: Pro cpu start user code
+I (1615) cpu_start: cpu freq: 360000000 Hz
+I (1615) app_init: Application information:
+I (1618) app_init: Project name:     unified_cam
+I (1624) app_init: App version:      backup-camera-working-2026-05-0
+I (1631) app_init: Compile time:     May  7 2026 08:28:53
+I (1637) app_init: ELF file SHA256:  3afdc521d...
+I (1642) app_init: ESP-IDF:          v5.3.2-dirty
+I (1647) efuse_init: Min chip rev:     v0.1
+I (1652) efuse_init: Max chip rev:     v1.99 
+I (1657) efuse_init: Chip rev:         v1.3
+I (1662) heap_init: Initializing. RAM available for dynamic allocation:
+I (1670) heap_init: At 4FF1B310 len 0001FCB0 (127 KiB): RAM
+I (1676) heap_init: At 4FF3AFC0 len 00004BF0 (18 KiB): RAM
+I (1682) heap_init: At 4FF5CBF0 len 00043410 (269 KiB): RAM
+I (1688) heap_init: At 5010808C len 00007F74 (31 KiB): RTCRAM
+I (1695) heap_init: At 3010005C len 00001FA4 (7 KiB): TCM
+I (1701) esp_psram: Adding pool of 32768K of PSRAM memory to heap allocator
+I (1709) spi_flash: detected chip: generic
+I (1713) spi_flash: flash io: dio
+I (1717) host_init: ESP Hosted : Host chip_ip[18]
+I (1751) H_API: ESP-Hosted starting. Hosted_Tasks: prio:23, stack: 5120 RPC_task_stack: 5120
+sdio_mempool_create free:33711892 min-free:33711892 lfb-def:33030144 lfb-8bit:33030144
+
+I (1757) gpio: GPIO[18]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (1766) gpio: GPIO[19]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (1776) gpio: GPIO[14]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (1785) gpio: GPIO[15]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (1794) gpio: GPIO[16]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (1804) gpio: GPIO[17]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+I (1813) H_API: ** add_esp_wifi_remote_channels **
+I (1818) transport: Add ESP-Hosted channel IF[1]: S[0] Tx[0x4001093e] Rx[0x4001dc28]
+--- 0x4001093e: transport_drv_sta_tx at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/drivers/transport/transport_drv.c:211
+--- 0x4001dc28: esp_wifi_remote_channel_rx at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_wifi_remote/esp_wifi_remote_net.c:19
+I (1827) transport: Add ESP-Hosted channel IF[2]: S[0] Tx[0x40010884] Rx[0x4001dc28]
+--- 0x40010884: transport_drv_ap_tx at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/drivers/transport/transport_drv.c:241
+--- 0x4001dc28: esp_wifi_remote_channel_rx at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_wifi_remote/esp_wifi_remote_net.c:19
+I (1836) esp_core_dump_flash: Init core dump to flash
+I (1841) esp_core_dump_flash: Found partition 'coredump' @ 310000 65536 bytes
+I (1874) esp_core_dump_flash: Core dump data checksum is correct
+I (1874) esp_core_dump_flash: Found core dump 29092 bytes in flash @ 0x310000
+I (1878) main_task: Started on CPU0
+I (1888) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations
+I (1888) main_task: Calling app_main()
+I (1898) unified_cam: Starting Unified Cam & Modules (ESP32-P4 Nano)
+W (1898) unified_cam: Boot #1, reset reason: POWERON (1)
+I (1928) cloud_secrets: Cloud secrets loaded from NVS (telegram=set, sheets=set)
+I (1938) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (1938) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (1958) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (1958) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (1968) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (1968) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (1978) i2c_mgr: I2C_NUM_0 ready — SDA=7 SCL=8 @ 50000 Hz
+I (1988) unified_cam: Skipping bus scan (per-device pings only)
+W (1998) unified_cam: I2C scan begin (full bus)...
+W (2018) unified_cam: I2C ACK: 0x18 0x20 0x40 0x56 0x68 0x70 
+W (2018) unified_cam: I2C scan end. Camera should be 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (2018) unified_cam: CAMERA INIT (early, before any peripheral driver init)
+I (2028) camera_init: Lazy camera_init triggered (first /capture or /photo)
+I (2218) camera_init: Initializing JPEG encoder for 800x640
+W (2218) jpeg_enc: DIAG-LEAK entry  PSRAM free=30478208 largest=30408704
+W (2218) jpeg_enc: DIAG-LEAK deinit PSRAM free=30478208
+I (2278) jpeg_enc: JPEG HW encoder initialized: 800x640, out_buf=1024000 bytes x2 + rot_buf=1024000
+W (2278) jpeg_enc: DIAG-LEAK exit   PSRAM free=26381072 largest=26214400
+I (2578) camera_init: MIPI PHY LDO power-cycled (200 ms off)
+I (2578) camera_init: XCLK 24000000 Hz generated on GPIO33
+I (2778) camera_init: VL53 XSHUT lowered before SCCB (chips offline)
+W (2798) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (2798) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (2798) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (2818) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (2818) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (2828) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (2838) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (2848) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+I (2848) camera_init: Shared I2C bus recovered before SCCB init
+W (3008) camera_init: I2C scan begin (looking for camera + others)...
+W (3018) camera_init: I2C scan ACK: 0x40 0x56 0x68 0x70 
+W (3018) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+E (3028) sccb_i2c: s_sccb_i2c_transmit_receive_reg_a16v8(189): faled to transmit receive
+E (3028) ov5647: ov5647_get_sensor_id(193): read pid_l failed
+E (3038) ov5647: Get sensor ID failed
+W (3048) camera_init: Camera attempt 1 failed: cam=0x0 fmt_match=0 set_fmt=ESP_FAIL
+W (3048) i2c_mgr: I2C runtime recovery: tearing down bus + unsticking SDA
+I (3058) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (3068) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (3088) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (3088) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+I (3098) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (3108) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 
+I (3118) i2c_mgr: recover_bus: bus re-initialized (sda_released=1)
+W (3368) ov5647: Camera sensor PID=0x5656 (expected 0x5647) — close match accepted
+W (3748) camera_init: set_format readback 0x4837=0x28 (ESP_OK, expect 0x28)
+I (3748) camera_init: Camera detect + format OK (attempt 2) — stream-on deferred until CSI ready
+I (3748) camera_init: VL53 XSHUT restored after SCCB
+I (3758) camera_init: ISP frame_cfg = 0x6031f27f, bayer_mode = 0 (00=BGGR 01=GBRG 10=GRBG 11=RGGB)
+I (3768) camera_init: Override 0x4800=0x10 (continuous clock + line sync): ESP_OK
+I (3788) camera_init: OV5647 SDE Y-offset = +64 (brightness boost, no chroma)
+I (3788) camera_init: Sensor stream-on issued AFTER CSI ready — first frame should arrive shortly
+I (3788) camera_init: Camera capture task started (MJPEG mode)
+I (3798) camera_init: MIPI first frame received — pipeline healthy
+I (3808) camera_init: Camera + JPEG HW Encoder Initialized OK
+I (3808) camera_init: Lazy camera_init -> ESP_OK
+W (4518) unified_cam: Early camera init Traceback (most recent call last):
+  File "C:\Users\peekz\esp\esp-idf\tools\idf.py", line 844, in <module>
+    main()
+  File "C:\Users\peekz\esp\esp-idf\tools\idf.py", line 734, in main
+    cli(argv, prog_name=PROG, complete_var=SHELL_COMPLETE_VAR)
+  File "C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\lib\site-packages\click\core.py", line 1161, in __call__
+    return self.main(*args, **kwargs)
+  File "C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\lib\site-packages\click\core.py", line 1082, in main
+    rv = self.invoke(ctx)
+  File "C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\lib\site-packages\click\core.py", line 1729, in invoke
+    return _process_result(rv)
+  File "C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\lib\site-packages\click\core.py", line 1666, in _process_result
+    value = ctx.invoke(self._result_callback, value, **ctx.params)
+  File "C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\lib\site-packages\click\core.py", line 788, in invoke
+    return __callback(*args, **kwargs)
+  File "C:\Users\peekz\esp\esp-idf\tools\idf.py", line 629, in execute_tasks
+    task(ctx, global_args, task.action_args)
+  File "C:\Users\peekz\esp\esp-idf\tools\idf.py", line 201, in __call__
+    self.callback(self.name, context, global_args, **action_args)
+  File "C:\Users\peekz\esp\esp-idf\tools\idf_py_actions\serial_ext.py", line 173, in monitor
+    RunTool('idf_monitor', monitor_args, args.project_dir, build_dir=args.build_dir, hints=hints, interactive=True, convert_output=True)()
+  File "C:\Users\peekz\esp\esp-idf\tools\idf_py_actions\tools.py", line 313, in __call__
+    process, stderr_output_file, stdout_output_file = asyncio.run(self.run_command(self.args, env_copy))
+  File "C:\Users\peekz\AppData\Local\Programs\Python\Python38\lib\asyncio\runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "C:\Users\peekz\AppData\Local\Programs\Python\Python38\lib\asyncio\base_events.py", line 616, in run_until_complete
+    return future.result()
+  File "C:\Users\peekz\esp\esp-idf\tools\idf_py_actions\tools.py", line 358, in run_command
+    await asyncio.gather(
+  File "C:\Users\peekz\esp\esp-idf\tools\idf_py_actions\tools.py", line 455, in read_and_write_stream
+    output_converter.write(output)
+  File "C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\lib\site-packages\esp_idf_monitor\base\ansi_color_converter.py", line 132, in write
+    self._output_write(b)
+  File "C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\lib\site-packages\esp_idf_monitor\base\ansi_color_converter.py", line 73, in _output_write
+    self.output.write(self.decode_buffer.decode())  # type: ignore
+  File "C:\Users\peekz\AppData\Local\Programs\Python\Python38\lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2192' in position 0: character maps to <undefined>
+Exception ignored in: <function BaseSubprocessTransport.__del__ at 0x0000027A55C63CA0>
+Traceback (most recent call last):
+  File "C:\Users\peekz\AppData\Local\Programs\Python\Python38\lib\asyncio\base_subprocess.py", line 126, in __del__
+  File "C:\Users\peekz\AppData\Local\Programs\Python\Python38\lib\asyncio\base_subprocess.py", line 104, in close
+  File "C:\Users\peekz\AppData\Local\Programs\Python\Python38\lib\asyncio\proactor_events.py", line 108, in close
+  File "C:\Users\peekz\AppData\Local\Programs\Python\Python38\lib\asyncio\base_events.py", line 719, in call_soon
+  File "C:\Users\peekz\AppData\Local\Programs\Python\Python38\lib\asyncio\base_events.py", line 508, in _check_closed
+RuntimeError: Event loop is closed
+Exception ignored in: <function _ProactorBasePipeTransport.__del__ at 0x0000027A55C82430>
+Traceback (most recent call last):
+  File "C:\Users\peekz\AppData\Local\Programs\Python\Python38\lib\asyncio\proactor_events.py", line 116, in __del__
+  File "C:\Users\peekz\AppData\Local\Programs\Python\Python38\lib\asyncio\proactor_events.py", line 108, in close
+  File "C:\Users\peekz\AppData\Local\Programs\Python\Python38\lib\asyncio\base_events.py", line 719, in call_soon
+  File "C:\Users\peekz\AppData\Local\Programs\Python\Python38\lib\asyncio\base_events.py", line 508, in _check_closed
+RuntimeError: Event loop is closed

@@ -25,6 +25,7 @@
 #include "driver/spi_master.h"
 #include "netpie_mqtt.h"
 #include "dispenser_scheduler.h"
+#include "idle_music.h"
 
 static const char *TAG = "display_clk";
 
@@ -44,6 +45,15 @@ static const char *TAG = "display_clk";
 static spi_device_handle_t s_spi = NULL;
 char s_ip[32] = "0.0.0.0";
 bool s_ip_dirty = true;
+// Protects s_ip + s_ip_dirty against concurrent set_ip (event handler)
+// vs. clock_task render. Without this a half-written IP string could
+// be drawn on screen.
+static portMUX_TYPE s_ip_mux = portMUX_INITIALIZER_UNLOCKED;
+// Serializes access to the shared static buffers in fill_rect /
+// set_window. Without it, two tasks calling fill_rect concurrently
+// can corrupt the shared `last_color` / `buf` state — visible as
+// pixel tearing or wrong-color rectangles in the UI.
+static SemaphoreHandle_t s_disp_mutex = NULL;
 
 /* ─────────────────────────────────────────────────────────────
    Low-level SPI
@@ -133,6 +143,11 @@ void fill_rect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color)
     if (y + h > LCD_H) h = LCD_H - y;
     if (w <= 0 || h <= 0) return;
 
+    // Serialize fill_rect across all caller tasks. The static buf +
+    // last_color cache below is shared state — concurrent tasks
+    // would race the cache fill and corrupt each other's rects.
+    if (s_disp_mutex) xSemaphoreTake(s_disp_mutex, portMAX_DELAY);
+
     set_window(x, y, x + w - 1, y + h - 1);
 
     const int PIX_BATCH = 4096;
@@ -160,6 +175,7 @@ void fill_rect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color)
         pix -= batch;
     }
     cs_hi();
+    if (s_disp_mutex) xSemaphoreGive(s_disp_mutex);
 }
 
 extern "C" void ui_draw_rgb_bitmap(int16_t x, int16_t y, int16_t w, int16_t h, const uint16_t* bitmap)
@@ -482,13 +498,16 @@ bool show_return_confirm = false;
 
 extern "C" void display_clock_set_ip(const char *ip)
 {
+    portENTER_CRITICAL(&s_ip_mux);
     safe_copy(s_ip, sizeof(s_ip), ip ? ip : "0.0.0.0");
     s_ip_dirty = true;
+    portEXIT_CRITICAL(&s_ip_mux);
 }
 
 extern "C" void display_clock_init(void)
 {
     ESP_LOGI(TAG, "Init ST7796S 480x320 - Interactive UI Layout");
+    if (!s_disp_mutex) s_disp_mutex = xSemaphoreCreateMutex();
     spi_display_bus_init();
     if (!s_spi) {
         ESP_LOGE(TAG, "SPI fail");
@@ -510,26 +529,30 @@ extern "C" void display_clock_init(void)
 ───────────────────────────────────────────────────────────── */
 void draw_top_bar_with_back(const char *title)
 {
-    fill_rect(0, 0, LCD_W, 44, THEME_PANEL);
-    fill_rect(0, 42, LCD_W, 2, THEME_ACCENT);
+    /* Top bar bumped from 44 to 56 px and back button nudged down so the
+     * tap target sits ~16 px away from the panel edge (top edge is hard to
+     * hit reliably on this TFT). Hit zone in callers also expanded to
+     * include the top edge so misses near the bezel still register. */
+    fill_rect(0, 0, LCD_W, 56, THEME_PANEL);
+    fill_rect(0, 54, LCD_W, 2, THEME_ACCENT);
 
-    // Back button
-    fill_rect(14, 8, 104, 26, THEME_ACCENT);
-    draw_rect(14, 8, 104, 26, THEME_BORDER);
-    
-    // Arrow
-    fill_rect(22, 19, 10, 2, THEME_TXT_MAIN);
-    fill_rect(22, 19,  2, 2, THEME_TXT_MAIN);
-    fill_rect(24, 17,  2, 2, THEME_TXT_MAIN);
-    fill_rect(26, 15,  2, 2, THEME_TXT_MAIN);
-    fill_rect(24, 21,  2, 2, THEME_TXT_MAIN);
-    fill_rect(26, 23,  2, 2, THEME_TXT_MAIN);
-    
-    draw_string_gfx(40, 26, "BACK", THEME_TXT_MAIN, THEME_ACCENT, &FreeSans9pt7b);
+    // Back button (y 8→18, h 26→32)
+    fill_rect(14, 18, 104, 32, THEME_ACCENT);
+    draw_rect(14, 18, 104, 32, THEME_BORDER);
 
-    // Title (Conditional for overlap handling)
+    // Arrow (shifted down by 16 px to match new button y)
+    fill_rect(22, 35, 10, 2, THEME_TXT_MAIN);
+    fill_rect(22, 35,  2, 2, THEME_TXT_MAIN);
+    fill_rect(24, 33,  2, 2, THEME_TXT_MAIN);
+    fill_rect(26, 31,  2, 2, THEME_TXT_MAIN);
+    fill_rect(24, 37,  2, 2, THEME_TXT_MAIN);
+    fill_rect(26, 39,  2, 2, THEME_TXT_MAIN);
+
+    draw_string_gfx(40, 42, "BACK", THEME_TXT_MAIN, THEME_ACCENT, &FreeSans9pt7b);
+
+    // Title (centered vertically in the taller bar)
     if (title) {
-        draw_string_centered(LCD_W / 2, 29, title, THEME_TXT_MAIN, THEME_PANEL, &FreeSans18pt7b);
+        draw_string_centered(LCD_W / 2, 39, title, THEME_TXT_MAIN, THEME_PANEL, &FreeSans18pt7b);
     }
 }
 
@@ -595,11 +618,23 @@ static void clock_task(void *)
 
         uint16_t tx = 0, ty = 0;
         bool touched = false;
+        /* Feed the TWDT before the I2C touch read — under bus contention
+         * (VL53 init burst, manual dispense's pcf8574_read loop, or a
+         * mid-recovery cycle) ft6336u_read_touch can stall up to 500 ms
+         * on the i2c_manager mutex. The top-of-loop reset alone left a
+         * narrow margin against TWDT=45 s if recovery + render + touch
+         * stacked unluckily; an extra reset right before the I2C call
+         * widens the margin to near-infinite for realistic workloads. */
+        esp_task_wdt_reset();
         ft6336u_read_touch(&tx, &ty, &touched);
 
         if (touched) {
             last_tx = tx;
             last_ty = ty;
+            /* Notify the idle-music driver that the user is active so
+             * it stops playing track 99 (or doesn't start) for the
+             * next 60 s. Symbol declared at file scope below. */
+            idle_music_register_touch();
         }
 
         bool long_press = false;
@@ -671,7 +706,7 @@ static void clock_task(void *)
                 ui_setup_meds_detail_handle_touch(tx_n, ty_n);
             }
             else if (current_page == PAGE_MANUAL) {
-                if (tx_n >= 14 && tx_n <= 118 && ty_n >= 8 && ty_n <= 34) pending_page = PAGE_MENU;
+                if (tx_n >= 0 && tx_n <= 130 && ty_n >= 0 && ty_n <= 52) pending_page = PAGE_MENU;
             }
             else if (current_page == PAGE_SETTINGS) {
                 ui_settings_handle_touch(tx_n, ty_n);
@@ -750,6 +785,18 @@ static void clock_task(void *)
         if (pending_page != current_page) {
             if (pending_page == PAGE_WIFI_SCAN) {
                 wf_state = 0; // Reset scan state when entering the page!
+            }
+            /* Defensive cleanup of meds-detail edit session if the page
+             * is being left some way other than Save/Back (e.g. a
+             * scheduled-dispense Confirm popup yanks us away). Without
+             * this the NETPIE publish inhibit pushed on entry would
+             * leak and block all future shadow publishes until reboot.
+             * PAGE_KEYBOARD is excluded — it's a transient sub-page
+             * that returns to detail; the inhibit should stay up. */
+            if (current_page == PAGE_SETUP_MEDS_DETAIL &&
+                pending_page != PAGE_SETUP_MEDS_DETAIL &&
+                pending_page != PAGE_KEYBOARD) {
+                ui_setup_meds_end_edit_session_if_any();
             }
             current_page = pending_page;
             force_redraw = true;
@@ -892,6 +939,11 @@ static void clock_task(void *)
             }
             else if (current_page == PAGE_STANDBY) {
                 ui_standby_render(now);
+                /* Big-render pages can spend hundreds of ms in SPI font
+                 * draws — feed the TWDT before falling through to the
+                 * next loop iteration so we never accumulate close to
+                 * the 45 s budget. */
+                esp_task_wdt_reset();
             }
             else if (current_page == PAGE_MENU) {
                 ui_menu_render();
@@ -1005,19 +1057,4 @@ extern "C" void display_clock_start_task(void)
     ESP_LOGI(TAG, "Clock task started");
 }
 
-extern "C" void display_clock_show_ultra_safe(void)
-{
-    // Static message screen for ultra-safe mode (no I2C, no clock_task,
-    // no touch polling). Shown when the board has crashed >=3 times in
-    // a row — the I2C driver race won't recover without applying the
-    // NULL-guard patch + reflashing.
-    if (!s_spi) return;
-    fill_screen(0x0000);
-    // "ULTRA SAFE MODE" — ascii so we don't depend on UTF-8 helpers
-    draw_string_centered(LCD_W / 2, 90, "ULTRA SAFE MODE", 0xFFE0, 0x0000, &FreeSans18pt7b);
-    draw_string_centered(LCD_W / 2, 140, "I2C bus wedged", 0xFFFF, 0x0000, &FreeSans12pt7b);
-    draw_string_centered(LCD_W / 2, 170, "Apply IDF NULL-guard patch", 0xFFFF, 0x0000, &FreeSans9pt7b);
-    draw_string_centered(LCD_W / 2, 195, "and reflash to recover", 0xFFFF, 0x0000, &FreeSans9pt7b);
-    draw_string_centered(LCD_W / 2, 240, "or unplug USB for 10 sec", 0xAD55, 0x0000, &FreeSans9pt7b);
-    draw_string_centered(LCD_W / 2, 265, "to power-cycle the bus", 0xAD55, 0x0000, &FreeSans9pt7b);
-}
+// display_clock_show_ultra_safe removed 2026-05-10 with safe_mode logic.

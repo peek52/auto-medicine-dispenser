@@ -1,0 +1,9 @@
+[0;33m--- Warning: GDB cannot open serial ports accessed as COMx[0m
+[0;33m--- Using \\.\COM8 instead...[0m
+[0;33m--- esp-idf-monitor 1.9.0 on \\.\COM8 115200[0m
+--- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H
+could not open port '\\\\.\\COM8': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)
+--- Connection to \\.\COM8 failed. Available ports:
+--- COM11
+--- COM12
+

@@ -23,6 +23,11 @@ esp_err_t ds3231_get_date_str(char *buf, size_t buf_len);
 /** Set the DS3231 time from a tm struct */
 esp_err_t ds3231_set_time(struct tm *timeinfo);
 
+/** Read the RTC and seed the ESP32 system time (settimeofday). Call
+ *  once at boot AFTER i2c_manager_init() so the display has a real
+ *  year before SNTP completes. Returns ESP_OK if seed succeeded. */
+esp_err_t ds3231_seed_system_time(void);
+
 #ifdef __cplusplus
 }
 #endif

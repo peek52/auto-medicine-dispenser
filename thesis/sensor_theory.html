@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>ทฤษฎีเซนเซอร์ การพัฒนา UI และระบบกล้อง — วิทยานิพนธ์</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: "TH SarabunPSK", "Sarabun", "Tahoma", sans-serif;
+    font-size: 18px;
+    line-height: 1.7;
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 32px 28px 80px;
+    color: #1a1a1a;
+    background: #fafafa;
+  }
+  h1 {
+    font-size: 32px;
+    color: #1f3a5f;
+    border-bottom: 3px solid #1f3a5f;
+    padding-bottom: 8px;
+    margin-top: 0;
+  }
+  h2 {
+    font-size: 26px;
+    color: #1f3a5f;
+    margin-top: 36px;
+    border-left: 6px solid #1f3a5f;
+    padding-left: 12px;
+  }
+  h3 {
+    font-size: 22px;
+    color: #2c5288;
+    margin-top: 28px;
+  }
+  h4 {
+    font-size: 19px;
+    color: #444;
+    margin-top: 18px;
+  }
+  p { text-indent: 0; margin: 12px 0; }
+  .indent p { text-indent: 36px; }
+  figure {
+    margin: 20px auto;
+    text-align: center;
+    background: #fff;
+    border: 1px solid #ddd;
+    padding: 16px;
+    border-radius: 8px;
+  }
+  figcaption {
+    font-size: 16px;
+    color: #555;
+    margin-top: 10px;
+    font-style: italic;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 4px 0 20px;
+    font-size: 17px;
+  }
+  .table-caption {
+    font-size: 16px;
+    color: #1f3a5f;
+    font-weight: bold;
+    margin: 18px 0 4px;
+    padding-left: 4px;
+  }
+  th, td {
+    border: 1px solid #aaa;
+    padding: 8px 12px;
+    text-align: left;
+  }
+  th {
+    background: #1f3a5f;
+    color: white;
+  }
+  tr:nth-child(even) td { background: #f0f4fa; }
+  code, .formula {
+    background: #f4f4f4;
+    border: 1px solid #ddd;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "Consolas", monospace;
+    font-size: 16px;
+  }
+  .formula {
+    display: block;
+    padding: 12px 16px;
+    margin: 10px 0;
+    text-align: center;
+    font-size: 17px;
+  }
+  .note {
+    background: #fff8e1;
+    border-left: 4px solid #f9a825;
+    padding: 10px 16px;
+    margin: 12px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  ul, ol { padding-left: 28px; }
+  li { margin: 6px 0; }
+  svg { max-width: 100%; height: auto; }
+  .toc {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 16px 24px;
+    margin: 20px 0;
+  }
+  .toc a {
+    color: #1f3a5f;
+    text-decoration: none;
+  }
+  .toc a:hover { text-decoration: underline; }
+  @media print {
+    body { background: white; max-width: 100%; padding: 0; }
+    figure { page-break-inside: avoid; border: 1px solid #888; }
+    h2, h3 { page-break-after: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<h1>บทที่ 2 ทฤษฎีและงานวิจัยที่เกี่ยวข้อง (เนื้อหาเซนเซอร์/UI/กล้อง)</h1>
+
+<div class="toc">
+  <strong>สารบัญ</strong>
+  <ul>
+    <li><a href="#s251">2.5.1 เซนเซอร์อินฟราเรด (IR Sensor)</a></li>
+    <li><a href="#s252">2.5.2 เซนเซอร์วัดระยะ (VL53L0X Time-of-Flight)</a></li>
+    <li><a href="#s253">2.5.3 หน้าจอสัมผัสแบบ Capacitive (FT6336U)</a></li>
+    <li><a href="#s261">2.6.1 เซอร์โวมอเตอร์ SG90</a></li>
+    <li><a href="#s262">2.6.2 โมดูลขยายสัญญาณ PWM (PCA9685)</a></li>
+    <li><a href="#s271">2.7.1 เซนเซอร์ภาพ OV5647 และการประมวลผล ISP</a></li>
+    <li><a href="#s272">2.7.2 ฮาร์ดแวร์เข้ารหัส JPEG และอัลกอริทึมหมุนภาพ</a></li>
+    <li><a href="#s282">2.8.2 แพลตฟอร์ม NETPIE 2020</a></li>
+    <li><a href="#s283">2.8.3 ความปลอดภัย HTTPS และ TLS 1.2</a></li>
+    <li><a href="#s284">2.8.4 Telegram Bot API</a></li>
+    <li><a href="#s285">2.8.5 Google Apps Script Webhook</a></li>
+  </ul>
+</div>
+
+<h2>2.5 ทฤษฎีเซนเซอร์</h2>
+<p class="indent">งานวิจัยนี้ใช้เซนเซอร์ 3 ประเภทหลักเพื่อรับข้อมูลจากสภาพแวดล้อม ได้แก่ เซนเซอร์อินฟราเรดสำหรับนับเม็ดยาที่ผ่านช่อง, เซนเซอร์วัดระยะแบบเวลาบินของแสง (Time-of-Flight) สำหรับวัดระดับยาคงเหลือในตลับ, และจอสัมผัสแบบเก็บประจุ (Capacitive Touch) สำหรับเป็นช่องทางสั่งงานระหว่างผู้ใช้กับระบบ</p>
+
+<h3 id="s251">2.5.1 เซนเซอร์อินฟราเรด (IR Sensor)</h3>
+
+<p class="indent">เซนเซอร์อินฟราเรด (Infrared Sensor) เป็นอุปกรณ์ตรวจจับวัตถุชนิด Optical Sensor โดยอาศัยลำแสงอินฟราเรด (คลื่นในช่วง 850 – 950 นาโนเมตร) ที่มนุษย์มองไม่เห็นด้วยตาเปล่า โครงสร้างพื้นฐานประกอบด้วยสองส่วนหลัก คือ ตัวส่ง (Infrared Emitter) ใช้ LED อินฟราเรดสร้างลำแสง และตัวรับ (Photo-receiver) ใช้ Phototransistor หรือ Photodiode ทำหน้าที่แปลงพลังงานแสงให้เป็นกระแสไฟฟ้า เซนเซอร์ IR ที่นิยมใช้ตรวจจับวัตถุมีสองรูปแบบหลัก ได้แก่ แบบสะท้อน (Reflective Type) ซึ่งวางตัวส่ง-ตัวรับด้านเดียวกันและตรวจจับแสงที่สะท้อนกลับจากวัตถุ และแบบคั่นลำแสง (Through-beam / Photointerruptor) ซึ่งวางตัวส่ง-ตัวรับตรงข้ามกันแล้วตรวจจับเมื่อวัตถุขวางลำแสง</p>
+
+<p class="indent">ในงานวิจัยนี้ IR Sensor ถูกติดตั้งที่ทางออกของแต่ละตลับยาทั้ง 6 ตลับ ทำหน้าที่ตรวจจับเม็ดยาที่ตกลงมาเมื่อกลไกเซอร์โวเปิดประตูจ่ายยา หลักการทำงานคือเมื่อไม่มีเม็ดยาผ่านในระยะตรวจจับ เอาต์พุตของโมดูล IR จะอยู่ที่ระดับ <code>HIGH</code> (ค่า bit = 1) แต่เมื่อเม็ดยาเข้ามาในบริเวณตรวจจับ เอาต์พุตจะเปลี่ยนเป็น <code>LOW</code> (ค่า bit = 0) ชั่วขณะ ระบบจึงใช้การเปลี่ยนสถานะนี้เป็นสัญญาณยืนยันว่ายาตกถึงปลายช่องทางแล้วจริง</p>
+
+<figure>
+  <svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrowred" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#d32f2f"/>
+      </marker>
+    </defs>
+    <!-- Title -->
+    <text x="360" y="25" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a3a6e">หลักการทำงานของ IR Sensor (ตรวจจับวัตถุที่ผ่านช่อง)</text>
+
+    <!-- IR module body -->
+    <rect x="60" y="120" width="170" height="120" fill="#1a3a6e" rx="6"/>
+    <text x="145" y="150" text-anchor="middle" fill="white" font-size="14" font-weight="bold">IR Sensor</text>
+    <text x="145" y="170" text-anchor="middle" fill="#dde" font-size="12">โมดูลตรวจจับ</text>
+
+    <!-- Emitter dot -->
+    <circle cx="105" cy="200" r="8" fill="#d32f2f"/>
+    <text x="105" y="225" text-anchor="middle" fill="#fff" font-size="11">LED</text>
+    <!-- Receiver dot -->
+    <circle cx="185" cy="200" r="8" fill="#222" stroke="#fff" stroke-width="1"/>
+    <text x="185" y="225" text-anchor="middle" fill="#fff" font-size="11">Photo</text>
+
+    <!-- IR beam outgoing -->
+    <line x1="105" y1="200" x2="360" y2="80" stroke="#d32f2f" stroke-width="2" stroke-dasharray="5,3"/>
+    <text x="200" y="125" font-size="12" fill="#d32f2f">IR 940 nm</text>
+    <!-- Reflected beam -->
+    <line x1="360" y1="80" x2="185" y2="200" stroke="#2e8b3e" stroke-width="2" stroke-dasharray="5,3"/>
+    <text x="290" y="170" font-size="12" fill="#2e8b3e">สะท้อน/บัง</text>
+
+    <!-- Pill object -->
+    <ellipse cx="380" cy="80" rx="26" ry="16" fill="#fff8b0" stroke="#aa9020" stroke-width="2"/>
+    <text x="380" y="86" text-anchor="middle" font-size="13" fill="#665020">เม็ดยา</text>
+    <text x="380" y="50" text-anchor="middle" font-size="11" fill="#665020">↓ ตก</text>
+
+    <!-- Output waveform -->
+    <text x="500" y="135" font-size="13" fill="#333" font-weight="bold">เอาต์พุตดิจิทัล</text>
+    <g stroke="#0a73c2" stroke-width="2.5" fill="none">
+      <line x1="470" y1="170" x2="540" y2="170"/>
+      <line x1="540" y1="170" x2="540" y2="200"/>
+      <line x1="540" y1="200" x2="600" y2="200"/>
+      <line x1="600" y1="200" x2="600" y2="170"/>
+      <line x1="600" y1="170" x2="680" y2="170"/>
+    </g>
+    <text x="475" y="165" font-size="11" fill="#0a73c2">HIGH</text>
+    <text x="555" y="225" font-size="11" fill="#d32f2f" font-weight="bold">LOW = ตรวจเจอ</text>
+    <text x="500" y="260" font-size="11" fill="#666">ปกติ HIGH (ไม่มียา)</text>
+    <text x="500" y="280" font-size="11" fill="#666">ผ่าน LOW ชั่วขณะ ~50 ms</text>
+
+    <!-- Note ground at bottom -->
+    <text x="145" y="295" text-anchor="middle" font-size="12" fill="#1a3a6e">วางที่ทางออกของแต่ละตลับยา</text>
+  </svg>
+  <figcaption>ภาพที่ 2-5 หลักการทำงานของ IR Sensor ในระบบจ่ายยา — IR LED ส่งลำแสงคลื่น 940 นาโนเมตร เม็ดยาที่ผ่านบริเวณตรวจจับสะท้อน/คั่นลำแสงทำให้ Phototransistor ตอบสนอง ส่งผลให้สัญญาณเอาต์พุตเปลี่ยนจาก HIGH เป็น LOW ชั่วขณะ</figcaption>
+</figure>
+
+<h4>การเชื่อมต่อกับระบบ</h4>
+<p class="indent">เนื่องจากระบบมี IR Sensor ทั้งหมด 6 ตัว (ตลับละ 1 ตัว) หากต่อ GPIO ของ ESP32-P4 ตรง ๆ จะใช้ขาควบคุมสูงถึง 6 ขา งานวิจัยนี้จึงใช้ PCF8574 ซึ่งเป็น I/O Expander แบบ I²C ขนาด 8 บิต ที่ I²C Address 0x20 เป็นตัวรวบสัญญาณ ทำให้ใช้สาย I²C เพียง 2 เส้น (SDA/SCL) ก็สามารถอ่านสถานะของ IR ทั้ง 6 ตัวได้พร้อมกัน เอาต์พุตจาก IR แต่ละตัวต่อเข้าขา P0 ถึง P5 ของ PCF8574 ตามลำดับ ระบบอ่านค่าสถานะ 1 ไบต์ผ่าน I²C ที่ความถี่ 50 kHz ในระหว่างกระบวนการจ่ายยา</p>
+
+<h4>การกรองสัญญาณ (Debounce)</h4>
+<p class="indent">เนื่องจากสัญญาณ PWM ความถี่ 50 Hz ที่ใช้ขับเซอร์โว 6 ตัวพร้อมกันสามารถเกิดการเหนี่ยวนำ (Coupling) เข้าสู่สาย IR ได้ ทำให้เกิด Spike ขาลงชั่วขณะ ระบบจึงใช้กลไก Debounce ในระดับซอฟต์แวร์โดยกำหนดเงื่อนไขว่าสัญญาณต้องเป็น <code>LOW</code> ติดต่อกันอย่างน้อย 3 ครั้งของการ Polling จึงจะนับเป็น "เม็ดยาผ่าน" หนึ่งเม็ด ค่า Detection Window ขั้นต่ำจึงเท่ากับประมาณ 30 มิลลิวินาที ซึ่งยังคงสั้นกว่าเวลาเฉลี่ยที่เม็ดยาผ่านลำแสง (~50 มิลลิวินาที) จึงไม่พลาดเม็ดยาจริง แต่กรองสัญญาณรบกวนได้</p>
+
+<h4>คุณสมบัติของ IR Sensor ที่ใช้</h4>
+<div class="table-caption">ตารางที่ 2-2 คุณสมบัติของเซนเซอร์อินฟราเรดที่ใช้ในงานวิจัย</div>
+<table>
+  <tr><th>พารามิเตอร์</th><th>ค่า</th></tr>
+  <tr><td>ความยาวคลื่น (Wavelength)</td><td>940 นาโนเมตร (Near Infrared)</td></tr>
+  <tr><td>ตัวส่ง</td><td>IR LED</td></tr>
+  <tr><td>ตัวรับ</td><td>Phototransistor / Photodiode</td></tr>
+  <tr><td>เอาต์พุต</td><td>Digital (Active LOW เมื่อตรวจเจอวัตถุ)</td></tr>
+  <tr><td>แรงดันไฟเลี้ยง</td><td>3.3 – 5 V</td></tr>
+  <tr><td>ระยะตอบสนอง</td><td>~50 มิลลิวินาที (เวลาที่เม็ดยาผ่านลำแสง)</td></tr>
+  <tr><td>การเชื่อมต่อกับ MCU</td><td>ผ่าน PCF8574 I²C Expander (Address 0x20)</td></tr>
+  <tr><td>อัตราการสำรวจ</td><td>~100 ครั้งต่อวินาที ในขณะจ่ายยา</td></tr>
+</table>
+
+<h3 id="s252">2.5.2 เซนเซอร์วัดระยะแบบเวลาบินของแสง (VL53L0X Time-of-Flight)</h3>
+
+<p class="indent">VL53L0X เป็นเซนเซอร์วัดระยะแบบ Time-of-Flight (ToF) จาก STMicroelectronics ที่ทำงานบนหลักการวัดระยะเวลาที่แสงเลเซอร์เดินทางจากตัวเซนเซอร์ไปกระทบวัตถุและสะท้อนกลับมา หลักการทางคณิตศาสตร์เป็นไปตามสมการ</p>
+
+<div class="formula">
+  <em>d</em> = (<em>c</em> × Δ<em>t</em>) / 2
+</div>
+
+<p>โดย <em>d</em> คือระยะทางจากเซนเซอร์ถึงวัตถุ (เมตร), <em>c</em> คือความเร็วแสงในสูญญากาศ (≈ 3 × 10⁸ เมตร/วินาที) และ Δ<em>t</em> คือเวลาที่แสงเดินทางไป-กลับ (วินาที) ตัวหาร 2 มาจากการที่แสงเดินทางเป็นระยะ 2<em>d</em> (ไป-กลับ)</p>
+
+<figure>
+  <svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrowB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#0a73c2"/>
+      </marker>
+      <marker id="arrowG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#2e8b3e"/>
+      </marker>
+    </defs>
+    <!-- VL53 chip -->
+    <rect x="60" y="120" width="100" height="100" fill="#222" rx="6"/>
+    <text x="110" y="160" text-anchor="middle" fill="white" font-size="14" font-weight="bold">VL53L0X</text>
+    <text x="110" y="180" text-anchor="middle" fill="#bbb" font-size="11">VCSEL +</text>
+    <text x="110" y="195" text-anchor="middle" fill="#bbb" font-size="11">SPAD array</text>
+    <!-- Tx beam -->
+    <line x1="160" y1="155" x2="540" y2="155" stroke="#0a73c2" stroke-width="3" marker-end="url(#arrowB)"/>
+    <text x="350" y="145" text-anchor="middle" fill="#0a73c2" font-size="13" font-weight="bold">Tx (940 nm)</text>
+    <!-- Target -->
+    <rect x="540" y="80" width="80" height="170" fill="#c0a060" stroke="#806020" stroke-width="2"/>
+    <text x="580" y="170" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">เม็ดยา</text>
+    <text x="580" y="190" text-anchor="middle" fill="#fff" font-size="12">(วัตถุ)</text>
+    <!-- Rx beam -->
+    <line x1="540" y1="195" x2="160" y2="195" stroke="#2e8b3e" stroke-width="3" marker-end="url(#arrowG)"/>
+    <text x="350" y="215" text-anchor="middle" fill="#2e8b3e" font-size="13" font-weight="bold">Rx (สะท้อนกลับ)</text>
+    <!-- Distance label -->
+    <line x1="160" y1="265" x2="540" y2="265" stroke="#444" stroke-width="1"/>
+    <line x1="160" y1="260" x2="160" y2="270" stroke="#444"/>
+    <line x1="540" y1="260" x2="540" y2="270" stroke="#444"/>
+    <text x="350" y="285" text-anchor="middle" font-size="14" fill="#444">d (ระยะที่ต้องการวัด)</text>
+    <!-- Title and formula -->
+    <text x="360" y="30" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a3a6e">หลักการ Time-of-Flight ของ VL53L0X</text>
+    <text x="360" y="55" text-anchor="middle" font-size="14" fill="#333">d = (c · Δt) / 2  →  ช่วงวัด 30 mm – 2,000 mm</text>
+    <!-- TCA legend -->
+    <text x="100" y="318" text-anchor="middle" font-size="11" fill="#555">I²C addr 0x29</text>
+  </svg>
+  <figcaption>ภาพที่ 2-6 หลักการทำงานของ VL53L0X — ส่งแสงเลเซอร์ VCSEL คลื่น 940 นาโนเมตรออกไปกระทบวัตถุ แสงสะท้อนถูกตรวจจับโดย SPAD Array ระบบประมวลผล Δt แล้วคำนวณระยะ</figcaption>
+</figure>
+
+<h4>คุณสมบัติทางเทคนิคของ VL53L0X</h4>
+<div class="table-caption">ตารางที่ 2-3 คุณสมบัติทางเทคนิคของเซนเซอร์ VL53L0X</div>
+<table>
+  <tr><th>พารามิเตอร์</th><th>ค่า</th></tr>
+  <tr><td>แหล่งกำเนิดแสง</td><td>VCSEL (Vertical-Cavity Surface-Emitting Laser) คลื่น 940 nm</td></tr>
+  <tr><td>ตัวรับสัญญาณ</td><td>SPAD Array (Single-Photon Avalanche Diode)</td></tr>
+  <tr><td>ช่วงการวัด</td><td>30 มม. – 2,000 มม. (โหมด Default)</td></tr>
+  <tr><td>ความละเอียด</td><td>1 มม.</td></tr>
+  <tr><td>ความแม่นยำ</td><td>±3% ที่ระยะ &lt; 1.2 ม.</td></tr>
+  <tr><td>อินเทอร์เฟซ</td><td>I²C ความเร็วสูงสุด 400 kHz</td></tr>
+  <tr><td>I²C Address ค่าเริ่มต้น</td><td>0x29 (เปลี่ยนได้ผ่าน register)</td></tr>
+  <tr><td>แรงดันไฟเลี้ยง</td><td>2.6 – 3.5 V</td></tr>
+</table>
+
+<h4>การประยุกต์ใช้กับระบบจ่ายยาอัตโนมัติ</h4>
+<p class="indent">ในระบบนี้ VL53L0X ถูกใช้สำหรับวัดระดับยาในตลับโดยเซนเซอร์ติดตั้งอยู่ที่ฝาตลับ ฉายลำแสงลงสู่ผิวบนของชั้นเม็ดยา ระยะที่วัดได้สามารถแปลงเป็นจำนวนเม็ดยาที่เหลือได้ตามสูตร</p>
+
+<div class="formula">
+  pill_count = max_pills − round((d − full_dist_mm) / pill_height_mm)
+</div>
+
+<p>โดย <em>d</em> คือระยะที่วัดได้ (มม.), <em>full_dist_mm</em> คือระยะอ้างอิงเมื่อตลับเต็ม (50 มม.), <em>pill_height_mm</em> คือความสูงของยา 1 เม็ด (15 มม.) และ <em>max_pills</em> คือความจุสูงสุดของตลับ (16 เม็ด)</p>
+
+<p class="indent">เนื่องจากระบบใช้เซนเซอร์ VL53L0X ทั้ง 6 ตัวพร้อมกัน แต่ทุกตัวมี I²C Address เริ่มต้นเหมือนกัน (0x29) จึงไม่สามารถวางบนบัสเดียวกันได้โดยตรง งานวิจัยนี้แก้ปัญหาด้วยการใช้ TCA9548A ซึ่งเป็น I²C Multiplexer 8 ช่อง โดยให้ ESP32-P4 สั่ง TCA9548A เลือกช่องที่ต้องการก่อนทุกครั้งที่ต้องการสื่อสารกับเซนเซอร์ตัวใดตัวหนึ่ง วิธีนี้ทำให้ใช้สาย I²C เพียง 2 เส้นและขา GPIO อีก 6 เส้น (สำหรับ XSHUT) ควบคุม VL53L0X ได้ 6 ตัวพร้อมกัน</p>
+
+<h3 id="s253">2.5.3 หน้าจอสัมผัสแบบ Capacitive Touch (FT6336U)</h3>
+
+<p class="indent">FT6336U เป็นชิปควบคุมหน้าจอสัมผัสแบบ Projected Capacitive Touch (PCAP) จากบริษัท FocalTech รองรับการตรวจจับการสัมผัสได้ 2 จุดพร้อมกัน (2-point Multi-touch) หลักการทำงานอาศัยความสามารถของนิ้วมนุษย์ที่ทำตัวเป็นตัวนำไฟฟ้า (Conductor) เมื่อนิ้วเข้ามาใกล้ผิวกระจกที่มีลายตัวนำโปร่งแสง (ITO – Indium Tin Oxide) เกิดผลรวมจากความจุไฟฟ้า (Capacitance) ที่เปลี่ยนแปลงไป IC จะตรวจวัดการเปลี่ยนแปลงนั้นและแปลงเป็นพิกัด (X, Y) ส่งผ่านบัส I²C</p>
+
+<figure>
+  <svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg">
+    <!-- Glass layer -->
+    <rect x="80" y="160" width="560" height="14" fill="#bce4ff" stroke="#3aa0d8" stroke-width="1"/>
+    <text x="50" y="170" text-anchor="end" font-size="13" fill="#333">Glass</text>
+    <!-- ITO traces -->
+    <g stroke="#888" stroke-width="2">
+      <line x1="100" y1="180" x2="620" y2="180"/>
+      <line x1="100" y1="195" x2="620" y2="195"/>
+      <line x1="100" y1="210" x2="620" y2="210"/>
+    </g>
+    <text x="50" y="200" text-anchor="end" font-size="12" fill="#666">ITO</text>
+    <text x="50" y="215" text-anchor="end" font-size="12" fill="#666">layer</text>
+    <!-- Finger -->
+    <ellipse cx="360" cy="80" rx="35" ry="60" fill="#ffd6b8" stroke="#c08060" stroke-width="2"/>
+    <text x="360" y="50" text-anchor="middle" font-size="13">นิ้วผู้ใช้</text>
+    <!-- E-field lines from finger to ITO -->
+    <g stroke="#d32f2f" stroke-width="1.5" stroke-dasharray="4,3" fill="none">
+      <path d="M340 130 Q340 145, 320 180"/>
+      <path d="M360 135 Q360 150, 360 180"/>
+      <path d="M380 130 Q380 145, 400 180"/>
+    </g>
+    <text x="450" y="155" font-size="12" fill="#d32f2f">ΔC (capacitance change)</text>
+    <!-- Finger ground -->
+    <rect x="340" y="20" width="40" height="14" fill="#666"/>
+    <text x="395" y="30" font-size="11" fill="#555">body capacitance</text>
+    <!-- Display screen -->
+    <rect x="80" y="225" width="560" height="80" fill="#222" rx="4"/>
+    <text x="360" y="265" text-anchor="middle" fill="white" font-size="14">หน้าจอ TFT (ภายใต้ touch panel)</text>
+    <text x="360" y="285" text-anchor="middle" fill="#aaa" font-size="11">FT6336U → I²C (addr 0x38) → ESP32-P4</text>
+    <!-- Title -->
+    <text x="360" y="20" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a3a6e">หลักการ Capacitive Touch ของ FT6336U</text>
+  </svg>
+  <figcaption>ภาพที่ 2-7 หลักการทำงานของ Capacitive Touch — สนามไฟฟ้าระหว่างนิ้วและลายตัวนำใต้กระจกเปลี่ยนแปลงค่าความจุไฟฟ้า ตัวควบคุมตรวจจับ ΔC แล้วคำนวณพิกัด</text>
+</figure>
+
+<h4>การเชื่อมต่อกับ ESP32-P4</h4>
+<p class="indent">FT6336U เชื่อมต่อกับ ESP32-P4-Nano ผ่านบัส I²C ที่ Address 0x38 และมีขา CTP_RST (GPIO 21) สำหรับสั่ง Hardware Reset ขา CTP_INT ที่ปกติใช้แจ้งเหตุการณ์สัมผัสไม่ได้ต่อในงานวิจัยนี้ ใช้วิธี Polling ผ่าน I²C ที่อัตรา 100 ครั้งต่อวินาทีแทน ซึ่งให้ความหน่วงการตอบสนอง (Latency) ต่ำกว่า 20 มิลลิวินาที ผู้ใช้ไม่รู้สึกถึงความหน่วง</p>
+
+<div class="table-caption">ตารางที่ 2-4 คุณสมบัติของชิปควบคุมหน้าจอสัมผัส FT6336U</div>
+<table>
+  <tr><th>พารามิเตอร์</th><th>ค่า</th></tr>
+  <tr><td>ความละเอียดที่รองรับ</td><td>สูงสุด 800 × 480 พิกเซล (ในงานนี้ใช้ 480 × 320)</td></tr>
+  <tr><td>จำนวนจุดสัมผัสพร้อมกัน</td><td>2 จุด</td></tr>
+  <tr><td>อินเทอร์เฟซ</td><td>I²C สูงสุด 400 kHz</td></tr>
+  <tr><td>I²C Address</td><td>0x38</td></tr>
+  <tr><td>แรงดันไฟเลี้ยง</td><td>2.7 – 3.6 V</td></tr>
+  <tr><td>การรองรับท่าทาง (Gesture)</td><td>Tap, Move, Zoom-in, Zoom-out</td></tr>
+</table>
+
+<h2>2.6 การพัฒนาส่วนติดต่อผู้ใช้งาน (UI) และการขับเคลื่อน Actuator</h2>
+
+<h3 id="s261">2.6.1 เซอร์โวมอเตอร์ SG90</h3>
+
+<p class="indent">SG90 เป็นเซอร์โวมอเตอร์แบบดิจิทัลขนาดเล็ก (Micro Servo) ที่นิยมใช้งานในระบบสมองกลฝังตัว มีโครงสร้างประกอบด้วยมอเตอร์ DC ขนาดเล็ก, ชุดเฟืองทดแรง (Gearbox) อัตราทดสูง, ตัวต้านทานปรับค่าได้ (Potentiometer) ทำหน้าที่เป็นตัวรับรู้ตำแหน่ง (Position Feedback) และวงจรควบคุมในตัวเดียวกัน หลักการทำงานคือรับสัญญาณ PWM ที่ความถี่ 50 Hz (คาบ 20 ms) ความกว้างของพัลส์ (Pulse Width) เป็นตัวกำหนดมุมของแกนหมุน</p>
+
+<figure>
+  <svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg">
+    <!-- PWM signals -->
+    <g font-family="Consolas, monospace" font-size="11">
+      <!-- 0deg -->
+      <text x="60" y="60" font-size="13" fill="#1a3a6e" font-weight="bold">มุม 0°</text>
+      <text x="60" y="78" fill="#555">pulse 1.0 ms</text>
+      <path d="M150 80 L160 80 L160 50 L170 50 L170 80 L240 80 L240 50 L250 50 L250 80 L320 80"
+            stroke="#0a73c2" stroke-width="2" fill="none"/>
+      <text x="240" y="100" font-size="10" fill="#555">period 20 ms</text>
+
+      <!-- 90deg -->
+      <text x="60" y="160" font-size="13" fill="#1a3a6e" font-weight="bold">มุม 90°</text>
+      <text x="60" y="178" fill="#555">pulse 1.5 ms</text>
+      <path d="M150 180 L160 180 L160 150 L185 150 L185 180 L240 180 L240 150 L265 150 L265 180 L320 180"
+            stroke="#0a73c2" stroke-width="2" fill="none"/>
+
+      <!-- 180deg -->
+      <text x="60" y="260" font-size="13" fill="#1a3a6e" font-weight="bold">มุม 180°</text>
+      <text x="60" y="278" fill="#555">pulse 2.0 ms</text>
+      <path d="M150 280 L160 280 L160 250 L195 250 L195 280 L240 280 L240 250 L275 250 L275 280 L320 280"
+            stroke="#0a73c2" stroke-width="2" fill="none"/>
+    </g>
+
+    <!-- arrow to servo -->
+    <line x1="340" y1="170" x2="430" y2="170" stroke="#444" stroke-width="2" marker-end="url(#arrowred)"/>
+    <text x="385" y="160" text-anchor="middle" font-size="13" fill="#444">PWM 50 Hz</text>
+
+    <!-- servo body -->
+    <rect x="450" y="100" width="180" height="150" fill="#3a3a3a" rx="6"/>
+    <text x="540" y="130" text-anchor="middle" fill="white" font-size="16" font-weight="bold">SG90</text>
+    <text x="540" y="150" text-anchor="middle" fill="#bbb" font-size="11">DC motor + gearbox</text>
+    <text x="540" y="165" text-anchor="middle" fill="#bbb" font-size="11">+ feedback POT</text>
+    <!-- horn -->
+    <circle cx="540" cy="200" r="20" fill="#fff" stroke="#222" stroke-width="2"/>
+    <line x1="540" y1="200" x2="565" y2="180" stroke="#222" stroke-width="3"/>
+    <line x1="540" y1="200" x2="540" y2="178" stroke="#444" stroke-width="1" stroke-dasharray="2,2"/>
+    <text x="595" y="180" font-size="12" fill="#222">แกนหมุน</text>
+
+    <!-- Title -->
+    <text x="360" y="25" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a3a6e">การควบคุมเซอร์โว SG90 ด้วย PWM</text>
+  </svg>
+  <figcaption>ภาพที่ 2-8 ความสัมพันธ์ระหว่างความกว้างพัลส์ PWM กับมุมหมุนของเซอร์โว SG90 — ความกว้าง 1.0 ms ให้มุม 0°, 1.5 ms ให้ 90°, 2.0 ms ให้ 180°</figcaption>
+</figure>
+
+<h4>คุณสมบัติทางไฟฟ้าของ SG90</h4>
+<div class="table-caption">ตารางที่ 2-5 คุณสมบัติทางไฟฟ้าของเซอร์โวมอเตอร์ SG90</div>
+<table>
+  <tr><th>พารามิเตอร์</th><th>ค่า</th></tr>
+  <tr><td>แรงดันใช้งาน</td><td>4.8 – 6.0 V</td></tr>
+  <tr><td>กระแสตอนทำงาน</td><td>~150 mA (ขณะมีโหลด)</td></tr>
+  <tr><td>กระแสตอน Stall</td><td>~700 mA</td></tr>
+  <tr><td>แรงบิด (Torque)</td><td>1.6 kg·cm @ 4.8 V</td></tr>
+  <tr><td>มุมหมุน</td><td>0° – 180°</td></tr>
+  <tr><td>ความถี่ PWM</td><td>50 Hz (คาบ 20 ms)</td></tr>
+  <tr><td>ความกว้างพัลส์</td><td>500 µs (0°) – 2,500 µs (180°)</td></tr>
+</table>
+
+<p class="indent">ในระบบจ่ายยาอัตโนมัติ เซอร์โว SG90 ทั้ง 6 ตัวถูกติดตั้งที่กลไกประตูทางออกของแต่ละตลับ เมื่อต้องจ่ายยาตลับใด เซอร์โวตัวนั้นจะหมุนจากตำแหน่ง Home (เช่น 66°) ไปยังตำแหน่ง Work (33°) เพื่อปลดประตูให้เม็ดยาตกลงมา 1 เม็ด แล้วกลับมาที่ตำแหน่ง Home ปิดประตูป้องกันเม็ดถัดไป</p>
+
+<h3 id="s262">2.6.2 โมดูลขยายสัญญาณ PWM (PCA9685)</h3>
+
+<p class="indent">PCA9685 จาก NXP เป็น IC ขับสัญญาณ PWM (LED Driver / Servo Controller) ขนาด 16 ช่อง ความละเอียด 12 บิต (4,096 ระดับต่อช่อง) ควบคุมผ่านบัส I²C ที่ความเร็วสูงสุด 1 MHz ความถี่ PWM ตั้งได้ตั้งแต่ 24 Hz ถึง 1.526 kHz เหมาะสำหรับการขับเซอร์โวมอเตอร์หลายตัวพร้อมกันโดยใช้ขา GPIO ของไมโครคอนโทรลเลอร์เพียง 2 เส้น (SDA และ SCL)</p>
+
+<figure>
+  <svg viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg">
+    <!-- ESP32-P4 -->
+    <rect x="40" y="120" width="140" height="120" fill="#1a3a6e" rx="6"/>
+    <text x="110" y="160" text-anchor="middle" fill="white" font-size="15" font-weight="bold">ESP32-P4</text>
+    <text x="110" y="180" text-anchor="middle" fill="#cce" font-size="12">GPIO 7 (SDA)</text>
+    <text x="110" y="198" text-anchor="middle" fill="#cce" font-size="12">GPIO 8 (SCL)</text>
+    <!-- I2C lines -->
+    <line x1="180" y1="170" x2="280" y2="170" stroke="#444" stroke-width="2"/>
+    <line x1="180" y1="195" x2="280" y2="195" stroke="#444" stroke-width="2"/>
+    <text x="230" y="160" text-anchor="middle" font-size="11" fill="#444">SDA</text>
+    <text x="230" y="218" text-anchor="middle" font-size="11" fill="#444">SCL</text>
+    <text x="230" y="240" text-anchor="middle" font-size="12" fill="#1a3a6e" font-weight="bold">I²C 50 kHz</text>
+    <!-- PCA9685 -->
+    <rect x="280" y="100" width="180" height="170" fill="#5a1f6e" rx="6"/>
+    <text x="370" y="135" text-anchor="middle" fill="white" font-size="15" font-weight="bold">PCA9685</text>
+    <text x="370" y="155" text-anchor="middle" fill="#dcd" font-size="12">16-ch PWM</text>
+    <text x="370" y="172" text-anchor="middle" fill="#dcd" font-size="12">12-bit / I²C</text>
+    <text x="370" y="190" text-anchor="middle" fill="#dcd" font-size="11">addr 0x40</text>
+    <!-- 6 PWM outputs -->
+    <g stroke="#2e8b3e" stroke-width="2">
+      <line x1="460" y1="120" x2="540" y2="80"/>
+      <line x1="460" y1="140" x2="540" y2="120"/>
+      <line x1="460" y1="160" x2="540" y2="160"/>
+      <line x1="460" y1="180" x2="540" y2="200"/>
+      <line x1="460" y1="200" x2="540" y2="240"/>
+      <line x1="460" y1="220" x2="540" y2="280"/>
+    </g>
+    <!-- Servos -->
+    <g font-size="11" fill="white">
+      <rect x="540" y="65" width="120" height="30" fill="#3a3a3a" rx="4"/>
+      <text x="600" y="84" text-anchor="middle">SG90 #1 (med1)</text>
+
+      <rect x="540" y="105" width="120" height="30" fill="#3a3a3a" rx="4"/>
+      <text x="600" y="124" text-anchor="middle">SG90 #2 (med2)</text>
+
+      <rect x="540" y="145" width="120" height="30" fill="#3a3a3a" rx="4"/>
+      <text x="600" y="164" text-anchor="middle">SG90 #3 (med3)</text>
+
+      <rect x="540" y="185" width="120" height="30" fill="#3a3a3a" rx="4"/>
+      <text x="600" y="204" text-anchor="middle">SG90 #4 (med4)</text>
+
+      <rect x="540" y="225" width="120" height="30" fill="#3a3a3a" rx="4"/>
+      <text x="600" y="244" text-anchor="middle">SG90 #5 (med5)</text>
+
+      <rect x="540" y="265" width="120" height="30" fill="#3a3a3a" rx="4"/>
+      <text x="600" y="284" text-anchor="middle">SG90 #6 (med6)</text>
+    </g>
+    <!-- Title -->
+    <text x="360" y="25" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a3a6e">โครงสร้างการขับเซอร์โว 6 ตัวด้วย PCA9685</text>
+    <text x="360" y="45" text-anchor="middle" font-size="13" fill="#555">ใช้ขา GPIO เพียง 2 เส้นแทนการขับโดยตรง 6 เส้น</text>
+    <!-- Note -->
+    <text x="370" y="320" text-anchor="middle" font-size="12" fill="#666">PWM 50 Hz × 6 channel | resolution 4,096 ระดับ | duty 2.44 % – 12.20 %</text>
+  </svg>
+  <figcaption>ภาพที่ 2-9 การใช้ PCA9685 เพื่อขับเซอร์โว 6 ตัวพร้อมกัน ESP32-P4 ส่งคำสั่งเปลี่ยนค่ามุมผ่าน I²C ในขณะที่ PCA9685 สร้างสัญญาณ PWM ที่เสถียรเองโดยอัตโนมัติ</figcaption>
+</figure>
+
+<h4>การคำนวณค่า PWM Register</h4>
+<p class="indent">เพื่อให้เซอร์โวเคลื่อนที่ไปยังมุมที่ต้องการ ระบบต้องคำนวณค่าที่จะเขียนลงใน Register OFF (ขนาด 12 บิต) ของ PCA9685 ตามสมการ</p>
+
+<div class="formula">
+  OFF = (pulse_width_µs × 4,096) / period_µs
+</div>
+
+<p>เมื่อความถี่ PWM = 50 Hz, period_µs = 20,000 µs ดังนั้นเพื่อสร้างพัลส์ 1,500 µs (มุม 90°) จะได้ OFF = (1500 × 4096) / 20000 ≈ 307 หน่วย ระบบใช้สมการนี้ภายในไลบรารี <code>pca9685.c</code> เพื่อแปลงมุมเป็นค่า register โดยตรง</p>
+
+<h2>2.7 ระบบกล้องและการประมวลผลภาพ</h2>
+
+<h3 id="s271">2.7.1 เซนเซอร์ภาพ OV5647 และการประมวลผล ISP</h3>
+
+<p class="indent">OV5647 เป็นเซนเซอร์ภาพแบบ CMOS ความละเอียด 5 ล้านพิกเซล (2,592 × 1,944 พิกเซล) ผลิตโดยบริษัท OmniVision Technologies รองรับการส่งข้อมูลภาพผ่านอินเทอร์เฟซ MIPI-CSI2 (Camera Serial Interface 2) แบบ 2 lane ที่อัตราข้อมูลสูงสุด 1 Gbps ต่อ lane รวม 2 Gbps เซนเซอร์ส่งข้อมูลภาพในรูปแบบ Bayer Pattern แบบ RAW8 หรือ RAW10 ก่อนถูกประมวลผลโดยหน่วย ISP (Image Signal Processor) ภายในชิป ESP32-P4</p>
+
+<figure>
+  <svg viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg">
+    <!-- OV5647 sensor -->
+    <rect x="40" y="140" width="120" height="100" fill="#222" rx="6"/>
+    <text x="100" y="175" text-anchor="middle" fill="white" font-size="14" font-weight="bold">OV5647</text>
+    <text x="100" y="195" text-anchor="middle" fill="#bbb" font-size="11">CMOS 5 MP</text>
+    <text x="100" y="215" text-anchor="middle" fill="#bbb" font-size="11">2,592 × 1,944</text>
+    <!-- MIPI link -->
+    <line x1="160" y1="180" x2="220" y2="180" stroke="#0a73c2" stroke-width="3"/>
+    <line x1="160" y1="200" x2="220" y2="200" stroke="#0a73c2" stroke-width="3"/>
+    <text x="190" y="170" text-anchor="middle" font-size="11" fill="#0a73c2">MIPI-CSI2</text>
+    <text x="190" y="220" text-anchor="middle" font-size="11" fill="#555">2 lane / RAW8</text>
+
+    <!-- ISP pipeline blocks -->
+    <g font-size="12">
+      <rect x="220" y="100" width="100" height="40" fill="#1a73e8" rx="4"/>
+      <text x="270" y="125" text-anchor="middle" fill="white">Demosaic</text>
+
+      <rect x="330" y="100" width="100" height="40" fill="#43a047" rx="4"/>
+      <text x="380" y="125" text-anchor="middle" fill="white">AWB</text>
+
+      <rect x="440" y="100" width="100" height="40" fill="#43a047" rx="4"/>
+      <text x="490" y="125" text-anchor="middle" fill="white">AE / AGC</text>
+
+      <rect x="550" y="100" width="100" height="40" fill="#9c27b0" rx="4"/>
+      <text x="600" y="125" text-anchor="middle" fill="white">Gamma</text>
+
+      <rect x="220" y="160" width="100" height="40" fill="#9c27b0" rx="4"/>
+      <text x="270" y="185" text-anchor="middle" fill="white">Color matrix</text>
+
+      <rect x="330" y="160" width="100" height="40" fill="#fb8c00" rx="4"/>
+      <text x="380" y="185" text-anchor="middle" fill="white">Sharpness</text>
+
+      <rect x="440" y="160" width="100" height="40" fill="#fb8c00" rx="4"/>
+      <text x="490" y="185" text-anchor="middle" fill="white">Noise filter</text>
+
+      <rect x="550" y="160" width="100" height="40" fill="#d32f2f" rx="4"/>
+      <text x="600" y="185" text-anchor="middle" fill="white">RGB565 out</text>
+    </g>
+
+    <!-- Arrows pipeline -->
+    <g stroke="#666" stroke-width="2" fill="none">
+      <path d="M270 140 L270 160" marker-end="url(#arrowred)"/>
+      <path d="M320 120 L330 120"/>
+      <path d="M430 120 L440 120"/>
+      <path d="M540 120 L550 120"/>
+      <path d="M600 140 L270 160"/>
+      <path d="M320 180 L330 180"/>
+      <path d="M430 180 L440 180"/>
+      <path d="M540 180 L550 180"/>
+    </g>
+
+    <!-- After ISP -->
+    <rect x="40" y="280" width="640" height="40" fill="#1a3a6e" rx="4"/>
+    <text x="360" y="305" text-anchor="middle" fill="white" font-size="14">รูปสี RGB565 ขนาด 800 × 640 พิกเซล (downsample) → ส่งต่อไป JPEG encoder</text>
+
+    <!-- Title -->
+    <text x="360" y="25" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a3a6e">โครงสร้าง OV5647 + ISP Pipeline ภายใน ESP32-P4</text>
+    <text x="360" y="50" text-anchor="middle" font-size="13" fill="#444">RAW Bayer → ISP processing → RGB565 → JPEG encode</text>
+  </svg>
+  <figcaption>ภาพที่ 2-10 บล็อกการประมวลผลภาพภายใน ESP32-P4 — สัญญาณ Bayer RAW8 จาก OV5647 ผ่าน Demosaicing, Auto White Balance, Auto Exposure, Gamma Correction, Color Matrix Conversion จนได้ภาพ RGB565 พร้อมเข้ารหัส JPEG</figcaption>
+</figure>
+
+<h4>คุณสมบัติของ OV5647</h4>
+<div class="table-caption">ตารางที่ 2-6 คุณสมบัติของเซนเซอร์ภาพ OV5647</div>
+<table>
+  <tr><th>พารามิเตอร์</th><th>ค่า</th></tr>
+  <tr><td>ความละเอียดสูงสุด</td><td>2,592 × 1,944 พิกเซล (5 MP)</td></tr>
+  <tr><td>เซนเซอร์</td><td>CMOS 1/4 นิ้ว</td></tr>
+  <tr><td>ขนาดพิกเซล</td><td>1.4 µm × 1.4 µm</td></tr>
+  <tr><td>อินเทอร์เฟซเอาต์พุต</td><td>MIPI-CSI2 2 lane</td></tr>
+  <tr><td>รูปแบบข้อมูล</td><td>Bayer RAW8 / RAW10</td></tr>
+  <tr><td>อัตราเฟรมสูงสุดของเซนเซอร์</td><td>15 fps @ 5 MP, 30 fps @ 1080p, 60 fps @ 720p</td></tr>
+  <tr><td>อัตราเฟรมที่ใช้ในงานวิจัยนี้</td><td>50 fps ที่ความละเอียด 800 × 640 พิกเซล (ลด resolution เพื่อรองรับ MIPI bandwidth + JPEG encode realtime)</td></tr>
+  <tr><td>การควบคุม</td><td>SCCB (I²C compatible) ที่ Address 0x36</td></tr>
+  <tr><td>แรงดันไฟเลี้ยง</td><td>AVDD 2.6 – 3.0 V (โครงงานนี้ใช้ 2.8 V)</td></tr>
+</table>
+
+<h4>ขั้นตอนการประมวลผลของ ISP</h4>
+<ol>
+  <li><strong>Demosaicing:</strong> แปลง Bayer pattern (BGGR / GBRG / GRBG / RGGB) ที่ส่งมาจากเซนเซอร์ให้กลายเป็นภาพ RGB ครบทุกพิกเซลโดยอินเตอร์โพเลตค่าที่ขาดหาย</li>
+  <li><strong>Auto White Balance (AWB):</strong> ปรับสมดุลสีขาวอัตโนมัติเพื่อให้ภาพมีสีสมจริงไม่ติดเหลืองหรือฟ้า</li>
+  <li><strong>Auto Exposure (AE) + AGC:</strong> ปรับเวลา shutter และเกนของเซนเซอร์ให้ภาพไม่สว่างหรือมืดเกินไป</li>
+  <li><strong>Color Matrix Conversion:</strong> แปลงค่า RGB ให้สอดคล้องกับมาตรฐานสีที่ต้องการ</li>
+  <li><strong>Gamma Correction:</strong> ปรับเส้นความสัมพันธ์ของแสง-ความสว่างให้ตรงกับการมองเห็นของมนุษย์</li>
+  <li><strong>Sharpness / Noise Filter:</strong> เพิ่มความคมชัดและลด noise จากเซนเซอร์</li>
+  <li><strong>Format Output:</strong> ส่งภาพในรูปแบบ RGB565 ขนาด 800 × 640 พิกเซลเข้าหน่วย JPEG encoder</li>
+</ol>
+
+<h3 id="s272">2.7.2 ฮาร์ดแวร์เข้ารหัส JPEG และอัลกอริทึมหมุนภาพ</h3>
+
+<p class="indent">JPEG (Joint Photographic Experts Group) เป็นมาตรฐานการเข้ารหัสภาพแบบสูญเสียบางส่วน (Lossy Compression) ที่ใช้กันทั่วโลก หลักการสำคัญคือการแปลงภาพจากโดเมนเชิงพื้นที่ (Spatial Domain) ไปเป็นโดเมนเชิงความถี่ (Frequency Domain) ด้วย Discrete Cosine Transform (DCT) แบบ 8 × 8 บล็อก แล้วลบทิ้งความถี่สูงที่ตามนุษย์ไม่ค่อยรับรู้ ทำให้ขนาดไฟล์ลดลงอย่างมีนัยสำคัญ ESP32-P4 ติดตั้งหน่วยฮาร์ดแวร์เข้ารหัส JPEG (Hardware JPEG Encoder) ที่สามารถบีบอัดภาพ 800 × 640 ได้ภายในเวลาประมาณ 30 มิลลิวินาที เร็วกว่าการเข้ารหัสด้วยซอฟต์แวร์ประมาณ 10 เท่า</p>
+
+<figure>
+  <svg viewBox="0 0 720 380" xmlns="http://www.w3.org/2000/svg">
+    <!-- input image -->
+    <rect x="30" y="60" width="120" height="90" fill="#3a6ec5" rx="4"/>
+    <text x="90" y="95" text-anchor="middle" fill="white" font-size="13" font-weight="bold">RGB565</text>
+    <text x="90" y="115" text-anchor="middle" fill="#dde" font-size="11">800 × 640</text>
+    <!-- 8x8 block split visualization -->
+    <g stroke="#000" stroke-width="0.5">
+      <rect x="60" y="80" width="60" height="48" fill="none"/>
+      <line x1="60" y1="86" x2="120" y2="86"/>
+      <line x1="60" y1="92" x2="120" y2="92"/>
+      <line x1="60" y1="98" x2="120" y2="98"/>
+      <line x1="60" y1="104" x2="120" y2="104"/>
+      <line x1="60" y1="110" x2="120" y2="110"/>
+      <line x1="60" y1="116" x2="120" y2="116"/>
+      <line x1="60" y1="122" x2="120" y2="122"/>
+      <line x1="68" y1="80" x2="68" y2="128"/>
+      <line x1="76" y1="80" x2="76" y2="128"/>
+      <line x1="84" y1="80" x2="84" y2="128"/>
+      <line x1="92" y1="80" x2="92" y2="128"/>
+      <line x1="100" y1="80" x2="100" y2="128"/>
+      <line x1="108" y1="80" x2="108" y2="128"/>
+      <line x1="116" y1="80" x2="116" y2="128"/>
+    </g>
+
+    <!-- arrow -->
+    <line x1="150" y1="105" x2="195" y2="105" stroke="#444" stroke-width="2" marker-end="url(#arrowred)"/>
+
+    <!-- Block 8x8 -->
+    <rect x="195" y="60" width="120" height="90" fill="#fff" stroke="#444" rx="4"/>
+    <text x="255" y="50" text-anchor="middle" font-size="12" fill="#444">บล็อก 8 × 8</text>
+    <g stroke="#888" stroke-width="0.5">
+      <rect x="207" y="72" width="96" height="64" fill="#f3f3f3"/>
+      <line x1="207" y1="80" x2="303" y2="80"/>
+      <line x1="207" y1="88" x2="303" y2="88"/>
+      <line x1="207" y1="96" x2="303" y2="96"/>
+      <line x1="207" y1="104" x2="303" y2="104"/>
+      <line x1="207" y1="112" x2="303" y2="112"/>
+      <line x1="207" y1="120" x2="303" y2="120"/>
+      <line x1="207" y1="128" x2="303" y2="128"/>
+      <line x1="219" y1="72" x2="219" y2="136"/>
+      <line x1="231" y1="72" x2="231" y2="136"/>
+      <line x1="243" y1="72" x2="243" y2="136"/>
+      <line x1="255" y1="72" x2="255" y2="136"/>
+      <line x1="267" y1="72" x2="267" y2="136"/>
+      <line x1="279" y1="72" x2="279" y2="136"/>
+      <line x1="291" y1="72" x2="291" y2="136"/>
+    </g>
+
+    <!-- arrow -->
+    <line x1="320" y1="105" x2="365" y2="105" stroke="#444" stroke-width="2" marker-end="url(#arrowred)"/>
+
+    <!-- DCT -->
+    <rect x="365" y="60" width="120" height="90" fill="#f3a500" rx="4"/>
+    <text x="425" y="100" text-anchor="middle" fill="white" font-weight="bold" font-size="14">DCT 2D</text>
+    <text x="425" y="120" text-anchor="middle" fill="white" font-size="11">8 × 8 transform</text>
+
+    <!-- arrow down -->
+    <line x1="425" y1="150" x2="425" y2="195" stroke="#444" stroke-width="2" marker-end="url(#arrowred)"/>
+
+    <!-- Quantization -->
+    <rect x="365" y="195" width="120" height="60" fill="#d32f2f" rx="4"/>
+    <text x="425" y="220" text-anchor="middle" fill="white" font-weight="bold" font-size="13">Quantization</text>
+    <text x="425" y="240" text-anchor="middle" fill="white" font-size="11">(loss step)</text>
+
+    <!-- arrow left -->
+    <line x1="365" y1="225" x2="320" y2="225" stroke="#444" stroke-width="2" marker-end="url(#arrowred)"/>
+
+    <!-- Zigzag -->
+    <rect x="200" y="195" width="120" height="60" fill="#5a1f6e" rx="4"/>
+    <text x="260" y="220" text-anchor="middle" fill="white" font-weight="bold" font-size="13">Zig-zag scan</text>
+    <text x="260" y="240" text-anchor="middle" fill="white" font-size="11">→ 1D sequence</text>
+
+    <!-- arrow left -->
+    <line x1="200" y1="225" x2="155" y2="225" stroke="#444" stroke-width="2" marker-end="url(#arrowred)"/>
+
+    <!-- Huffman -->
+    <rect x="35" y="195" width="120" height="60" fill="#2e8b3e" rx="4"/>
+    <text x="95" y="220" text-anchor="middle" fill="white" font-weight="bold" font-size="13">Huffman</text>
+    <text x="95" y="240" text-anchor="middle" fill="white" font-size="11">entropy coding</text>
+
+    <!-- arrow down -->
+    <line x1="95" y1="255" x2="95" y2="295" stroke="#444" stroke-width="2" marker-end="url(#arrowred)"/>
+
+    <!-- output -->
+    <rect x="35" y="295" width="640" height="50" fill="#1a3a6e" rx="4"/>
+    <text x="355" y="318" text-anchor="middle" fill="white" font-size="14" font-weight="bold">JPEG bitstream — ขนาดลดลง 10–25 เท่า</text>
+    <text x="355" y="335" text-anchor="middle" fill="#cce" font-size="11">800 × 640 RGB565 ~1 MB → JPEG ~50–100 KB</text>
+
+    <!-- Title -->
+    <text x="360" y="25" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a3a6e">ขั้นตอนการเข้ารหัส JPEG (Block-based DCT 8 × 8)</text>
+  </svg>
+  <figcaption>ภาพที่ 2-11 ขั้นตอนการเข้ารหัส JPEG — แบ่งภาพเป็นบล็อก 8 × 8 พิกเซล แปลง DCT 2 มิติ ทำ Quantization Zig-zag Scan และ Huffman Entropy Coding</figcaption>
+</figure>
+
+<h4>สมการ DCT 2 มิติ ขนาด 8 × 8</h4>
+<p class="indent">หัวใจของการเข้ารหัส JPEG คือการแปลง Discrete Cosine Transform แบบ 2 มิติ ซึ่งคำนวณตามสมการ</p>
+
+<div class="formula">
+  F(u,v) = (1/4) · C(u) · C(v) · Σ<sub>x=0</sub><sup>7</sup> Σ<sub>y=0</sub><sup>7</sup> f(x,y) · cos[(2x+1)uπ/16] · cos[(2y+1)vπ/16]
+</div>
+
+<p>โดย <em>f(x,y)</em> คือค่าความสว่างของพิกเซลตำแหน่ง (x,y) ในบล็อกขนาด 8 × 8, <em>F(u,v)</em> คือสัมประสิทธิ์ DCT ที่ความถี่ (u,v), และ <em>C(u)</em>, <em>C(v)</em> คือค่าคงที่ปรับสเกลที่กำหนดเป็น 1/√2 เมื่อ u หรือ v = 0 และเป็น 1 ในกรณีอื่น ผลลัพธ์ที่ได้คือสัมประสิทธิ์ DC ที่มุมบน-ซ้าย (ค่าเฉลี่ยทั้งบล็อก) และสัมประสิทธิ์ AC ที่กระจายความถี่สูงไปทางขวา-ล่าง</p>
+
+<h4>การ Quantization และ Zig-zag Scan</h4>
+<p class="indent">หลังการแปลง DCT แต่ละสัมประสิทธิ์ F(u,v) จะถูกหารด้วยค่าใน Quantization Table (Q-Table) แล้วปัดเศษเป็นจำนวนเต็ม ในขั้นนี้สัมประสิทธิ์ AC ความถี่สูงส่วนใหญ่จะกลายเป็นศูนย์ (เพราะค่า Q ใหญ่และค่า AC เดิมเล็ก) ทำให้ข้อมูลส่วนใหญ่ของบล็อกมีค่าเป็นศูนย์ ขั้นตอน Zig-zag Scan ทำหน้าที่จัดเรียงสัมประสิทธิ์ 64 ตัวจากบล็อก 2 มิติให้กลายเป็นลำดับ 1 มิติโดยเริ่มจาก DC แล้ววิ่งไปแบบฟันปลา ทำให้ค่าศูนย์ส่วนใหญ่อยู่ติดกันท้ายลำดับ ส่งผลให้ Huffman/RLE Encoding บีบอัดได้มีประสิทธิภาพ</p>
+
+<h4>อัลกอริทึมหมุนภาพ (90°/180°/270°)</h4>
+<p class="indent">ระบบนี้รองรับการหมุนภาพ JPEG เพื่อให้สอดคล้องกับการติดตั้งกล้องที่อาจไม่ตรงตามทิศปกติ การหมุนภาพทำในระดับพิกเซลก่อนเข้า JPEG encoder โดยใช้สูตรการแปลงพิกัด ดังนี้</p>
+
+<div class="table-caption">ตารางที่ 2-7 สูตรการแปลงพิกัดของอัลกอริทึมหมุนภาพ</div>
+<table>
+  <tr><th>มุมหมุน</th><th>สูตรพิกัดใหม่</th><th>ความหมาย</th></tr>
+  <tr><td>90° ตามเข็ม</td><td>(x', y') = (H − 1 − y, x)</td><td>สลับแถว-คอลัมน์ + กลับแถว</td></tr>
+  <tr><td>180°</td><td>(x', y') = (W − 1 − x, H − 1 − y)</td><td>กลับทั้งซ้าย-ขวา และบน-ล่าง</td></tr>
+  <tr><td>270° ตามเข็ม</td><td>(x', y') = (y, W − 1 − x)</td><td>สลับแถว-คอลัมน์ + กลับคอลัมน์</td></tr>
+</table>
+
+<p class="indent">เมื่อ <em>W</em> และ <em>H</em> คือความกว้างและความสูงของภาพต้นฉบับตามลำดับ การหมุนภาพถูกทำในบัฟเฟอร์ PSRAM ขนาด 1 MB ที่จัดสรรไว้เฉพาะ (rot_buf) ก่อนส่งเข้า hardware JPEG encoder การออกแบบนี้ทำให้ใช้เวลา ~5 มิลลิวินาที เพิ่มเติมเท่านั้นในการหมุน 90° เมื่อเทียบกับการประมวลผลแบบไม่หมุน</p>
+
+<div class="note">
+  <strong>หมายเหตุ:</strong> ในงานวิจัยนี้กล้องถูกติดตั้งให้แกนแนวตั้งอยู่ในแนวเดียวกับการแสดงผลบนเว็บ จึงไม่ต้องเปิดฟังก์ชันการหมุนเป็นค่าเริ่มต้น แต่ระบบยังคงเก็บฟังก์ชันการหมุนไว้ในไลบรารี <code>jpeg_encoder.c</code> เพื่อรองรับการขยายในอนาคต เช่น การติดตั้งกล้องในตำแหน่งอื่น</div>
+
+<h2>2.8 เทคโนโลยี IoT และ Cloud Communication</h2>
+
+<p class="indent">ระบบจ่ายยาอัตโนมัติในงานวิจัยนี้ออกแบบให้สามารถสื่อสารกับระบบคลาวด์เพื่อบันทึกข้อมูล แจ้งเตือนผู้ใช้ และสามารถควบคุมจากระยะไกลได้ การออกแบบสถาปัตยกรรมการเชื่อมต่อแบ่งออกเป็น 4 ช่องทางหลัก ได้แก่ NETPIE 2020 สำหรับซิงก์สถานะอุปกรณ์แบบเรียลไทม์ ผ่านโปรโตคอล MQTT, Telegram Bot API สำหรับแจ้งเตือนผู้ใช้, Google Apps Script Webhook สำหรับบันทึกประวัติการจ่ายยาลง Google Sheets, และโปรโตคอล HTTPS/TLS 1.2 ทำหน้าที่เข้ารหัสการรับส่งข้อมูลทุกช่องทางที่กล่าวมา</p>
+
+<figure>
+  <svg viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg">
+    <!-- ESP32-P4 device center -->
+    <rect x="270" y="150" width="180" height="80" fill="#1a3a6e" rx="8"/>
+    <text x="360" y="180" text-anchor="middle" fill="white" font-size="15" font-weight="bold">ESP32-P4-Nano</text>
+    <text x="360" y="200" text-anchor="middle" fill="#dde" font-size="12">เครื่องจ่ายยาอัตโนมัติ</text>
+    <text x="360" y="218" text-anchor="middle" fill="#dde" font-size="11">(IoT Edge Device)</text>
+
+    <!-- NETPIE -->
+    <rect x="40" y="50" width="160" height="60" fill="#43a047" rx="6"/>
+    <text x="120" y="78" text-anchor="middle" fill="white" font-size="14" font-weight="bold">NETPIE 2020</text>
+    <text x="120" y="96" text-anchor="middle" fill="#dfe" font-size="11">MQTT broker (Shadow)</text>
+    <line x1="200" y1="100" x2="280" y2="160" stroke="#43a047" stroke-width="2.5"/>
+    <text x="240" y="135" font-size="11" fill="#43a047">MQTT 1883</text>
+
+    <!-- Telegram -->
+    <rect x="520" y="50" width="160" height="60" fill="#0088cc" rx="6"/>
+    <text x="600" y="78" text-anchor="middle" fill="white" font-size="14" font-weight="bold">Telegram Bot</text>
+    <text x="600" y="96" text-anchor="middle" fill="#dff" font-size="11">api.telegram.org</text>
+    <line x1="520" y1="100" x2="445" y2="160" stroke="#0088cc" stroke-width="2.5"/>
+    <text x="475" y="135" font-size="11" fill="#0088cc">HTTPS 443</text>
+
+    <!-- Google Apps Script -->
+    <rect x="40" y="270" width="160" height="60" fill="#ea4335" rx="6"/>
+    <text x="120" y="298" text-anchor="middle" fill="white" font-size="14" font-weight="bold">Google Sheets</text>
+    <text x="120" y="316" text-anchor="middle" fill="#fee" font-size="11">Apps Script Webhook</text>
+    <line x1="200" y1="280" x2="280" y2="220" stroke="#ea4335" stroke-width="2.5"/>
+    <text x="220" y="260" font-size="11" fill="#ea4335">HTTPS POST</text>
+
+    <!-- User Phone -->
+    <rect x="520" y="270" width="160" height="60" fill="#fb8c00" rx="6"/>
+    <text x="600" y="298" text-anchor="middle" fill="white" font-size="14" font-weight="bold">Web Browser</text>
+    <text x="600" y="316" text-anchor="middle" fill="#feb" font-size="11">หน้าเว็บภายใน LAN</text>
+    <line x1="520" y1="280" x2="445" y2="220" stroke="#fb8c00" stroke-width="2.5"/>
+    <text x="495" y="260" font-size="11" fill="#fb8c00">HTTP 80</text>
+
+    <!-- TLS shield decorations -->
+    <text x="240" y="120" font-size="14" fill="#43a047">🔒</text>
+    <text x="475" y="120" font-size="14" fill="#0088cc">🔒</text>
+    <text x="220" y="245" font-size="14" fill="#ea4335">🔒</text>
+
+    <!-- Title -->
+    <text x="360" y="25" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a3a6e">สถาปัตยกรรมการสื่อสารระหว่างเครื่องและระบบคลาวด์</text>
+  </svg>
+  <figcaption>ภาพที่ 2-12 แผนภาพการเชื่อมต่อกับบริการคลาวด์ — ESP32-P4 สื่อสาร 3 ช่องทางผ่านอินเทอร์เน็ต (NETPIE MQTT, Telegram HTTPS, Google Apps Script HTTPS) และ 1 ช่องทาง LAN (Web UI ภายใน)</figcaption>
+</figure>
+
+<h3 id="s282">2.8.2 แพลตฟอร์ม NETPIE 2020</h3>
+
+<p class="indent">NETPIE 2020 (Network Platform for the Internet of Everything) เป็นแพลตฟอร์ม IoT แบบ Public Cloud ที่พัฒนาโดยศูนย์เทคโนโลยีอิเล็กทรอนิกส์และคอมพิวเตอร์แห่งชาติ (NECTEC) ของประเทศไทย ออกแบบมาสำหรับนักพัฒนาในประเทศโดยเฉพาะ มีจุดเด่นคือฟรีสำหรับผู้พัฒนาทั่วไป มีเซิร์ฟเวอร์ตั้งอยู่ในประเทศไทย ทำให้ค่าความหน่วง (Latency) ต่ำ และรองรับโปรโตคอลมาตรฐาน MQTT (Message Queuing Telemetry Transport) ที่เหมาะกับอุปกรณ์ฝังตัวที่มีทรัพยากรจำกัด</p>
+
+<h4>หลักการ MQTT และแนวคิด Shadow</h4>
+<p class="indent">MQTT เป็นโปรโตคอล Publish-Subscribe ที่อาศัย Broker ทำหน้าที่รับและส่งข้อความ (Messages) ระหว่าง Publisher และ Subscriber โดยข้อความแต่ละข้อความผูกกับ "Topic" หนึ่ง อุปกรณ์ที่สนใจ Topic ใดสามารถ Subscribe เพื่อรับข้อความใหม่ ๆ ได้ทันทีที่มีการ Publish เข้ามา NETPIE เพิ่มแนวคิด <strong>Shadow</strong> ซึ่งเป็นพื้นที่จัดเก็บสถานะของอุปกรณ์ในรูป JSON document ที่ Server-side ทำให้แม้อุปกรณ์ Offline ก็ยังสามารถดึงสถานะล่าสุดจาก Shadow ได้ และเมื่ออุปกรณ์เชื่อมต่อกลับ ก็สามารถซิงก์สถานะให้เป็นปัจจุบันได้</p>
+
+<figure>
+  <svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg">
+    <!-- ESP -->
+    <rect x="40" y="120" width="140" height="80" fill="#1a3a6e" rx="6"/>
+    <text x="110" y="155" text-anchor="middle" fill="white" font-size="14" font-weight="bold">ESP32-P4</text>
+    <text x="110" y="175" text-anchor="middle" fill="#cce" font-size="11">(MQTT Client)</text>
+
+    <!-- NETPIE Broker -->
+    <rect x="290" y="80" width="200" height="160" fill="#43a047" rx="8"/>
+    <text x="390" y="105" text-anchor="middle" fill="white" font-size="14" font-weight="bold">NETPIE 2020 Broker</text>
+    <text x="390" y="125" text-anchor="middle" fill="#dfe" font-size="11">mqtt.netpie.io:1883</text>
+    <!-- Shadow box -->
+    <rect x="305" y="140" width="170" height="85" fill="#fff" rx="4"/>
+    <text x="390" y="158" text-anchor="middle" fill="#1f3a5f" font-size="12" font-weight="bold">Shadow (JSON)</text>
+    <text x="320" y="175" font-size="10" fill="#444">{</text>
+    <text x="325" y="188" font-size="10" fill="#444">  "med1_count": 12,</text>
+    <text x="325" y="200" font-size="10" fill="#444">  "med2_count": 8,</text>
+    <text x="325" y="212" font-size="10" fill="#444">  ...</text>
+    <text x="320" y="222" font-size="10" fill="#444">}</text>
+
+    <!-- Web/User -->
+    <rect x="540" y="120" width="140" height="80" fill="#fb8c00" rx="6"/>
+    <text x="610" y="155" text-anchor="middle" fill="white" font-size="14" font-weight="bold">Web Dashboard</text>
+    <text x="610" y="175" text-anchor="middle" fill="#fed" font-size="11">(Subscriber)</text>
+
+    <!-- Arrows ESP -> Broker -->
+    <line x1="180" y1="145" x2="290" y2="125" stroke="#1a3a6e" stroke-width="2" marker-end="url(#arrowred)"/>
+    <text x="200" y="120" font-size="10" fill="#1a3a6e">publish update</text>
+    <line x1="290" y1="180" x2="180" y2="170" stroke="#888" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arrowred)"/>
+    <text x="200" y="195" font-size="10" fill="#888">subscribe response</text>
+
+    <!-- Arrows Broker -> Web -->
+    <line x1="490" y1="125" x2="540" y2="145" stroke="#43a047" stroke-width="2" marker-end="url(#arrowred)"/>
+    <text x="500" y="115" font-size="10" fill="#43a047">push updated</text>
+    <line x1="540" y1="180" x2="490" y2="180" stroke="#888" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arrowred)"/>
+    <text x="500" y="195" font-size="10" fill="#888">set request</text>
+
+    <!-- topics -->
+    <text x="110" y="240" text-anchor="middle" font-size="11" fill="#1a3a6e">@shadow/data/get</text>
+    <text x="110" y="255" text-anchor="middle" font-size="11" fill="#1a3a6e">@shadow/data/update</text>
+    <text x="110" y="270" text-anchor="middle" font-size="11" fill="#1a3a6e">@shadow/data/updated</text>
+
+    <!-- Title -->
+    <text x="360" y="30" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a3a6e">การทำงานของ NETPIE 2020 และ Shadow</text>
+    <text x="360" y="55" text-anchor="middle" font-size="13" fill="#555">Publish-Subscribe pattern + Server-side JSON state</text>
+  </svg>
+  <figcaption>ภาพที่ 2-13 ความสัมพันธ์ระหว่างอุปกรณ์ Edge กับ NETPIE Broker — อุปกรณ์ Publish ค่าจำนวนยาคงเหลือไปยัง Shadow ในขณะเดียวกัน Web Dashboard Subscribe การเปลี่ยนแปลงของ Shadow เพื่อแสดงผลแบบเรียลไทม์</figcaption>
+</figure>
+
+<h4>การประยุกต์ใช้กับงานวิจัยนี้</h4>
+<div class="table-caption">ตารางที่ 2-8 พารามิเตอร์การเชื่อมต่อ NETPIE 2020 ที่ใช้ในงานวิจัย</div>
+<table>
+  <tr><th>พารามิเตอร์</th><th>ค่า</th></tr>
+  <tr><td>Broker URL</td><td>mqtt.netpie.io:1883 (MQTT) หรือ 8883 (MQTT/TLS)</td></tr>
+  <tr><td>Authentication</td><td>Token + Secret (per-device)</td></tr>
+  <tr><td>Client ID</td><td>UUID เฉพาะของอุปกรณ์ (รุ่น 4)</td></tr>
+  <tr><td>Topic Get</td><td><code>@shadow/data/get</code> — ขอสถานะปัจจุบัน</td></tr>
+  <tr><td>Topic Response</td><td><code>@shadow/data/get/response</code> — รับสถานะกลับ</td></tr>
+  <tr><td>Topic Update</td><td><code>@shadow/data/update</code> — แก้ไขสถานะ</td></tr>
+  <tr><td>Topic Updated</td><td><code>@shadow/data/updated</code> — แจ้งทุกผู้ subscribe</td></tr>
+  <tr><td>QoS Level</td><td>1 (At least once delivery)</td></tr>
+</table>
+
+<p class="indent">ระบบใช้ NETPIE Shadow เพื่อจัดเก็บข้อมูลยา 6 ตลับ ได้แก่ ชื่อยา (med1_name ... med6_name), จำนวนเม็ดยาคงเหลือ (med1_count ... med6_count), และตารางเวลาจ่ายยา (med1_slots ... med6_slots) ในรูปแบบ JSON หลายระดับ ทำให้สามารถซิงก์ข้อมูลกับเว็บแดชบอร์ดและแอปพลิเคชันมือถือได้แบบเรียลไทม์ เมื่อผู้ใช้แก้ไขจำนวนยาบนเว็บ จะถูก Push มาที่ Shadow แล้วแจ้งให้ ESP32-P4 ทราบทันที และในทางกลับกัน เมื่อเครื่องจ่ายยาเสร็จสิ้น 1 รอบ จำนวนยาคงเหลือจะถูก Update กลับขึ้น Shadow ผู้ใช้เห็นการเปลี่ยนแปลงทันทีบนเว็บโดยไม่ต้องรีเฟรชหน้า</p>
+
+<h4>กลไก Offline Queue</h4>
+<p class="indent">เนื่องจากการเชื่อมต่ออินเทอร์เน็ตของอุปกรณ์ฝังตัวอาจไม่เสถียรเสมอไป งานวิจัยนี้จึงออกแบบกลไก <strong>Offline Sync Queue</strong> ที่จัดเก็บข้อความ MQTT ที่ Publish ไม่สำเร็จไว้ในหน่วยความจำแบบไม่ลบเลือน (NVS Flash) ของ ESP32-P4 เมื่อระบบเชื่อมต่อ NETPIE Broker ได้สำเร็จในภายหลัง คิวจะถูก Replay ส่งซ้ำให้ครบทุกข้อความตามลำดับ ทำให้ไม่มีข้อมูลสูญหายแม้ Wi-Fi จะขาดเป็นช่วง ๆ</p>
+
+<h3 id="s283">2.8.3 ความปลอดภัย HTTPS และ TLS 1.2</h3>
+
+<p class="indent">การสื่อสารข้อมูลผ่านอินเทอร์เน็ต โดยเฉพาะข้อมูลส่วนบุคคล เช่น รูปภาพหน้าผู้ป่วยจากกล้อง หรือสถานะการรับยา ต้องการการเข้ารหัสเพื่อป้องกัน 3 ภัยหลัก ได้แก่ การดักจับข้อมูล (Eavesdropping), การปลอมแปลงข้อมูล (Tampering), และการสวมรอย (Impersonation) ระบบจึงใช้โปรโตคอล HTTPS (HTTP over TLS) ซึ่งเป็น HTTP มาตรฐานที่หุ้มด้วยชั้นการเข้ารหัส TLS (Transport Layer Security) ในงานวิจัยนี้ใช้ TLS เวอร์ชัน 1.2 ซึ่งเป็นเวอร์ชันที่รองรับกว้างขวางและยังถือว่าปลอดภัยตามมาตรฐาน NIST SP 800-52 Rev. 2</p>
+
+<figure>
+  <svg viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg">
+    <!-- Client/ESP -->
+    <rect x="40" y="40" width="140" height="60" fill="#1a3a6e" rx="6"/>
+    <text x="110" y="68" text-anchor="middle" fill="white" font-size="14" font-weight="bold">ESP32-P4 (Client)</text>
+    <text x="110" y="86" text-anchor="middle" fill="#cce" font-size="11">esp-tls library</text>
+
+    <!-- Server -->
+    <rect x="540" y="40" width="140" height="60" fill="#43a047" rx="6"/>
+    <text x="610" y="68" text-anchor="middle" fill="white" font-size="14" font-weight="bold">Cloud Server</text>
+    <text x="610" y="86" text-anchor="middle" fill="#dfe" font-size="11">Telegram / Apps Script</text>
+
+    <!-- Handshake steps -->
+    <g font-size="12">
+      <!-- Step 1: ClientHello -->
+      <line x1="180" y1="130" x2="540" y2="130" stroke="#0a73c2" stroke-width="2" marker-end="url(#arrowred)"/>
+      <text x="360" y="125" text-anchor="middle" fill="#0a73c2">1) ClientHello (TLS 1.2 + cipher suites)</text>
+
+      <!-- Step 2: ServerHello + Certificate -->
+      <line x1="540" y1="160" x2="180" y2="160" stroke="#43a047" stroke-width="2" marker-end="url(#arrowred)"/>
+      <text x="360" y="155" text-anchor="middle" fill="#43a047">2) ServerHello + X.509 Certificate</text>
+
+      <!-- Step 3: Verify -->
+      <text x="110" y="190" text-anchor="middle" fill="#d32f2f" font-size="11">3) ตรวจสอบ Cert chain</text>
+      <text x="110" y="205" text-anchor="middle" fill="#d32f2f" font-size="11">กับ ESP-IDF Cert Bundle</text>
+
+      <!-- Step 4: Key Exchange -->
+      <line x1="180" y1="230" x2="540" y2="230" stroke="#0a73c2" stroke-width="2" marker-end="url(#arrowred)"/>
+      <text x="360" y="225" text-anchor="middle" fill="#0a73c2">4) ECDHE Key Exchange</text>
+
+      <!-- Step 5: Finished -->
+      <line x1="540" y1="260" x2="180" y2="260" stroke="#43a047" stroke-width="2" marker-end="url(#arrowred)"/>
+      <text x="360" y="255" text-anchor="middle" fill="#43a047">5) Finished (เริ่มเข้ารหัส)</text>
+
+      <!-- Encrypted Application Data -->
+      <line x1="180" y1="305" x2="540" y2="305" stroke="#9c27b0" stroke-width="3"/>
+      <line x1="540" y1="305" x2="180" y2="305" stroke="#9c27b0" stroke-width="3"/>
+      <text x="360" y="298" text-anchor="middle" fill="#9c27b0" font-weight="bold">🔒 Encrypted Application Data (AES-128-GCM)</text>
+    </g>
+
+    <!-- Title -->
+    <text x="360" y="25" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a3a6e">ขั้นตอน TLS 1.2 Handshake</text>
+  </svg>
+  <figcaption>ภาพที่ 2-14 ขั้นตอน Handshake ของ TLS 1.2 — Client เริ่มต้นด้วย ClientHello, Server ส่ง Certificate, Client ตรวจสอบความถูกต้องกับ CA Bundle, แลกกุญแจด้วย ECDHE และเริ่มส่งข้อมูลในช่อง Encrypted ที่เข้ารหัสด้วย AES-128-GCM</figcaption>
+</figure>
+
+<h4>ESP-IDF Certificate Bundle</h4>
+<p class="indent">ใน ESP32-P4 การตรวจสอบ Certificate ของเซิร์ฟเวอร์ปลายทางอาศัย <strong>ESP-IDF Certificate Bundle</strong> ซึ่งเป็นชุด Root Certificate ของ Certificate Authority (CA) ที่น่าเชื่อถือทั่วโลกประมาณ 130 รายการ (รวม Let's Encrypt, DigiCert, GlobalSign ฯลฯ) ถูกฝังไว้ในเฟิร์มแวร์ขนาดประมาณ 64 kB เมื่อ ESP32-P4 เชื่อมต่อกับ api.telegram.org หรือ Google Apps Script จะตรวจสอบว่า Certificate ที่ Server ส่งมาเซ็นโดย CA ที่อยู่ใน Bundle หรือไม่ ถ้าไม่ตรงจะปฏิเสธการเชื่อมต่อทันที กลไกนี้ป้องกันการโจมตีแบบ Man-in-the-middle (MITM) ได้อย่างมีประสิทธิภาพ</p>
+
+<h4>คุณสมบัติทางความปลอดภัยที่ใช้งาน</h4>
+<div class="table-caption">ตารางที่ 2-9 คุณสมบัติด้านความปลอดภัยของ TLS 1.2 ที่ใช้ในระบบ</div>
+<table>
+  <tr><th>คุณสมบัติ</th><th>รายละเอียด</th></tr>
+  <tr><td>เวอร์ชันของ TLS</td><td>TLS 1.2 (RFC 5246)</td></tr>
+  <tr><td>Cipher Suite</td><td>ECDHE-RSA-AES128-GCM-SHA256 (รองรับ Forward Secrecy)</td></tr>
+  <tr><td>การตรวจ Certificate</td><td>X.509 v3 + ESP-IDF CA Bundle (~130 root CAs)</td></tr>
+  <tr><td>Key Exchange</td><td>ECDHE (Elliptic-Curve Diffie-Hellman Ephemeral)</td></tr>
+  <tr><td>Symmetric Encryption</td><td>AES-128-GCM (Authenticated Encryption)</td></tr>
+  <tr><td>Hash Function</td><td>SHA-256</td></tr>
+  <tr><td>Library</td><td>esp-tls (อยู่บน Mbed TLS)</td></tr>
+</table>
+
+<h3 id="s284">2.8.4 Telegram Bot API</h3>
+
+<p class="indent">Telegram Bot API เป็นบริการ HTTP REST API ที่บริษัท Telegram เปิดให้นักพัฒนาสามารถสร้าง "บอท" (Bot) ทำหน้าที่รับ-ส่งข้อความ รูปภาพ ไฟล์ และตอบโต้กับผู้ใช้ในแชทได้แบบอัตโนมัติ บอทเข้าถึง API ผ่าน URL <code>https://api.telegram.org/bot&lt;TOKEN&gt;/&lt;METHOD&gt;</code> ซึ่ง <em>TOKEN</em> เป็นค่า Authentication เฉพาะของแต่ละบอท ได้รับเมื่อสร้างบอทผ่าน @BotFather เมธอดที่ใช้บ่อยได้แก่ <code>sendMessage</code>, <code>sendPhoto</code>, <code>getUpdates</code> และ <code>setWebhook</code></p>
+
+<figure>
+  <svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg">
+    <!-- ESP -->
+    <rect x="40" y="120" width="140" height="80" fill="#1a3a6e" rx="6"/>
+    <text x="110" y="155" text-anchor="middle" fill="white" font-size="14" font-weight="bold">ESP32-P4</text>
+    <text x="110" y="175" text-anchor="middle" fill="#cce" font-size="11">telegram_bot.c</text>
+
+    <!-- Telegram API -->
+    <rect x="280" y="80" width="180" height="160" fill="#0088cc" rx="8"/>
+    <text x="370" y="110" text-anchor="middle" fill="white" font-size="14" font-weight="bold">Telegram Bot API</text>
+    <text x="370" y="128" text-anchor="middle" fill="#dff" font-size="11">api.telegram.org</text>
+    <line x1="290" y1="140" x2="450" y2="140" stroke="#fff" stroke-width="0.5"/>
+    <text x="370" y="160" text-anchor="middle" fill="#fff" font-size="11">/bot[TOKEN]/sendMessage</text>
+    <text x="370" y="175" text-anchor="middle" fill="#fff" font-size="11">/bot[TOKEN]/sendPhoto</text>
+    <text x="370" y="190" text-anchor="middle" fill="#fff" font-size="11">/bot[TOKEN]/getUpdates</text>
+    <text x="370" y="220" text-anchor="middle" fill="#dff" font-size="11">รับ-ส่ง JSON over HTTPS</text>
+
+    <!-- User Phone -->
+    <rect x="560" y="120" width="120" height="80" fill="#222" rx="14"/>
+    <text x="620" y="155" text-anchor="middle" fill="white" font-size="13" font-weight="bold">มือถือ</text>
+    <text x="620" y="175" text-anchor="middle" fill="#bbb" font-size="11">ผู้ใช้ /</text>
+    <text x="620" y="190" text-anchor="middle" fill="#bbb" font-size="11">ผู้ดูแล</text>
+
+    <!-- Arrows -->
+    <line x1="180" y1="150" x2="280" y2="120" stroke="#1a3a6e" stroke-width="2" marker-end="url(#arrowred)"/>
+    <text x="200" y="115" font-size="10" fill="#1a3a6e">sendMessage / sendPhoto</text>
+    <line x1="280" y1="200" x2="180" y2="180" stroke="#888" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrowred)"/>
+    <text x="200" y="220" font-size="10" fill="#666">getUpdates (long poll)</text>
+
+    <line x1="460" y1="120" x2="560" y2="150" stroke="#0088cc" stroke-width="2" marker-end="url(#arrowred)"/>
+    <line x1="560" y1="180" x2="460" y2="200" stroke="#0088cc" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrowred)"/>
+
+    <!-- Notes -->
+    <text x="110" y="260" text-anchor="middle" font-size="11" fill="#444">• แจ้งเตือนยา/รูปยาที่จ่าย</text>
+    <text x="110" y="278" text-anchor="middle" font-size="11" fill="#444">• รับคำสั่งจากผู้ใช้</text>
+    <text x="110" y="296" text-anchor="middle" font-size="11" fill="#444">• polling ทุก 3 วินาที</text>
+
+    <!-- Title -->
+    <text x="360" y="30" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a3a6e">โครงสร้างการสื่อสารผ่าน Telegram Bot API</text>
+    <text x="360" y="55" text-anchor="middle" font-size="13" fill="#555">HTTPS REST API + Long Polling</text>
+  </svg>
+  <figcaption>ภาพที่ 2-15 รูปแบบการเชื่อมต่อกับ Telegram Bot API — ESP32-P4 ส่งข้อความและภาพแจ้งเตือนผู้ใช้ผ่าน sendMessage/sendPhoto และตรวจสอบคำสั่งใหม่จากผู้ใช้ผ่าน getUpdates แบบ Long Polling ทุก 3 วินาที</figcaption>
+</figure>
+
+<h4>การประยุกต์ใช้ในระบบจ่ายยาอัตโนมัติ</h4>
+<div class="table-caption">ตารางที่ 2-10 เหตุการณ์และข้อความที่ส่งผ่าน Telegram Bot ในระบบ</div>
+<table>
+  <tr><th>เหตุการณ์</th><th>เมธอดที่ใช้</th><th>เนื้อหาที่ส่ง</th></tr>
+  <tr><td>จ่ายยาอัตโนมัติตามตาราง</td><td>sendPhoto</td><td>รูปยาที่จ่าย + ข้อความสรุป (ตลับ, ชื่อยา, จำนวน, เวลา)</td></tr>
+  <tr><td>ผู้ใช้กดจ่ายยา/คืนยาแบบแมนนวล</td><td>sendPhoto</td><td>รูปยา + จำนวนที่ออกมาจริงตาม IR</td></tr>
+  <tr><td>ยาใกล้หมด (≤ 2 เม็ด)</td><td>sendMessage</td><td>ข้อความเตือนเติมยา</td></tr>
+  <tr><td>ระบบล้มเหลวระหว่างจ่ายยา</td><td>sendPhoto</td><td>ข้อความสาเหตุ + ภาพปัจจุบัน</td></tr>
+  <tr><td>ผู้ใช้ส่งคำสั่ง /status</td><td>getUpdates → sendMessage</td><td>สรุปสถานะตลับยาทั้ง 6 ช่อง</td></tr>
+</table>
+
+<h4>กลไก Long Polling</h4>
+<p class="indent">การรับคำสั่งจากผู้ใช้ใช้รูปแบบ <strong>Long Polling</strong> โดย ESP32-P4 ส่ง GET request ไปยัง <code>getUpdates</code> ทุก 3,000 มิลลิวินาที (TELEGRAM_CHECK_INTERVAL) เซิร์ฟเวอร์จะ "ค้าง" คำตอบไว้สูงสุด 30 วินาทีจนกว่าจะมีข้อความใหม่หรือหมดเวลา ทำให้อุปกรณ์รับรู้การเปลี่ยนแปลงได้แทบจะทันทีโดยไม่ต้อง Polling ถี่จนเปลือง bandwidth วิธีนี้เหมาะกว่า Webhook สำหรับ ESP32 ที่อยู่หลัง NAT บ้าน เพราะไม่ต้องเปิดพอร์ตขาเข้าจากอินเทอร์เน็ต</p>
+
+<h3 id="s285">2.8.5 Google Apps Script Webhook</h3>
+
+<p class="indent">Google Apps Script เป็นบริการ Cloud Computing ของ Google ที่ให้นักพัฒนาเขียนสคริปต์ภาษา JavaScript ทำงานบนเซิร์ฟเวอร์ของ Google แบบไม่มีค่าใช้จ่าย ฟังก์ชันสำคัญสำหรับงาน IoT คือสามารถ Deploy เป็น Web App แล้วรับ HTTP POST จาก ESP32 ได้ จากนั้นสคริปต์มีสิทธิ์เข้าถึง Google Sheets, Google Drive, และ Gmail ของผู้พัฒนาโดยตรง ทำให้สามารถบันทึกข้อมูลลงสเปรดชีตหรือส่งอีเมลแจ้งเตือนได้ในเวลาเดียวกัน</p>
+
+<figure>
+  <svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg">
+    <!-- ESP -->
+    <rect x="40" y="140" width="140" height="80" fill="#1a3a6e" rx="6"/>
+    <text x="110" y="175" text-anchor="middle" fill="white" font-size="14" font-weight="bold">ESP32-P4</text>
+    <text x="110" y="195" text-anchor="middle" fill="#cce" font-size="11">audit log JSON</text>
+
+    <!-- Apps Script -->
+    <rect x="280" y="120" width="180" height="120" fill="#ea4335" rx="6"/>
+    <text x="370" y="148" text-anchor="middle" fill="white" font-size="14" font-weight="bold">Apps Script</text>
+    <text x="370" y="166" text-anchor="middle" fill="#fee" font-size="11">script.google.com</text>
+    <text x="370" y="186" text-anchor="middle" fill="#fee" font-size="11">/macros/s/[ID]/exec</text>
+    <text x="370" y="210" text-anchor="middle" fill="#fff" font-size="12">function doPost(e) {</text>
+    <text x="370" y="225" text-anchor="middle" fill="#fff" font-size="12">  sheet.appendRow(...)</text>
+
+    <!-- Google Sheets -->
+    <rect x="540" y="80" width="140" height="100" fill="#0f9d58" rx="6"/>
+    <text x="610" y="120" text-anchor="middle" fill="white" font-size="14" font-weight="bold">Google Sheets</text>
+    <text x="610" y="138" text-anchor="middle" fill="#dfe" font-size="11">บันทึกประวัติยา</text>
+    <text x="610" y="158" text-anchor="middle" fill="#dfe" font-size="11">📊 Audit Log</text>
+
+    <!-- Gmail -->
+    <rect x="540" y="200" width="140" height="80" fill="#d73502" rx="6"/>
+    <text x="610" y="235" text-anchor="middle" fill="white" font-size="14" font-weight="bold">Gmail</text>
+    <text x="610" y="253" text-anchor="middle" fill="#fee" font-size="11">(optional)</text>
+    <text x="610" y="270" text-anchor="middle" fill="#fee" font-size="11">แจ้งเตือนผู้ดูแล</text>
+
+    <!-- Arrows -->
+    <line x1="180" y1="180" x2="280" y2="180" stroke="#ea4335" stroke-width="2.5" marker-end="url(#arrowred)"/>
+    <text x="220" y="170" font-size="11" fill="#ea4335">HTTPS POST</text>
+    <text x="220" y="200" font-size="10" fill="#666">JSON body</text>
+
+    <line x1="460" y1="160" x2="540" y2="125" stroke="#0f9d58" stroke-width="2" marker-end="url(#arrowred)"/>
+    <text x="490" y="135" font-size="10" fill="#0f9d58">appendRow()</text>
+
+    <line x1="460" y1="220" x2="540" y2="240" stroke="#d73502" stroke-width="2" stroke-dasharray="3,3" marker-end="url(#arrowred)"/>
+    <text x="475" y="265" font-size="10" fill="#d73502">MailApp (option)</text>
+
+    <!-- Title -->
+    <text x="360" y="25" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a3a6e">การบันทึกข้อมูลผ่าน Google Apps Script Webhook</text>
+    <text x="360" y="50" text-anchor="middle" font-size="12" fill="#555">ESP32 POST JSON → Apps Script → เขียน Sheet / ส่งเมล</text>
+  </svg>
+  <figcaption>ภาพที่ 2-16 การส่งข้อมูลผ่าน Google Apps Script Webhook — ESP32-P4 ส่ง HTTPS POST แบบ JSON ไปยัง URL ของ Apps Script เมื่อสคริปต์ได้รับข้อมูล จะเรียก SpreadsheetApp.appendRow() เพื่อบันทึกลงชีตในเวลาเดียวกันสามารถส่งอีเมลผ่าน MailApp ได้</figcaption>
+</figure>
+
+<h4>โครงสร้าง JSON ที่ส่งจากเครื่อง</h4>
+<p class="indent">ทุกครั้งที่ระบบจ่ายยาเสร็จสิ้น 1 รอบ (ทั้งอัตโนมัติและแบบแมนนวล) ESP32-P4 จะสร้าง Payload JSON ที่ประกอบด้วยข้อมูลสำคัญส่งไปยัง Apps Script เพื่อบันทึกลง Google Sheets ตัวอย่างโครงสร้างมีดังนี้</p>
+
+<pre style="background:#f4f4f4; border:1px solid #ddd; border-radius:4px; padding:12px; font-family:Consolas, monospace; font-size:14px;">
+{
+  "timestamp": "2026-05-08T14:30:00",
+  "module": 1,
+  "med_name": "พาราเซตามอล",
+  "before_count": 12,
+  "after_count": 11,
+  "method": "scheduled" | "manual" | "return",
+  "ir_confirmed": true,
+  "user": "telegram_user_id"
+}
+</pre>
+
+<h4>เปรียบเทียบช่องทางคลาวด์ทั้ง 3 แบบ</h4>
+<div class="table-caption">ตารางที่ 2-11 เปรียบเทียบช่องทางการสื่อสารคลาวด์ทั้ง 3 รูปแบบที่ใช้ในระบบ</div>
+<table>
+  <tr>
+    <th>คุณสมบัติ</th>
+    <th>NETPIE 2020</th>
+    <th>Telegram Bot</th>
+    <th>Google Apps Script</th>
+  </tr>
+  <tr><td>โปรโตคอล</td><td>MQTT</td><td>HTTPS REST</td><td>HTTPS POST</td></tr>
+  <tr><td>ความหน่วง</td><td>&lt; 100 ms</td><td>~ 500 ms</td><td>~ 1–2 วินาที</td></tr>
+  <tr><td>ทิศทางการส่ง</td><td>2-way (pub/sub)</td><td>2-way (poll)</td><td>1-way (POST)</td></tr>
+  <tr><td>ใช้สำหรับ</td><td>Sync state เรียลไทม์</td><td>แจ้งเตือนผู้ใช้</td><td>บันทึกประวัติถาวร</td></tr>
+  <tr><td>ปริมาณข้อมูล/ครั้ง</td><td>~ 200 ไบต์</td><td>~ 1 KB (text) / 50–100 KB (photo)</td><td>~ 200 ไบต์</td></tr>
+  <tr><td>มีกลไก Offline Queue</td><td>มี (Replay เมื่อ online)</td><td>มี (Replay)</td><td>มี (Replay)</td></tr>
+  <tr><td>ค่าใช้จ่าย</td><td>ฟรี</td><td>ฟรี</td><td>ฟรี (โควต้า 6 นาที/exec)</td></tr>
+</table>
+
+<div class="note">
+  <strong>หมายเหตุ:</strong> การออกแบบให้ใช้ทั้ง 3 ช่องทางพร้อมกันเป็นการกระจายความเสี่ยง — หาก NETPIE ขัดข้อง ผู้ใช้ยังได้รับการแจ้งเตือนผ่าน Telegram และข้อมูลยังคงถูกบันทึกลง Google Sheets ทำให้ระบบมีความน่าเชื่อถือ (Reliability) สูงขึ้นกว่าการใช้ช่องทางเดียว
+</div>
+
+<hr style="margin: 60px 0 30px; border: none; border-top: 2px solid #ddd;">
+<p style="text-align:center; color:#666; font-size: 14px;">
+เอกสารนี้สร้างขึ้นเพื่อใช้ประกอบวิทยานิพนธ์ เครื่องจ่ายยาอัตโนมัติ ESP32-P4-Nano<br>
+หากต้องการแก้ไขเนื้อหา/รูปประกอบเพิ่มเติม สามารถปรับ HTML หรือ SVG ได้โดยตรง
+</p>
+
+</body>
+</html>

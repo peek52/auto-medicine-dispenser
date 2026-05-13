@@ -28,6 +28,23 @@ extern "C" bool ui_meds_edit_in_progress(void)
            current_page == PAGE_KEYBOARD;
 }
 
+/* Called by dispenser_scheduler when an IR-confirmed-empty event sets
+ * count=0 (or when the dispense flow otherwise produces an authoritative
+ * count). If the user happens to be on this med's detail page, update
+ * the BACK-revert snapshot so pressing Back doesn't undo the system-set
+ * value. Without this the user would have to manually press บันทึก to
+ * keep the IR-cleared count = 0. */
+extern "C" void ui_setup_meds_resync_backup_count(int med_idx, int new_count)
+{
+    if (med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return;
+    /* Only update the snapshot if the user is currently editing THIS med.
+     * Otherwise the snapshot is for a different med and resyncing would
+     * corrupt the BACK-revert behavior for that one. */
+    if (s_med_snapshot_saved && selected_med_idx == med_idx) {
+        s_med_backup.count = new_count;
+    }
+}
+
 // â”€â”€ File-scope modal timers (file-local only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static uint32_t s_disp_done_tick = 0;
 static uint32_t s_disp_fail_tick = 0;
@@ -35,11 +52,11 @@ static int      prev_return_qty  = 1;
 static bool     prev_show_confirm = false;
 
 #define MED_COUNT_BOX_X      302
-#define MED_COUNT_BOX_Y      52
+#define MED_COUNT_BOX_Y      66
 #define MED_COUNT_BOX_W      78
 #define MED_COUNT_BOX_H      36
 #define MED_COUNT_BOX_CX     (MED_COUNT_BOX_X + (MED_COUNT_BOX_W / 2))
-#define MED_COUNT_BOX_TEXT_Y 74
+#define MED_COUNT_BOX_TEXT_Y 88
 
 #define RET_MINUS_X          66
 #define RET_MINUS_Y          140
@@ -282,7 +299,9 @@ static void draw_slot_selector_panel(uint8_t slots)
     const int16_t row_w = 286;
     const int16_t row_h = 34;
     const int16_t row_gap = 6;
-    const int16_t start_y = 100;
+    /* Shifted from 100 to 114 to clear the +/- stock buttons that now
+     * sit at y=60..108 after the top-bar bump. */
+    const int16_t start_y = 114;
     const int16_t bed_x = 314;
     const int16_t bed_w = 150;
     const int16_t bed_h = (row_h * 3) + (row_gap * 2);
@@ -301,8 +320,8 @@ void ui_setup_meds_render(void)
     if (force_redraw) {
         fill_screen(THEME_BG);
         draw_top_bar_with_back(NULL);
-        if (g_ui_language == UI_LANG_TH) draw_meds_label((LCD_W - kThTopMedSetup.width) / 2, 8, &kThTopMedSetup);
-        else draw_string_centered(LCD_W / 2, 28, "Medicine Setup", THEME_TXT_MAIN, THEME_PANEL, &FreeSans12pt7b);
+        if (g_ui_language == UI_LANG_TH) draw_meds_label((LCD_W - kThTopMedSetup.width) / 2, 20, &kThTopMedSetup);
+        else draw_string_centered(LCD_W / 2, 38, "Medicine Setup", THEME_TXT_MAIN, THEME_PANEL, &FreeSans12pt7b);
 
         const netpie_shadow_t *sh = netpie_get_shadow();
 
@@ -310,7 +329,7 @@ void ui_setup_meds_render(void)
         const int card_h = 78;
         const int left_x = 16;
         const int right_x = 250;
-        const int start_y = 54;
+        const int start_y = 62;
         const int gap_y = 82;
 
         static const uint16_t module_colors[6] = {
@@ -374,7 +393,7 @@ void ui_setup_meds_render(void)
     const netpie_shadow_t *sh = netpie_get_shadow();
     const int left_x = 16;
     const int right_x = 250;
-    const int start_y = 54;
+    const int start_y = 62;
     const int gap_y = 82;
     for (int i = 0; i < 6; i++) {
         if (sh->med[i].count == s_prev_med_count[i]) continue;
@@ -392,8 +411,8 @@ void ui_setup_meds_render(void)
 
 void ui_setup_meds_handle_touch(uint16_t tx_n, uint16_t ty_n)
 {
-    if (ty_n < 50) {
-        if (tx_n >= 14 && tx_n <= 118 && ty_n >= 8 && ty_n <= 34) {
+    if (ty_n < 60) {
+        if (tx_n >= 0 && tx_n <= 130 && ty_n >= 0 && ty_n <= 52) {
             dfplayer_play_track(g_snd_button);
             pending_page = PAGE_MENU;
         }
@@ -402,7 +421,7 @@ void ui_setup_meds_handle_touch(uint16_t tx_n, uint16_t ty_n)
         const int card_h = 78;
         const int left_x = 16;
         const int right_x = 250;
-        const int start_y = 54;
+        const int start_y = 62;
         const int gap_y = 82;
 
         for (int i = 0; i < 6; i++) {
@@ -449,43 +468,57 @@ void ui_setup_meds_detail_render(void)
             const netpie_shadow_t *sh_snap = netpie_get_shadow();
             s_med_backup = sh_snap->med[selected_med_idx];
             s_med_snapshot_saved = true;
+            /* Suppress NETPIE publishes while the user is editing this
+             * med detail page — +/- / slot toggle / rename should not
+             * stream over MQTT on every tap. Local shadow + NVS still
+             * update so the screen reflects each edit. The matching
+             * pop + diff-publish happens on Save / Back in the touch
+             * handler (see further below). */
+            netpie_publish_inhibit_push();
         }
 
         fill_screen(THEME_BG);
         draw_top_bar_with_back(NULL);
         char page_title[32];
         snprintf(page_title, sizeof(page_title), "Module %d Setup", selected_med_idx + 1);
-        if (g_ui_language == UI_LANG_TH) draw_meds_label((LCD_W / 2) - (med_module_setup_label(selected_med_idx)->width / 2), 8, med_module_setup_label(selected_med_idx));
-        else draw_string_centered(LCD_W / 2, 28, page_title, THEME_TXT_MAIN, THEME_PANEL, &FreeSans12pt7b);
+        if (g_ui_language == UI_LANG_TH) draw_meds_label((LCD_W / 2) - (med_module_setup_label(selected_med_idx)->width / 2), 20, med_module_setup_label(selected_med_idx));
+        else draw_string_centered(LCD_W / 2, 38, page_title, THEME_TXT_MAIN, THEME_PANEL, &FreeSans12pt7b);
 
         // SAVE button top-right
-        fill_round_rect_frame(330, 6, 140, 34, 8, THEME_OK, THEME_OK);
+        fill_round_rect_frame(330, 16, 140, 34, 8, THEME_OK, THEME_OK);
         if (g_ui_language == UI_LANG_TH) {
             int16_t save_tw = ui_utf8_text_width("บันทึก");
-            ui_utf8_draw_text(400 - (save_tw / 2), 13, "บันทึก", 0xFFFF);
+            ui_utf8_draw_text(400 - (save_tw / 2), 23, "บันทึก", 0xFFFF);
         } else {
-            draw_string_centered(400, 29, "SAVE", 0xFFFF, THEME_OK, &FreeSans12pt7b);
+            draw_string_centered(400, 39, "SAVE", 0xFFFF, THEME_OK, &FreeSans12pt7b);
         }
 
         const netpie_shadow_t *sh = netpie_get_shadow();
         int med_idx = selected_med_idx;
         
-        fill_round_rect_frame(10, 52, 240, 36, 6, SB_COLOR_CARD, SB_COLOR_BORDER);
+        /* Layout shifted down by ~14 px after the top bar grew from 44 to
+         * 56 px (back button moved out of the panel edge). Previously the
+         * name input box at y=52 and +/- buttons at y=46 ended up inside
+         * the new bar and the + button overlapped the SAVE button. */
+        fill_round_rect_frame(10, 66, 240, 36, 6, SB_COLOR_CARD, SB_COLOR_BORDER);
         bool has_name = strlen(sh->med[med_idx].name) > 0;
         if (g_ui_language == UI_LANG_TH && !has_name) {
-            draw_meds_label(16, 60, &kThTapSetName);
+            draw_meds_label(16, 74, &kThTapSetName);
         } else {
-            if (has_name) draw_med_name_line(16, 57, sh->med[med_idx].name, SB_COLOR_PRIMARY, SB_COLOR_CARD, false);
-            else draw_string_gfx(16, 76, "Tap to set name...", SB_COLOR_TXT_MUTED, SB_COLOR_CARD, &FreeSans9pt7b);
+            if (has_name) draw_med_name_line(16, 71, sh->med[med_idx].name, SB_COLOR_PRIMARY, SB_COLOR_CARD, false);
+            else draw_string_gfx(16, 90, "Tap to set name...", SB_COLOR_TXT_MUTED, SB_COLOR_CARD, &FreeSans9pt7b);
         }
 
-        fill_round_rect_frame(260, 52, 40, 36, 6, THEME_BAD, SB_COLOR_BORDER);
-        draw_string_centered(280, 70, "-", 0xFFFF, THEME_BAD, &FreeSans18pt7b);
-        
+        /* Larger stock buttons: 40×36 → 50×48 to meet ~44 px finger-tap
+         * minimum. Keep the count-box position the same so the visual
+         * layout stays balanced. */
+        fill_round_rect_frame(252, 60, 50, 48, 6, THEME_BAD, SB_COLOR_BORDER);
+        draw_string_centered(277, 90, "-", 0xFFFF, THEME_BAD, &FreeSans18pt7b);
+
         draw_med_count_value(sh->med[med_idx].count);
 
-        fill_round_rect_frame(380, 52, 40, 36, 6, THEME_OK, SB_COLOR_BORDER);
-        draw_string_centered(400, 70, "+", 0xFFFF, THEME_OK, &FreeSans18pt7b);
+        fill_round_rect_frame(382, 60, 50, 48, 6, THEME_OK, SB_COLOR_BORDER);
+        draw_string_centered(407, 90, "+", 0xFFFF, THEME_OK, &FreeSans18pt7b);
 
         draw_slot_selector_panel(sh->med[med_idx].slots);
 
@@ -589,7 +622,12 @@ void ui_setup_meds_detail_render(void)
                 const int16_t btn_h   = 24;
                 const int16_t row_h   = 34;
                 const int16_t row_gap = 6;
-                const int16_t start_y = 100;
+                /* Must match draw_slot_selector_panel — shifted from 100
+                 * to 114 after the top-bar bump. Without keeping this in
+                 * sync, tapping a Before/After button redraws it at the
+                 * old y while the full-redraw position is 14 px lower,
+                 * producing a "ghost" label at the wrong row. */
+                const int16_t start_y = 114;
                 const int16_t before_x = row_x + label_w + gap;       /* 118 */
                 const int16_t after_x  = before_x + btn_w + gap;      /* 214 */
                 const int16_t bed_x = 314, bed_w = 150;
@@ -673,6 +711,19 @@ void ui_setup_meds_detail_render(void)
 
     // ── Validation popup overlay (REMOVED per user request) ──
 }
+/* Defensive cleanup — called from the page-transition watcher in
+ * display_clock when the user leaves the meds-detail page via a path
+ * other than Save/Back (e.g. scheduled-dispense Confirm popup yanks
+ * them away). Mirrors what the Back handler does. Idempotent: a no-op
+ * if no edit session is active. */
+extern "C" void ui_setup_meds_end_edit_session_if_any(void)
+{
+    if (!s_med_snapshot_saved) return;
+    netpie_publish_inhibit_pop();
+    netpie_shadow_commit_med_diff(selected_med_idx + 1, &s_med_backup);
+    s_med_snapshot_saved = false;
+}
+
 void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
 {
     int med_idx = selected_med_idx;
@@ -688,24 +739,21 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
 
     if (show_return_confirm) {
         // ... handled below
-    } else if (tx_n >= 14 && tx_n <= 118 && ty_n >= 8 && ty_n <= 34) {
-
-        // Back: revert ALL changes to snapshot before leaving
-        const netpie_shadow_t *sh_now = netpie_get_shadow();
-        const netpie_med_t *cur = &sh_now->med[med_idx];
-        if (strcmp(cur->name, s_med_backup.name) != 0)
-            netpie_shadow_update_med_name(med_idx + 1, s_med_backup.name);
-        if (cur->count != s_med_backup.count)
-            netpie_shadow_update_count(med_idx + 1, s_med_backup.count);
-        if (cur->slots != s_med_backup.slots)
-            netpie_shadow_update_med_slots(med_idx + 1, s_med_backup.slots);
+    } else if (tx_n >= 0 && tx_n <= 130 && ty_n >= 0 && ty_n <= 52) {
+        /* Back: behaves the same as Save now — commit any pending
+         * edits to NETPIE (one MQTT message per changed field), then
+         * leave. No revert. User-requested 2026-05-12: edits are
+         * batched during the visit and only one publish goes out at
+         * exit; if nothing changed, zero publishes. */
+        netpie_publish_inhibit_pop();
+        netpie_shadow_commit_med_diff(med_idx + 1, &s_med_backup);
         dfplayer_play_track(g_snd_button);
         s_validation_popup = false;
         s_med_snapshot_saved = false; // Reset for next entry
         pending_page = PAGE_SETUP_MEDS;
         force_redraw = true;
         return;
-    } else if (ty_n >= 6 && ty_n <= 40 && tx_n >= 330 && tx_n <= 470) {
+    } else if (ty_n >= 14 && ty_n <= 52 && tx_n >= 330 && tx_n <= 470) {
         // SAVE button: name is the only hard requirement. Count=0 and
         // slots=0 are both allowed:
         //  - count=0 → VL53 sensor will fill in the real value once the
@@ -720,6 +768,10 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
             netpie_shadow_update_count(med_idx + 1, 0);
             netpie_shadow_update_med_slots(med_idx + 1, 0);
         }
+        /* Release publish inhibit and push any actual changes vs the
+         * snapshot. Zero MQTT traffic if nothing was edited. */
+        netpie_publish_inhibit_pop();
+        netpie_shadow_commit_med_diff(med_idx + 1, &s_med_backup);
         dfplayer_play_track(14);
         s_validation_popup = false;
         s_med_snapshot_saved = false; // Reset for next entry
@@ -764,13 +816,17 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
     } else {
         const netpie_shadow_t *sh = netpie_get_shadow();
         
-        if (ty_n >= 52 && ty_n <= 88) { // Zone 1
-            if (tx_n >= 260 && tx_n <= 300) { // [-] stock
+        /* Stock buttons expanded to 50×48 px (was 40×36) — hit zone
+         * widened to match the new visual size for easier finger taps.
+         * Name input + slot panel y-ranges below were untouched and the
+         * count box still occupies the middle. */
+        if (ty_n >= 60 && ty_n <= 108) { // Zone 1 (stock row)
+            if (tx_n >= 252 && tx_n <= 302) { // [-] stock
                 if (current_stock > 0) {
                     netpie_shadow_update_count(med_idx + 1, current_stock - 1);
                     dispenser_audit_stock_adjust(med_idx, current_stock, current_stock - 1);
                 }
-            } else if (tx_n >= 380 && tx_n <= 420) { // [+] stock
+            } else if (tx_n >= 382 && tx_n <= 432) { // [+] stock
                 int max_pills = DISPENSER_MAX_PILLS;
                 const pill_sensor_status_t *sns = pill_sensor_status_get(med_idx);
                 if (sns && sns->max_pills > 0) max_pills = sns->max_pills;
@@ -790,13 +846,13 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
                 force_redraw = true;
             }
         }
-        else if (ty_n >= 100 && ty_n <= 216) { // Zone 2: slots
+        else if (ty_n >= 114 && ty_n <= 230) { // Zone 2: slots
             int tapped_slot = -1;
 
             const int row_x = 16;
             const int row_h = 34;
             const int row_gap = 6;
-            const int start_y = 100;
+            const int start_y = 114;
             const int label_w = 94;
             const int gap = 8;
             const int btn_w = 88;

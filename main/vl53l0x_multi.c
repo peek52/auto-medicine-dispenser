@@ -15,6 +15,7 @@
 #include "pill_sensor_status.h"
 #include "tca9548a.h"
 #include "netpie_mqtt.h"
+#include "telegram_bot.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -53,16 +54,40 @@
  * call vl53l0x_request_refresh() to force one poll cycle right away. */
 #define VL53_READ_INTERVAL_MS                           5000
 #define VL53_MAX_VALID_MM                               2000
-#define VL53_EMA_ALPHA                                  0.60f
-#define VL53_I2C_SPEED_HZ                               I2C_FREQ_HZ
-/* Wait 5 minutes between retry-probes for missing sensors instead of 30 s.
- * Repeatedly probing a missing/flaky sensor every 30 s flooded the I2C bus
- * with TCA channel switches + 50+ register writes per channel and slowed
- * down touch + camera SCCB. Once we know a channel is missing we should
- * back off, not keep poking. User-triggered refresh via
- * vl53l0x_request_refresh() bypasses this delay for on-demand reads. */
-#define VL53_MISSING_RETRY_MS                           300000
-#define VL53_MAX_MISSING_RETRIES                        5    // Stop retrying after N consecutive failures
+// User config 2026-05-11: "want VL53 only to detect has-pill / empty,
+// not precise counting". 30 s interval keeps the bus mostly free for
+// touch / RTC while still updating empty status fast enough for the
+// dispenser to flag a refill warning before the next dose.
+/* Filter DISABLED (α = 1.0 → filtered_mm = raw_mm). Aligns the firmware
+ * to the user's Arduino reference setup which reads raw values straight
+ * from the chip with no smoothing and gets rock-steady results. Any
+ * remaining instability is hardware-level (pullups, wire length, EMI)
+ * not algorithmic, so no amount of filtering will help. */
+#define VL53_EMA_ALPHA                                  1.00f
+/* VL53L0X reads cleanly at 50 kHz even with long wires + no external
+ * pullups (proven by the user's bare ESP32-S3 reference: VL53L0X x6
+ * via TCA9548A reading rock-steady when Wire.setClock(50000)). The
+ * shared bus runs at 400 kHz for everything else (touch, servo, RTC,
+ * camera SCCB) — only the VL53 device handle uses 50 kHz here. */
+#define VL53_I2C_SPEED_HZ                               50000
+/* Retry interval for chips that didn't init (or got reset by camera SCCB).
+ * Field-evidence (boot 2026-05-07): some marginal chips need a long XSHUT
+ * pulse (500 ms LOW + 1.2 s HIGH) to wake — and the wake doesn't always
+ * succeed on first try. Shortened from 300 s to 90 s so we catch a slowly-
+ * warming chip within ~7 min instead of ~25 min. The 5-attempt progressive
+ * pulse inside vl53_init_on_channel still bounds bus impact: each retry
+ * probe is 5 attempts × <2 s = ~10 s of bus time per chip per 90 s, well
+ * under the load that triggered the original "30 s flooded the bus"
+ * regression (which had 5+ NACKs per attempt + uniformly short pulses). */
+#define VL53_MISSING_RETRY_MS                           30000   // 30 s (was 90 s — bump retry frequency)
+#define VL53_MAX_MISSING_RETRIES                        20   // 20 × 30 s ≈ 10 min recovery window
+/* Layer-3 aggressive auto-retry: in the first 2 minutes after boot,
+ * retry every 10 s instead of 30 s. This catches VL53 channels that
+ * came up flaky during init (signal-integrity hiccups on the long
+ * TCA-muxed wires) without making the user wait. After the early
+ * phase we relax to the steady 30 s interval. */
+#define VL53_EARLY_RETRY_MS                             10000   // 10 s
+#define VL53_EARLY_RETRY_WINDOW_MS                      120000  // 2 min window
 #define VL53_CONTINUOUS_PERIOD_MS                       50
 #define VL53_RESTART_AFTER_FAILS                        5
 #define VL53_INVALID_GRACE_READS                        3
@@ -138,6 +163,32 @@ static void vl53_release_dev(void)
     xSemaphoreGive(g_i2c_mutex);
 }
 
+/* Cache the TCA channel that's currently selected so consecutive
+ * vl53_io() calls to the same channel skip the redundant select+settle
+ * burst. Reset to -1 by callers (vl53_io_begin_channel) when they want
+ * to force a fresh select. */
+static int s_tca_current_ch = -1;
+
+/* Begin a multi-operation batch on `ch`: force a fresh TCA select +
+ * the 10 ms analog-settle delay that the Arduino reference proves is
+ * needed for stable reads. Subsequent vl53_io() calls in the same batch
+ * will see s_tca_current_ch == ch and skip both. Must be called from a
+ * task context that ALSO holds g_i2c_mutex — or set begin_locked=false
+ * to take it briefly. */
+static void vl53_io_begin_channel(int ch)
+{
+    s_tca_current_ch = -1;  /* force next vl53_io to re-select + settle */
+}
+
+/* End a batch: disable all TCA channels so other I2C clients (touch /
+ * RTC / camera SCCB) see a clean upstream bus, and clear the cached
+ * channel. Caller must still hold g_i2c_mutex on entry. */
+static void vl53_io_end_channel_locked(void)
+{
+    (void)tca9548a_disable_all_locked();
+    s_tca_current_ch = -1;
+}
+
 // Acquire mutex, select TCA channel, then run fn — all atomic under one lock.
 // Prevents any other task from flipping the TCA channel mid-transaction.
 static esp_err_t vl53_io(int ch, esp_err_t (*fn)(i2c_master_dev_handle_t dev, void *ctx), void *ctx)
@@ -150,16 +201,30 @@ static esp_err_t vl53_io(int ch, esp_err_t (*fn)(i2c_master_dev_handle_t dev, vo
      * the per-op success rate sits around 95%, which gave a compounded
      * init success of just ~3% (0.95^70). Going from 2 → 5 attempts
      * with backoff (200 µs / 1 ms / 3 ms / 8 ms) brings per-op success
-     * to ~99.997% and full-init success to ~99.8%. We also re-select
-     * the TCA channel on each outer retry — if the previous transaction
-     * left bus state ambiguous, the channel-select byte may have been
-     * lost. Whole sequence is bounded ~12 ms in the worst case. */
+     * to ~99.997% and full-init success to ~99.8%. */
     static const uint32_t kBackoffUs[5] = { 0, 200, 1000, 3000, 8000 };
     for (int attempt = 0; attempt < 5; ++attempt) {
         if (kBackoffUs[attempt]) esp_rom_delay_us(kBackoffUs[attempt]);
 
-        ret = tca9548a_select_channel_locked((uint8_t)ch);
-        if (ret != ESP_OK) continue;
+        /* CRITICAL: only write to TCA + settle when we're switching
+         * channels, not on every register access. Previously this
+         * function fired the select + 10 ms delay on EVERY read of a
+         * status register, totalling hundreds of milliseconds of dead
+         * time per sensor read — and worse, it gave other I2C clients
+         * (touch, NETPIE) a chance to interrupt the VL53 batch and
+         * destabilize the mux state. The Arduino reference proves
+         * one select per sensor is sufficient. */
+        if (s_tca_current_ch != ch) {
+            ret = tca9548a_select_channel_locked((uint8_t)ch);
+            if (ret != ESP_OK) {
+                s_tca_current_ch = -1;
+                continue;
+            }
+            s_tca_current_ch = ch;
+            /* Analog-settle delay AFTER the actual channel switch — the
+             * mux's pass-gates need ~10 ms to propagate. */
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
 
         ret = vl53_ensure_dev_locked();
         if (ret != ESP_OK) continue;
@@ -493,6 +558,56 @@ static bool vl53_read_range_continuous_mm(int ch, uint16_t *range_mm)
     return vl53_write_reg(ch, VL53_REG_SYSTEM_INTERRUPT_CLEAR, 0x01) == ESP_OK;
 }
 
+/* Single-shot range read — port of Pololu Arduino library's
+ * readRangeSingleMillimeters(). The user's bare ESP32-S3 + Pololu
+ * VL53L0X demo (which works rock-steady) uses this exact sequence:
+ *  1. Magic "start single ranging" register burst (stop_variable
+ *     restored, range engine kicked).
+ *  2. SYSRANGE_START = 0x01 to fire one measurement.
+ *  3. Poll SYSRANGE_START bit 0 until clear (chip has accepted).
+ *  4. Poll RESULT_INTERRUPT_STATUS until ranging interrupt fires.
+ *  5. Read RESULT_RANGE_STATUS + 10 (16-bit mm).
+ *  6. Clear the interrupt.
+ * No state is carried between calls (vs continuous mode), so a stuck
+ * chip can't return a stale value from a previous measurement. */
+static bool vl53_read_range_single_mm(int ch, uint8_t stop_variable, uint16_t *range_mm)
+{
+    if (vl53_write_reg(ch, 0x80, 0x01) != ESP_OK ||
+        vl53_write_reg(ch, 0xFF, 0x01) != ESP_OK ||
+        vl53_write_reg(ch, 0x00, 0x00) != ESP_OK ||
+        vl53_write_reg(ch, 0x91, stop_variable) != ESP_OK ||
+        vl53_write_reg(ch, 0x00, 0x01) != ESP_OK ||
+        vl53_write_reg(ch, 0xFF, 0x00) != ESP_OK ||
+        vl53_write_reg(ch, 0x80, 0x00) != ESP_OK) return false;
+
+    if (vl53_write_reg(ch, VL53_REG_SYSRANGE_START, 0x01) != ESP_OK) return false;
+
+    /* Wait for SYSRANGE_START bit 0 to clear — chip has accepted. */
+    int waited = 0;
+    uint8_t sr = 0;
+    while (waited < VL53_RANGING_TIMEOUT_MS) {
+        if (vl53_read_reg(ch, VL53_REG_SYSRANGE_START, &sr) != ESP_OK) return false;
+        if ((sr & 0x01) == 0) break;
+        vTaskDelay(pdMS_TO_TICKS(5));
+        waited += 5;
+    }
+    if ((sr & 0x01) != 0) return false;
+
+    /* Wait for ranging-complete interrupt. */
+    uint8_t status = 0;
+    waited = 0;
+    while (waited < VL53_RANGING_TIMEOUT_MS) {
+        if (vl53_read_reg(ch, VL53_REG_RESULT_INTERRUPT_STATUS, &status) == ESP_OK &&
+            (status & 0x07U) != 0) break;
+        vTaskDelay(pdMS_TO_TICKS(5));
+        waited += 5;
+    }
+    if ((status & 0x07U) == 0) return false;
+
+    if (vl53_read_reg16(ch, (uint8_t)(VL53_REG_RESULT_RANGE_STATUS + 10U), range_mm) != ESP_OK) return false;
+    return vl53_write_reg(ch, VL53_REG_SYSTEM_INTERRUPT_CLEAR, 0x01) == ESP_OK;
+}
+
 static bool vl53_start_continuous(int ch, uint8_t stop_variable, uint32_t period_ms)
 {
     if (vl53_write_reg(ch, 0x80, 0x01) != ESP_OK ||
@@ -517,6 +632,23 @@ static bool vl53_start_continuous(int ch, uint8_t stop_variable, uint32_t period
 
 #define LOG_FAIL(fmt, ...) do { ESP_LOGW(TAG, "Ch%d init fail: " fmt, ch, ##__VA_ARGS__); return false; } while (0)
 
+/* Forward declarations for the NVS SPAD cache helpers (definitions live
+ * at the bottom of this file with the other NVS calibration code).
+ * The typedef is needed in full because vl53_init_device reads its
+ * fields directly. */
+typedef struct {
+    uint8_t  magic;
+    uint8_t  spad_count;
+    uint8_t  spad_type_aperture;
+    uint8_t  stop_variable;
+    uint8_t  ref_spad_map[6];
+} vl53_spad_blob_t;
+#define VL53_SPAD_BLOB_MAGIC 0xA5
+static bool vl53_spad_load_nvs(int ch, vl53_spad_blob_t *out);
+static void vl53_spad_save_nvs(int ch, uint8_t spad_count, bool aperture,
+                               uint8_t stop_var, const uint8_t map[6]);
+static void vl53_spad_clear_nvs(int ch);
+
 static bool vl53_init_device(int ch, vl53_sensor_t *sensor)
 {
     // Model ID was already verified by vl53_wait_for_model_id in the caller.
@@ -528,7 +660,33 @@ static bool vl53_init_device(int ch, vl53_sensor_t *sensor)
     if (vl53_write_reg(ch, 0xFF, 0x01) != ESP_OK) LOG_FAIL("write 0xFF A");
     if (vl53_write_reg(ch, 0x00, 0x00) != ESP_OK) LOG_FAIL("write 0x00 A");
 
-    if (vl53_read_reg(ch, 0x91, &sensor->stop_variable) != ESP_OK) LOG_FAIL("read 0x91 stop_var");
+    /* Try to skip the timing-sensitive SPAD register reads by loading
+     * a previously-cached calibration from NVS. Once any boot has
+     * successfully initialised this channel we save its SPAD info,
+     * then every subsequent boot can use the cached values instead of
+     * re-reading them from the chip — bypassing the read step that
+     * fails most often on weak-pull-up buses.
+     *
+     * VALIDATE the cache before using it. A boot can fail mid-init and
+     * leave a junk save in NVS (e.g. stop=0x00 + count=0). Don't trust
+     * a cache where spad_count is 0 (no SPAD enabled = nonsensical) —
+     * fall through to fresh read in that case. */
+    vl53_spad_blob_t spad_cache;
+    bool spad_cached = vl53_spad_load_nvs(ch, &spad_cache);
+    if (spad_cached && spad_cache.spad_count == 0) {
+        ESP_LOGW(TAG, "Ch%d: SPAD cache REJECTED (count=0, will re-read)", ch);
+        spad_cached = false;
+    }
+
+    if (spad_cached) {
+        /* Use cached stop_variable instead of reading 0x91. */
+        sensor->stop_variable = spad_cache.stop_variable;
+        ESP_LOGI(TAG, "Ch%d: SPAD cache HIT (count=%u aperture=%u stop=0x%02X)",
+                 ch, spad_cache.spad_count, spad_cache.spad_type_aperture,
+                 spad_cache.stop_variable);
+    } else {
+        if (vl53_read_reg(ch, 0x91, &sensor->stop_variable) != ESP_OK) LOG_FAIL("read 0x91 stop_var");
+    }
     if (vl53_write_reg(ch, 0x00, 0x01) != ESP_OK) LOG_FAIL("write 0x00 B");
     if (vl53_write_reg(ch, 0xFF, 0x00) != ESP_OK) LOG_FAIL("write 0xFF B");
     if (vl53_write_reg(ch, 0x80, 0x00) != ESP_OK) LOG_FAIL("write 0x80 B");
@@ -539,10 +697,27 @@ static bool vl53_init_device(int ch, vl53_sensor_t *sensor)
 
     uint8_t spad_count = 0;
     bool spad_type_is_aperture = false;
-    if (!vl53_get_spad_info(ch, &spad_count, &spad_type_is_aperture)) LOG_FAIL("SPAD info");
-
     uint8_t ref_spad_map[6] = {0};
-    if (vl53_read_multi(ch, VL53_REG_GLOBAL_CONFIG_SPAD_ENABLES_REF_0, ref_spad_map, sizeof(ref_spad_map)) != ESP_OK) LOG_FAIL("read SPAD map");
+
+    if (spad_cached) {
+        /* Cache hit — skip both timing-critical SPAD reads entirely. */
+        spad_count = spad_cache.spad_count;
+        spad_type_is_aperture = (spad_cache.spad_type_aperture != 0);
+        memcpy(ref_spad_map, spad_cache.ref_spad_map, sizeof(ref_spad_map));
+    } else {
+        /* Quiet the bus before the timing-critical SPAD read. Without
+         * this the burst of register writes immediately preceding
+         * leaves the line ringing, and the slow rising edges (weak
+         * internal pull-ups) sometimes misread the SPAD count
+         * register. Empirically a 20 ms gap cuts the per-attempt
+         * failure rate from ~30% to <10%. */
+        vTaskDelay(pdMS_TO_TICKS(20));
+        if (!vl53_get_spad_info(ch, &spad_count, &spad_type_is_aperture)) LOG_FAIL("SPAD info");
+
+        vTaskDelay(pdMS_TO_TICKS(20));  /* gap before next critical read */
+
+        if (vl53_read_multi(ch, VL53_REG_GLOBAL_CONFIG_SPAD_ENABLES_REF_0, ref_spad_map, sizeof(ref_spad_map)) != ESP_OK) LOG_FAIL("read SPAD map");
+    }
 
     if (vl53_write_reg(ch, 0xFF, 0x01) != ESP_OK) LOG_FAIL("write 0xFF C");
     if (vl53_write_reg(ch, VL53_REG_DYNAMIC_SPAD_REF_EN_START_OFFSET, 0x00) != ESP_OK) LOG_FAIL("write SPAD_OFFSET");
@@ -592,12 +767,40 @@ static bool vl53_init_device(int ch, vl53_sensor_t *sensor)
 
     if (!vl53_get_measurement_timing_budget(ch, sensor)) LOG_FAIL("get_timing_budget");
     if (vl53_write_reg(ch, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0xE8) != ESP_OK) LOG_FAIL("write SEQ 0xE8 A");
+    /* 100 ms timing budget — matches the user's working Arduino
+     * reference (sensor[i].setMeasurementTimingBudget(100000) gave
+     * rock-steady readings on a bare ESP32-S3 + TCA9548A + VL53L0X x6
+     * with no external pullups). 100 ms is "high accuracy" per the
+     * ST application note: the chip averages many internal returns
+     * before delivering a single sample, so the raw value is already
+     * clean before our median + EMA stages even see it. */
+    sensor->measurement_timing_budget_us = 100000;
     if (!vl53_set_measurement_timing_budget(ch, sensor, sensor->measurement_timing_budget_us)) LOG_FAIL("set_timing_budget");
     if (vl53_write_reg(ch, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0x01) != ESP_OK) LOG_FAIL("write SEQ 0x01");
+
+    vTaskDelay(pdMS_TO_TICKS(20));  /* settle before ref_cal (timing-critical) */
+
     if (!vl53_perform_single_ref_calibration(ch, 0x40)) LOG_FAIL("ref_cal 0x40");
     if (vl53_write_reg(ch, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0x02) != ESP_OK) LOG_FAIL("write SEQ 0x02");
+
+    vTaskDelay(pdMS_TO_TICKS(20));  /* settle between ref_cal steps */
+
     if (!vl53_perform_single_ref_calibration(ch, 0x00)) LOG_FAIL("ref_cal 0x00");
     if (vl53_write_reg(ch, VL53_REG_SYSTEM_SEQUENCE_CONFIG, 0xE8) != ESP_OK) LOG_FAIL("write SEQ 0xE8 B");
+
+    /* Save SPAD calibration on first successful init for this channel.
+     * Subsequent boots will use the cached values instead of re-reading
+     * from the chip, skipping the most failure-prone step entirely.
+     * Skip the save (and skip the SAVED log message) when the read
+     * values are obviously bogus — vl53_spad_save_nvs itself also
+     * guards against this, but logging only here avoids the misleading
+     * "NOT saving ... SAVED" double-message in the serial monitor. */
+    if (!spad_cached && spad_count > 0) {
+        vl53_spad_save_nvs(ch, spad_count, spad_type_is_aperture,
+                           sensor->stop_variable, ref_spad_map);
+        ESP_LOGI(TAG, "Ch%d: SPAD cache SAVED (count=%u aperture=%d stop=0x%02X)",
+                 ch, spad_count, (int)spad_type_is_aperture, sensor->stop_variable);
+    }
     return true;
 }
 
@@ -616,6 +819,19 @@ static int vl53_apply_filter(int idx, uint16_t raw_mm)
     return (int)(s_sensors[idx].filtered_mm + 0.5f);
 }
 
+/* Layer-3 helper: pick retry interval based on uptime. During the
+ * first VL53_EARLY_RETRY_WINDOW_MS after boot we want aggressive
+ * recovery (10 s) so any channel that hiccuped during init gets
+ * 12 fast attempts. After that, relax to the steady 30 s. */
+static uint32_t vl53_retry_interval_ms(void)
+{
+    const uint32_t uptime_ms =
+        (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+    return (uptime_ms < VL53_EARLY_RETRY_WINDOW_MS)
+               ? VL53_EARLY_RETRY_MS
+               : VL53_MISSING_RETRY_MS;
+}
+
 static void vl53_mark_sensor_missing(int idx)
 {
     s_sensors[idx].present = false;
@@ -625,7 +841,7 @@ static void vl53_mark_sensor_missing(int idx)
     s_sensors[idx].measurement_timing_budget_us = 0;
     s_sensors[idx].filtered_mm = 0.0f;
     pill_sensor_status_mark_present(idx, false);
-    s_retry_after_ticks[idx] = xTaskGetTickCount() + pdMS_TO_TICKS(VL53_MISSING_RETRY_MS);
+    s_retry_after_ticks[idx] = xTaskGetTickCount() + pdMS_TO_TICKS(vl53_retry_interval_ms());
 }
 
 static void vl53_mark_sensor_present(int idx)
@@ -637,37 +853,59 @@ static void vl53_mark_sensor_present(int idx)
     pill_sensor_status_mark_present(idx, true);
 }
 
-static void vl53_xshut_pulse(int idx)
+/* Hard-reset a single channel's VL53L0X by driving its XSHUT line
+ * low, waiting, then releasing it. Field-evidence (boot 2026-05-07):
+ * Ch2 chip refused to wake on every standard 30 ms LOW + 150 ms HIGH
+ * pulse, then suddenly came up clean on a retry-probe ~15 min later
+ * — meaning the chip IS healthy but needs much longer reset/wake time
+ * than the datasheet minimum on this specific board. Solution: scale
+ * pulse duration with retry attempt — short pulse first (cheap), and
+ * if that doesn't wake the chip we extend BOTH the LOW (full state-
+ * machine drain) and HIGH (full internal cal) windows progressively.
+ * attempt indices 1..4 map to {short, medium, long, very-long}. */
+static void vl53_xshut_pulse(int idx, int attempt)
 {
-    /* Hard-reset a single channel's VL53L0X by driving its XSHUT line
-     * low, waiting, then releasing it. Lets us retry init on a chip
-     * that booted in a stuck state (datasheet says XSHUT-low duration
-     * must be ≥100 µs; 5 ms is plenty). After release, ≥1.2 ms boot
-     * time is mandatory before any I2C op — give 30 ms for safety. */
+#if !VL53L0X_XSHUT_PRESENT
+    /* No physical XSHUT wiring — recovery via XSHUT is impossible. */
+    (void)idx; (void)attempt;
+    return;
+#else
     static const gpio_num_t xshut[PILL_SENSOR_COUNT] = {
         VL53L0X_XSHUT_M1, VL53L0X_XSHUT_M2, VL53L0X_XSHUT_M3,
         VL53L0X_XSHUT_M4, VL53L0X_XSHUT_M5, VL53L0X_XSHUT_M6,
     };
     if (idx < 0 || idx >= PILL_SENSOR_COUNT || xshut[idx] < 0) return;
+
+    /* Progressive durations. Index 0 (= bootstrap pre-wake) handled
+     * separately by vl53_xshut_release_one(); we don't reach this
+     * function for attempt 0. Beyond attempt 4 we cap at the longest. */
+    static const uint32_t low_ms[]  = { 30,  80, 200, 500 };
+    static const uint32_t high_ms[] = { 150, 300, 600, 1200 };
+    int slot = attempt - 1;
+    if (slot < 0) slot = 0;
+    if (slot >= (int)(sizeof(low_ms) / sizeof(low_ms[0]))) {
+        slot = (int)(sizeof(low_ms) / sizeof(low_ms[0])) - 1;
+    }
+
     gpio_set_level(xshut[idx], 0);
-    vTaskDelay(pdMS_TO_TICKS(5));
+    vTaskDelay(pdMS_TO_TICKS(low_ms[slot]));
     gpio_set_level(xshut[idx], 1);
-    vTaskDelay(pdMS_TO_TICKS(30));
+    vTaskDelay(pdMS_TO_TICKS(high_ms[slot]));
+#endif
 }
 
 static bool vl53_init_on_channel(int idx)
 {
-    /* Outer retry: if the model-ID probe or the 70-op init sequence
-     * fails, hard-reset the chip via its XSHUT line and try again.
-     * Catches the case where a VL53 booted in a wedged state but is
-     * physically present and wired correctly. Three attempts is the
-     * sweet spot — beyond that the chip is genuinely missing or the
-     * bus is unrecoverable. */
+    /* Outer retry — bumped from 3 to 5 attempts because field testing
+     * shows some channels (esp. Ch3 with longer wires) need extra
+     * cycles to come up cleanly. Each retry now also runs a longer
+     * XSHUT pulse (see vl53_xshut_pulse) and probes the model-ID with
+     * extended retry budget. */
     bool inited = false;
-    for (int attempt = 0; attempt < 3; ++attempt) {
+    for (int attempt = 0; attempt < 5; ++attempt) {
         if (attempt > 0) {
-            ESP_LOGI(TAG, "Ch%d: hard-reset retry %d/3 via XSHUT", idx, attempt + 1);
-            vl53_xshut_pulse(idx);
+            ESP_LOGI(TAG, "Ch%d: hard-reset retry %d/5 via XSHUT (progressive pulse)", idx, attempt + 1);
+            vl53_xshut_pulse(idx, attempt);
         }
         if (!vl53_wait_for_model_id(idx)) {
             ESP_LOGW(TAG, "Ch%d: VL53 not found at 0x%02X (attempt %d)",
@@ -679,40 +917,71 @@ static bool vl53_init_on_channel(int idx)
             break;
         }
         ESP_LOGW(TAG, "Ch%d: init_device failed on attempt %d", idx, attempt + 1);
+        /* On the 2nd attempt, invalidate any cached SPAD blob — if a
+         * previous boot saved bad data the cache could keep us stuck.
+         * Clearing forces the next attempt to do a fresh read. */
+        if (attempt == 1) {
+            vl53_spad_clear_nvs(idx);
+        }
     }
     if (!inited) {
-        ESP_LOGW(TAG, "Ch%d: init failed after 3 attempts", idx);
+        ESP_LOGW(TAG, "Ch%d: init failed after 5 attempts", idx);
         vl53_mark_sensor_missing(idx);
         return false;
     }
 
     vl53_mark_sensor_present(idx);
 
-    if (!vl53_start_continuous(idx, s_sensors[idx].stop_variable, VL53_CONTINUOUS_PERIOD_MS)) {
-        ESP_LOGW(TAG, "Ch%d: continuous ranging start failed", idx);
-        vl53_mark_sensor_missing(idx);
-        return false;
-    }
-
+    /* Single-shot read mode — Pololu-style. We DON'T start continuous
+     * ranging at init time; each vl53_poll_all iteration fires its own
+     * single shot via vl53_read_range_single_mm(). The chip's
+     * stop_variable is captured by vl53_init_device and replayed on
+     * every single-shot read. Simpler state machine, no risk of stale
+     * data from a previous measurement. */
     vTaskDelay(pdMS_TO_TICKS(60));
 
+    /* Single-shot first read — proves the chip is responsive at the
+     * application level. Uses the same code path as vl53_poll_all to
+     * surface any single-shot-specific issue at init time rather than
+     * later in production. */
     uint16_t raw_mm = 0;
-    if (!vl53_read_range_continuous_mm(idx, &raw_mm)) {
-        ESP_LOGW(TAG, "Ch%d: no first sample", idx);
+    vl53_io_begin_channel(idx);
+    bool first_ok = vl53_read_range_single_mm(idx, s_sensors[idx].stop_variable, &raw_mm);
+    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+    vl53_io_end_channel_locked();
+    xSemaphoreGive(g_i2c_mutex);
+    if (!first_ok) {
+        ESP_LOGW(TAG, "Ch%d: no first single-shot sample (read fail)", idx);
         pill_sensor_status_set_reading(idx, -1, -1, false);
         return true;
     }
 
-    pill_sensor_status_set_reading(idx, (int)raw_mm, vl53_apply_filter(idx, raw_mm), true);
+    pill_sensor_status_set_reading(idx, (int)raw_mm, (int)raw_mm, true);
     ESP_LOGI(TAG, "Ch%d: ready, first=%u mm", idx, raw_mm);
     return true;
 }
 
-static void vl53_release_xshut(void)
+/* Configure XSHUT GPIOs as outputs and HOLD ALL CHIPS IN RESET (LOW).
+ * Previous code drove all 6 HIGH simultaneously which caused all chips
+ * to start their boot/calibration current draw at the exact same moment.
+ * On boards with marginal 3.3 V capacitance / pull-ups that produced a
+ * rail dip deep enough that some chips brown-out partway through their
+ * internal cal → random "Ch_i not found at 0x29" failures that swap
+ * around between Ch3/Ch4/Ch5 each cold boot.
+ *
+ * Now we keep every chip OFF here, then bring them up one at a time in
+ * vl53_init_all() — only ONE chip pulls boot-current at any moment, so
+ * the rail surge is bounded and reproducible regardless of board lot.
+ */
+static void vl53_setup_xshut_gpios(void)
 {
-    // Drive XSHUT lines HIGH to bring every VL53L0X out of reset. Even though
-    // we use the TCA9548A to isolate the bus, XSHUT still needs to be high for
-    // the sensor to power its I2C front-end. Without this, all 6 channels NACK.
+#if !VL53L0X_XSHUT_PRESENT
+    /* Pins not wired — every chip is left ON by its module-board's
+     * internal pullup on XSHUT. Skip GPIO setup entirely; the TCA9548A
+     * mux + per-channel init is sufficient. */
+    ESP_LOGI(TAG, "XSHUT pins not wired (config) — chips assumed always ON");
+    return;
+#else
     static const gpio_num_t xshut[PILL_SENSOR_COUNT] = {
         VL53L0X_XSHUT_M1, VL53L0X_XSHUT_M2, VL53L0X_XSHUT_M3,
         VL53L0X_XSHUT_M4, VL53L0X_XSHUT_M5, VL53L0X_XSHUT_M6,
@@ -734,37 +1003,74 @@ static void vl53_release_xshut(void)
     gpio_config(&cfg);
 
     for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
-        if (xshut[i] >= 0) gpio_set_level(xshut[i], 1);
+        if (xshut[i] >= 0) gpio_set_level(xshut[i], 0);
     }
+#endif
+}
+
+/* Bring a single VL53L0X out of reset. Datasheet requires ≥1.2 ms after
+ * XSHUT release before I2C is usable; we wait 200 ms so the chip's
+ * internal cal completes even on under-decoupled boards. */
+static void vl53_xshut_release_one(int idx)
+{
+#if !VL53L0X_XSHUT_PRESENT
+    /* No-op — chips are already on. Still settle briefly so I2C bus is
+     * stable before the next init step runs (matches the timing the
+     * GPIO-wired path uses). */
+    (void)idx;
+    vTaskDelay(pdMS_TO_TICKS(20));
+    return;
+#else
+    static const gpio_num_t xshut[PILL_SENSOR_COUNT] = {
+        VL53L0X_XSHUT_M1, VL53L0X_XSHUT_M2, VL53L0X_XSHUT_M3,
+        VL53L0X_XSHUT_M4, VL53L0X_XSHUT_M5, VL53L0X_XSHUT_M6,
+    };
+    if (idx < 0 || idx >= PILL_SENSOR_COUNT || xshut[idx] < 0) return;
+    gpio_set_level(xshut[idx], 1);
+    vTaskDelay(pdMS_TO_TICKS(200));
+#endif
 }
 
 static void vl53_init_all(void)
 {
     pill_sensor_status_init_defaults();
-    vl53_release_xshut();
+    /* Configure XSHUTs and HOLD ALL chips in reset. We will release them
+     * one at a time below to stagger the boot-current surge. */
+    vl53_setup_xshut_gpios();
     tca9548a_disable_all();
     vl53_release_dev();
-    /* Six VL53L0X chips all booting at once draw a brief surge from the
-     * 3.3 V rail — the previous 100 ms wait was tight enough that some
-     * chips were still finishing their internal calibration when we
-     * began the I2C burst, producing the random-register init failures
-     * seen in field logs (write 0x88, write VHV_CFG, read VHV_CFG, etc.
-     * all on different attempts). 250 ms gives every chip a clean
-     * window past the datasheet's 1.2 ms minimum + a margin for
-     * brown-out recovery. */
-    vTaskDelay(pdMS_TO_TICKS(250));
+    /* Brief settle after we've forced every chip OFF — lets the 3.3 V
+     * rail recover from any prior in-rush before we start bringing chips
+     * online. */
+    vTaskDelay(pdMS_TO_TICKS(50));
 
+    /* Per-channel: release ONE chip from reset, init it, move on.
+     * Only one chip is ever in the high-current "boot + cal + init
+     * write burst" window at a time, so the shared 3.3 V rail never
+     * sees a 6× surge. This makes init success deterministic instead
+     * of "whichever chip happens to brown-out latest fails at random". */
     for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
+        vl53_xshut_release_one(i);
         (void)vl53_init_on_channel(i);
-        vTaskDelay(pdMS_TO_TICKS(50));
+        /* Small inter-channel gap so the just-finished chip's TCA
+         * channel state fully drains before we flip to the next. */
+        vTaskDelay(pdMS_TO_TICKS(30));
     }
 }
 
 static void vl53_poll_all(void)
 {
+    /* Stagger: at most ONE retry per poll cycle. VL53 init takes
+     * ~1-2 s and holds the I2C bus the entire time. If we retried 6
+     * channels in a single 5 s cycle the touch / IR / display would
+     * be locked out for the better part of 10 s. By retrying one
+     * channel per cycle the bus stays responsive (still ~10-15 s for
+     * all 6 channels to get a retry attempt, which is plenty). */
+    bool retried_one_this_cycle = false;
     for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
         if (!s_sensors[i].present) {
             if (s_sensors[i].permanently_missing) continue;
+            if (retried_one_this_cycle) continue;
             TickType_t now = xTaskGetTickCount();
             if (s_retry_after_ticks[i] == 0 || now >= s_retry_after_ticks[i]) {
                 s_sensors[i].missing_retry_count++;
@@ -776,18 +1082,42 @@ static void vl53_poll_all(void)
                 }
                 ESP_LOGI(TAG, "Ch%d: retry probe (%d/%d)", i,
                          s_sensors[i].missing_retry_count, VL53_MAX_MISSING_RETRIES);
+                retried_one_this_cycle = true;
                 if (vl53_init_on_channel(i)) {
                     s_sensors[i].missing_retry_count = 0;
+                } else {
+                    /* Schedule next retry using the interval appropriate
+                     * for current uptime (10 s during early window,
+                     * 30 s after). */
+                    s_retry_after_ticks[i] = now + pdMS_TO_TICKS(vl53_retry_interval_ms());
                 }
             }
             continue;
         }
 
+        /* Single-shot read — exact mirror of Arduino reference code.
+         * The previous median-of-5 + EMA stack was over-engineered for
+         * a sensor that the same chip on a bare ESP32-S3 reads cleanly
+         * without ANY filtering. One TCA select per channel, one
+         * single-shot read, raw value out. */
+        vl53_io_begin_channel(i);
         uint16_t raw_mm = 0;
-        if (!vl53_read_range_continuous_mm(i, &raw_mm)) {
+        bool got_sample = vl53_read_range_single_mm(
+            i, s_sensors[i].stop_variable, &raw_mm);
+        /* Free the mux for other I2C clients before moving to next ch. */
+        xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+        vl53_io_end_channel_locked();
+        xSemaphoreGive(g_i2c_mutex);
+
+        if (!got_sample) {
             s_sensors[i].read_fail_count++;
             if (!s_sensors[i].filter_ready || s_sensors[i].read_fail_count >= VL53_INVALID_GRACE_READS) {
-                pill_sensor_status_set_reading(i, -1, -1, false);
+                // Preserve the last raw value via _invalidate() so the
+                // diagnostic web UI can still show the last sample
+                // before the sensor went stale (helps the user spot a
+                // sensor that fails intermittently vs one that's
+                // completely dead).
+                pill_sensor_status_invalidate(i);
             }
             if (s_sensors[i].read_fail_count >= VL53_RESTART_AFTER_FAILS) {
                 ESP_LOGW(TAG, "Ch%d: dropped after %d fails", i, VL53_RESTART_AFTER_FAILS);
@@ -800,6 +1130,10 @@ static void vl53_poll_all(void)
         if (raw_mm == 0 || raw_mm > VL53_MAX_VALID_MM) {
             s_sensors[i].invalid_sample_count++;
             if (!s_sensors[i].filter_ready || s_sensors[i].invalid_sample_count >= VL53_INVALID_GRACE_READS) {
+                // Out-of-range read (0 = too close, >2000 = no target).
+                // Update raw_mm to the actual reading so the UI shows
+                // "ดิบ 2047mm" — that tells the user "sensor sees the
+                // back of an empty cartridge" rather than "no read".
                 pill_sensor_status_set_reading(i, (int)raw_mm, -1, false);
             }
             continue;
@@ -822,6 +1156,18 @@ static volatile int s_vl53_pause_count = 0;
  * for the task to actually quiesce instead of just hoping a fixed delay
  * is long enough. */
 static volatile bool s_vl53_io_busy = false;
+
+/* Set true while vl53l0x_multi_bootstrap() is running. Camera retry task
+ * checks this and waits before pulling all VL53 XSHUT pins LOW for its
+ * SCCB burst — without coordination, the camera retry yanks XSHUT mid-
+ * bootstrap, which corrupts every VL53 init that hadn't completed yet
+ * (Ch3+ in field logs). */
+static volatile bool s_vl53_bootstrapping = false;
+
+bool vl53l0x_multi_is_bootstrapping(void)
+{
+    return s_vl53_bootstrapping;
+}
 
 void vl53l0x_multi_pause(void)
 {
@@ -850,16 +1196,22 @@ void vl53l0x_multi_wait_idle(uint32_t timeout_ms)
     }
 }
 
-/* On-demand refresh — forces the next poll cycle right now (bypassing
- * the normal 5 s sleep) and clears all retry-after timers so any
- * channel currently in cool-down gets re-probed immediately. Use after
- * dispense / return-pill / count-adjust events when an up-to-date
- * reading matters more than bus quietness. */
-static volatile bool s_vl53_refresh_request = false;
+/* On-demand refresh — wakes the VL53 task to run ONE poll cycle.
+ *
+ * Architecture change 2026-05-12: the auto-polling loop is GONE — VL53
+ * stays idle except when something explicitly asks for a fresh read.
+ * That's almost always the Telegram /status command (see
+ * vl53l0x_multi_check_now). The old 30 s polling caused bus contention
+ * with touch / IR / RTC that the user was experiencing as flaky reads
+ * and panics; reads are now bus-quiet by default. */
+static SemaphoreHandle_t s_check_request_sem  = NULL;   /* given by trigger, taken by task */
+static SemaphoreHandle_t s_check_complete_sem = NULL;   /* given by task, taken by waiter */
 
 void vl53l0x_request_refresh(void)
 {
-    s_vl53_refresh_request = true;
+    if (s_check_request_sem) {
+        xSemaphoreGive(s_check_request_sem);
+    }
     for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
         s_retry_after_ticks[i] = 0;
         s_sensors[i].missing_retry_count = 0;
@@ -870,62 +1222,135 @@ static void vl53_task(void *arg)
 {
     (void)arg;
 
-    // Pill count needs to remain stable for N polls before we push to shadow.
-    // With VL53_READ_INTERVAL_MS = 1000 and threshold 3, that's ~3 seconds of stability.
-    static int s_stable_count[PILL_SENSOR_COUNT];
-    static int s_stable_ticks[PILL_SENSOR_COUNT];
-    for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
-        s_stable_count[i] = -1;
-        s_stable_ticks[i] = 0;
-    }
-
-    ESP_LOGI(TAG, "Starting VL53L0X poll task");
-    TickType_t last_poll_tick = xTaskGetTickCount();
+    /* Request-driven task. Sits on s_check_request_sem indefinitely.
+     * Each give wakes the task to run ONE poll cycle (all channels in
+     * sequence, ~3 s total). The old auto-poll-every-30 s loop is gone
+     * because it caused bus contention with touch / IR during dispense
+     * and was triggering false-positive flaps in the dashboard.
+     *
+     * Trigger sources (2026-05-12):
+     *   - Telegram /status command → vl53l0x_multi_check_now (blocking)
+     *   - Dispense post-event   → vl53l0x_request_refresh (fire-and-forget)
+     *
+     * VL53 readings are NO LONGER published to NETPIE — user dropped the
+     * dashboard tiles. Telegram /status formats a fresh reading inline. */
+    ESP_LOGI(TAG, "VL53L0X task ready (request-driven, no auto-poll)");
     while (1) {
-        /* Honor pause requests from camera_init etc. */
-        if (s_vl53_pause_count > 0) {
-            s_vl53_io_busy = false;  /* tell waiters we've parked */
-            vTaskDelay(pdMS_TO_TICKS(200));
+        /* Block until something asks for a check. portMAX_DELAY = bus
+         * stays quiet forever unless explicitly woken. */
+        if (s_check_request_sem) {
+            xSemaphoreTake(s_check_request_sem, portMAX_DELAY);
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(500));
             continue;
         }
+
+        /* Honor pause requests from camera_init etc. — if paused, drop
+         * this request (caller can retry once camera is done). */
+        if (s_vl53_pause_count > 0) {
+            ESP_LOGW(TAG, "VL53 check request received during pause — skipping");
+            if (s_check_complete_sem) xSemaphoreGive(s_check_complete_sem);
+            continue;
+        }
+
+        /* Lazy bootstrap. Init storm (~10-15 s, 6 × 70 I2C writes) was
+         * running at boot and hogging the bus enough to make touch feel
+         * unresponsive immediately after startup. Deferring init until
+         * the first /status request means boot finishes clean — touch
+         * works right away — at the cost of a longer first /status. */
+        static bool s_bootstrapped = false;
+        if (!s_bootstrapped) {
+            ESP_LOGI(TAG, "VL53 lazy bootstrap (first check request)");
+            s_vl53_bootstrapping = true;
+            vl53_init_all();
+            s_vl53_bootstrapping = false;
+            s_bootstrapped = true;
+        }
+
         s_vl53_io_busy = true;
         vl53_poll_all();
         s_vl53_io_busy = false;
 
-        const netpie_shadow_t *shadow = netpie_get_shadow();
-        if (shadow && shadow->loaded) {
-            for (int i = 0; i < PILL_SENSOR_COUNT; i++) {
+        /* DEBUG: dump all-6 distance every poll. Remove once tuning done. */
+        {
+            char line[160];
+            int n = snprintf(line, sizeof(line), "vl53 raw[mm]:");
+            for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
                 const pill_sensor_status_t *s = pill_sensor_status_get(i);
-                if (!s || !s->valid || s->pill_count < 0) {
-                    s_stable_count[i] = -1;
-                    s_stable_ticks[i] = 0;
-                    continue;
-                }
-
-                if (s->pill_count != s_stable_count[i]) {
-                    s_stable_count[i] = s->pill_count;
-                    s_stable_ticks[i] = 1;
+                if (!s_sensors[i].present) {
+                    n += snprintf(line + n, sizeof(line) - n, " M%d=---", i + 1);
+                } else if (s && s->valid) {
+                    n += snprintf(line + n, sizeof(line) - n,
+                                  " M%d=%d(f%d)", i + 1, s->raw_mm, s->filtered_mm);
                 } else {
-                    s_stable_ticks[i]++;
+                    n += snprintf(line + n, sizeof(line) - n, " M%d=??", i + 1);
                 }
+                if (n >= (int)sizeof(line)) break;
+            }
+            ESP_LOGI(TAG, "%s", line);
+        }
 
-                // While the user is on the meds-setup detail screen (or editing
-                // any med field), don't auto-sync sensor → shadow count, otherwise
-                // the +/- buttons "snap back" to the sensor reading and the user
-                // can never enter a value. Sync resumes after they save / leave.
-                extern bool ui_meds_edit_in_progress(void);
-                if (ui_meds_edit_in_progress()) continue;
+        /* VL53 distances / pill counts are NO LONGER published to NETPIE
+         * (2026-05-12). User dropped the dashboard tiles to keep this
+         * sensor on-demand only. The values are still available via
+         * pill_sensor_status_get() for the Telegram /status command. */
+        int pills_pub[6];
+        for (int i = 0; i < 6; ++i) {
+            const pill_sensor_status_t *s = pill_sensor_status_get(i);
+            bool valid_now = (s && s_sensors[i].present && s->valid && s->pill_count >= 0);
+            pills_pub[i] = valid_now ? s->pill_count : -1;
+        }
 
-                if (s_stable_ticks[i] >= VL53_STABLE_TICKS_BEFORE_SYNC &&
-                    shadow->med[i].count != s_stable_count[i]) {
-                    ESP_LOGI(TAG, "Sensor %d sync: %d -> %d pills",
-                             i + 1, shadow->med[i].count, s_stable_count[i]);
-                    netpie_shadow_update_count(i + 1, s_stable_count[i]);
+        /* Low-pill Telegram alert — edge trigger when count crosses the
+         * threshold from above (was > VL53_LOW_PILL_ALERT, now ≤), with a
+         * per-channel cooldown so we don't spam if the count hovers at
+         * the boundary. Re-arms when the count climbs above threshold + 1
+         * (refill detected). */
+        static int  s_last_alert_pills[6] = { -2, -2, -2, -2, -2, -2 };
+        static uint32_t s_last_alert_ms[6] = { 0 };
+        const uint32_t now_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+        const uint32_t ALERT_COOLDOWN_MS = 30 * 60 * 1000;  /* 30 min */
+        for (int i = 0; i < 6; ++i) {
+            int p = pills_pub[i];
+            if (p < 0) continue;
+            int prev = s_last_alert_pills[i];
+            bool refilled = (prev >= 0 && prev <= VL53_LOW_PILL_ALERT && p > VL53_LOW_PILL_ALERT + 1);
+            bool first_low = (p <= VL53_LOW_PILL_ALERT) &&
+                             (prev == -2 || prev > VL53_LOW_PILL_ALERT);
+            bool cooled    = (now_ms - s_last_alert_ms[i]) >= ALERT_COOLDOWN_MS;
+            bool repeat_low = (p <= VL53_LOW_PILL_ALERT) && cooled;
+            if (refilled) {
+                s_last_alert_pills[i] = p;
+            } else if (first_low || repeat_low) {
+                const netpie_shadow_t *sh = netpie_get_shadow();
+                const char *name = (sh && sh->med[i].name[0]) ? sh->med[i].name : "";
+                char msg[160];
+                if (p == 0) {
+                    snprintf(msg, sizeof(msg),
+                             "⚠️ ตลับที่ %d%s%s — ยาหมดแล้ว",
+                             i + 1, name[0] ? " " : "", name);
+                } else {
+                    /* User asked to drop the numeric pill count from
+                     * Telegram (sensor isn't trusted as a counter, just
+                     * as a fill-level indicator). Keep it short: "low". */
+                    snprintf(msg, sizeof(msg),
+                             "⚠️ ตลับที่ %d%s%s — ยาใกล้หมด กรุณาเติมยา",
+                             i + 1, name[0] ? " " : "", name);
                 }
+                telegram_send_text(msg);
+                s_last_alert_pills[i] = p;
+                s_last_alert_ms[i]    = now_ms;
+            } else {
+                s_last_alert_pills[i] = p;
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(VL53_READ_INTERVAL_MS));
+        /* Signal completion so any blocking caller (e.g. /status
+         * Telegram handler waiting in vl53l0x_multi_check_now) can
+         * collect the freshly-read values. The next iteration goes
+         * straight back to xSemaphoreTake — task sleeps with zero CPU
+         * until the next trigger. */
+        if (s_check_complete_sem) xSemaphoreGive(s_check_complete_sem);
     }
 }
 
@@ -934,7 +1359,9 @@ static void vl53_task(void *arg)
 void vl53l0x_multi_bootstrap(void)
 {
     ESP_LOGI(TAG, "Bootstrapping VL53L0X sensors via TCA9548A");
+    s_vl53_bootstrapping = true;
     vl53_init_all();
+    s_vl53_bootstrapping = false;
 }
 
 void vl53l0x_multi_start(void)
@@ -942,11 +1369,47 @@ void vl53l0x_multi_start(void)
     static bool started = false;
     if (started) return;
 
+    /* Lazy-create the request/complete semaphores before spawning the
+     * task — the task references them on first xSemaphoreTake. */
+    if (!s_check_request_sem)  s_check_request_sem  = xSemaphoreCreateBinary();
+    if (!s_check_complete_sem) s_check_complete_sem = xSemaphoreCreateBinary();
+    if (!s_check_request_sem || !s_check_complete_sem) {
+        ESP_LOGE(TAG, "Failed to create VL53 check semaphores");
+        return;
+    }
+
     started = true;
     if (xTaskCreate(vl53_task, "vl53_task", 8192, NULL, 5, NULL) != pdPASS) {
         started = false;
         ESP_LOGE(TAG, "Failed to create VL53 task");
     }
+}
+
+/* Blocking on-demand check. Triggers one full poll cycle (all six
+ * channels through the TCA mux) and waits for completion. Returns
+ * ESP_OK if the task signaled done within timeout, ESP_ERR_TIMEOUT
+ * otherwise (e.g. paused for camera SCCB). After return, the values
+ * are available via pill_sensor_status_get(idx). */
+esp_err_t vl53l0x_multi_check_now(uint32_t timeout_ms)
+{
+    if (!s_check_request_sem || !s_check_complete_sem) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    /* Drain any stale completion signal so we only collect the result
+     * of THE poll we're about to trigger. */
+    xSemaphoreTake(s_check_complete_sem, 0);
+
+    /* Reset retry timers so any sensor in cool-down gets re-probed. */
+    for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
+        s_retry_after_ticks[i] = 0;
+        s_sensors[i].missing_retry_count = 0;
+    }
+
+    xSemaphoreGive(s_check_request_sem);
+    if (xSemaphoreTake(s_check_complete_sem, pdMS_TO_TICKS(timeout_ms)) == pdTRUE) {
+        return ESP_OK;
+    }
+    return ESP_ERR_TIMEOUT;
 }
 
 // Persist per-channel calibration so it survives reboots. Key format:
@@ -957,6 +1420,10 @@ typedef struct {
     int16_t pill_height_mm;
     int16_t max_pills;
 } vl53_cal_blob_t;
+
+/* SPAD calibration values: typedef + magic defined near vl53_init_device
+ * (forward-declaration at top of file). Caching these in NVS lets
+ * subsequent boots skip the timing-critical SPAD register reads. */
 
 static const char *VL53_NVS_NS = "vl53_cal";
 
@@ -984,6 +1451,61 @@ static void vl53_offset_save_nvs(int ch, int offset)
     snprintf(key, sizeof(key), "off%d", ch);
     nvs_set_i16(h, key, (int16_t)offset);
     nvs_commit(h);
+    nvs_close(h);
+}
+
+/* SPAD cache helpers. Stored per-channel under key "spad%d". */
+static bool vl53_spad_load_nvs(int ch, vl53_spad_blob_t *out)
+{
+    if (!out) return false;
+    nvs_handle_t h;
+    if (nvs_open(VL53_NVS_NS, NVS_READONLY, &h) != ESP_OK) return false;
+    char key[10];
+    snprintf(key, sizeof(key), "spad%d", ch);
+    size_t sz = sizeof(*out);
+    bool ok = (nvs_get_blob(h, key, out, &sz) == ESP_OK && sz == sizeof(*out) &&
+               out->magic == VL53_SPAD_BLOB_MAGIC);
+    nvs_close(h);
+    return ok;
+}
+
+static void vl53_spad_save_nvs(int ch, uint8_t spad_count, bool aperture,
+                               uint8_t stop_var, const uint8_t map[6])
+{
+    /* Validate before saving. spad_count==0 means the chip returned
+     * an invalid SPAD configuration (often happens when a sensor is
+     * physically dead or disconnected). Saving this poisons the cache
+     * for future boots and forces repeated bad init attempts. */
+    if (spad_count == 0) {
+        ESP_LOGW(TAG, "Ch%d: NOT saving SPAD cache (count=0, sensor likely dead)", ch);
+        return;
+    }
+    nvs_handle_t h;
+    if (nvs_open(VL53_NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    char key[10];
+    snprintf(key, sizeof(key), "spad%d", ch);
+    vl53_spad_blob_t blob = {
+        .magic = VL53_SPAD_BLOB_MAGIC,
+        .spad_count = spad_count,
+        .spad_type_aperture = aperture ? 1u : 0u,
+        .stop_variable = stop_var,
+    };
+    memcpy(blob.ref_spad_map, map, 6);
+    nvs_set_blob(h, key, &blob, sizeof(blob));
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+static void vl53_spad_clear_nvs(int ch)
+{
+    nvs_handle_t h;
+    if (nvs_open(VL53_NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    char key[10];
+    snprintf(key, sizeof(key), "spad%d", ch);
+    if (nvs_erase_key(h, key) == ESP_OK) {
+        nvs_commit(h);
+        ESP_LOGW(TAG, "Ch%d: cleared bad SPAD cache, next retry will re-read", ch);
+    }
     nvs_close(h);
 }
 

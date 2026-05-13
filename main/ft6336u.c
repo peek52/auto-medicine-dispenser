@@ -1,6 +1,7 @@
 #include "ft6336u.h"
 #include "config.h"
 #include "i2c_manager.h"
+#include "pcf8574.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -32,11 +33,19 @@ esp_err_t ft6336u_init(void)
         io_conf.pull_down_en = 0;
         io_conf.pull_up_en = 1;
         gpio_config(&io_conf);
+        /* Longer reset pulse than the datasheet minimum (5 ms LOW +
+         * 200 ms HIGH). Field experience: after an ESP-side panic the
+         * FT6336U often stays in a glitched state where the short
+         * 50 ms pulse can't dislodge it — the only fix used to be a
+         * physical power cycle. Holding RST LOW for 200 ms gives the
+         * chip's internal state machine more time to fully drain its
+         * registers, then 300 ms HIGH lets it complete its boot
+         * sequence before we start I2C transactions. */
         ESP_LOGI(TAG, "Resetting touch controller");
         gpio_set_level((gpio_num_t)CTP_RST_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(50));
+        vTaskDelay(pdMS_TO_TICKS(200));
         gpio_set_level((gpio_num_t)CTP_RST_PIN, 1);
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(300));
     }
 
     // Try up to 3 times: a recent panic-induced reset can leave the
@@ -91,6 +100,36 @@ esp_err_t ft6336u_init(void)
         }
         vTaskDelay(pdMS_TO_TICKS(200));
     }
+
+    /* DEEP RECOVERY: 4 ping attempts also failed → chip is in a hard
+     * stuck state (common symptom after an ESP-side panic). Try one
+     * last hammer: hold RST LOW for a FULL second. This is roughly
+     * equivalent to a power-cycle from the chip's internal supply
+     * decay perspective — long enough that all internal capacitors
+     * discharge and the chip cold-boots fresh on RST release. Costs
+     * us 1.5 s of boot time but saves the user from having to unplug
+     * the USB cable to recover. */
+    if (CTP_RST_PIN >= 0) {
+        ESP_LOGW(TAG, "Touch dead after standard reset — attempting DEEP RST (1 s LOW)");
+        gpio_set_level((gpio_num_t)CTP_RST_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        gpio_set_level((gpio_num_t)CTP_RST_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(500));
+        for (int p = 0; p < 4; ++p) {
+            uint8_t chip_id = 0;
+            if (i2c_manager_read_reg(ADDR_FT6336U, 0xA8, &chip_id, 1) == ESP_OK) {
+                ESP_LOGW(TAG, "Touch recovered after deep RST: chip_id=0x%02X", chip_id);
+                s_touch_initialized = true;
+                return ESP_OK;
+            }
+            if (i2c_manager_ping(ADDR_FT6336U) == ESP_OK) {
+                ESP_LOGW(TAG, "Touch ACKed after deep RST (ping %d) — fallback mode", p + 1);
+                s_touch_initialized = true;
+                return ESP_OK;
+            }
+            vTaskDelay(pdMS_TO_TICKS(150));
+        }
+    }
     ESP_LOGW(TAG, "Touch controller did not ACK after 4 ping attempts — "
                    "starting in disabled state; ft6336u_read_touch() will "
                    "auto-recover when the chip wakes up");
@@ -142,15 +181,23 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (s_last_fail_time != 0 && (now - s_last_fail_time) < 2000) {
+    // Backoff after read failure, shortened from 2000 → 100 ms (2026-05-11).
+    // The old 2-second mute combined catastrophically with the 5-second
+    // VL53 poll: every VL53 cycle hogged the I2C mutex past the 500 ms
+    // touch-read timeout, which tripped this branch, which then
+    // suppressed touch for 2 full seconds. Touch ended up dead ~40% of
+    // the time and got worse as sensors got flakier. 100 ms is short
+    // enough that the user doesn't notice, long enough that we don't
+    // hammer a genuinely wedged chip.
+    if (s_last_fail_time != 0 && (now - s_last_fail_time) < 100) {
         *pressed = false;
         return ESP_FAIL;
     }
     // Rate-limit physical I2C reads. Faster cache = smoother feel:
-    //   - Idle: 20 ms cache (50 Hz) — taps register near-instantly.
+    //   - Idle: 15 ms cache (~67 Hz) — taps register near-instantly.
     //   - Pressed: 10 ms cache (100 Hz) — drag/release tracks finger
     //     without visible lag.
-    uint32_t cache_ms = s_last_pressed ? 10 : 20;
+    uint32_t cache_ms = s_last_pressed ? 10 : 15;
     if ((now - s_last_read_time) < cache_ms) {
         *pressed = s_last_pressed;
         *x = s_last_x;
@@ -177,6 +224,29 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
         // ~49.7 day tick wrap landing exactly on 0.
         s_last_fail_time = (now == 0) ? 1u : now;
 
+        /* Distinguish bus-busy (other task holding I2C mutex) from
+         * actual chip failure. ESP_ERR_TIMEOUT here means the mutex
+         * couldn't be acquired in 500 ms — most often during a long
+         * dispense / VL53 poll. The touch chip itself is fine, so
+         * don't count it toward s_consec_fails (which would trigger
+         * the heavy CTP_RST + bus-recovery sequence and leave touch
+         * dead for ~10 s). The shortened 100 ms backoff above will
+         * naturally retry until the bus is free. */
+        if (ret == ESP_ERR_TIMEOUT) {
+            return ret;
+        }
+
+        /* Don't count fails toward recovery while a servo ramp is in
+         * progress. Servo PWM EMI couples onto the shared I2C bus and
+         * causes transient NACKs / corrupted reads — those are
+         * expected, not a chip failure. Without this guard, a single
+         * 16-cycle return-pill (≈32 s of servo activity) was racking
+         * up enough fails to trip the recovery and leave touch in
+         * fallback mode after dispense. */
+        if (pcf8574_is_servo_ramping()) {
+            return ret;
+        }
+
         s_consec_fails++;
         if (s_consec_fails >= 8 && (now - s_last_recover_ms) > 2000) {
             ESP_LOGW(TAG, "Touch read failed %lu times in a row — "
@@ -190,10 +260,13 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
              * half a minute with a frozen screen. Log spam is acceptable
              * compared to the freeze. */
             if (CTP_RST_PIN >= 0) {
+                /* Longer pulse than before — runtime touch fail is
+                 * usually deeper than init-time glitches and needs
+                 * more time for the chip to fully reset. */
                 gpio_set_level((gpio_num_t)CTP_RST_PIN, 0);
-                vTaskDelay(pdMS_TO_TICKS(20));
+                vTaskDelay(pdMS_TO_TICKS(200));
                 gpio_set_level((gpio_num_t)CTP_RST_PIN, 1);
-                vTaskDelay(pdMS_TO_TICKS(50));
+                vTaskDelay(pdMS_TO_TICKS(200));
             }
             esp_err_t r = i2c_manager_recover_bus();
             ESP_LOGW(TAG, "Bus recovery -> %s", esp_err_to_name(r));
@@ -208,6 +281,18 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
              * register noise during stabilisation gets interpreted as
              * a real tap (user reported "จอกดเอง" right after recovery). */
             s_boot_start_ms = 0;
+            /* Immediate re-probe after recovery. Previously the cheap-probe
+             * path (line ~172) was gated by a 10-second re-init throttle —
+             * so a scheduled-slot Confirm popup arriving within 10 s of a
+             * recovery would render with TOUCH STILL OFFLINE (the user saw
+             * the Confirm page but taps did nothing). Probe right now so
+             * the very next ft6336u_read_touch() call after we return is
+             * already live. If the chip is still not responding we just
+             * fall back to the existing 10-second cheap-probe retry. */
+            if (i2c_manager_ping(ADDR_FT6336U) == ESP_OK) {
+                s_touch_initialized = true;
+                ESP_LOGI(TAG, "Touch chip responsive immediately after bus recovery");
+            }
         }
         return ret;
     }
@@ -235,23 +320,24 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
      * so 3-15 means corrupted register read = phantom. */
     if (touches > 2) raw_press = false;
 
-    /* Boot-time touch mute. The first 3 seconds after boot the FT6336U
+    /* Boot-time touch mute. The first 8 seconds after boot the FT6336U
      * fallback mode often spits one or two phantom presses (visible as
      * the standby screen jumping straight to the menu before the user
-     * touches anything). Suppress all touches during this window.
-     * s_boot_start_ms lives at file scope (above) so the CTP_RST
+     * touches anything). Bumped 3 → 8 s because the I2C bus continues
+     * to settle / stabilize while VL53/camera are bootstrapping in the
+     * background, and phantom touches were observed up to ~5 s after
+     * boot. s_boot_start_ms lives at file scope (above) so the CTP_RST
      * recovery path can re-arm the mute. */
     if (s_boot_start_ms == 0) s_boot_start_ms = now;
-    if ((now - s_boot_start_ms) < 3000) {
+    if ((now - s_boot_start_ms) < 8000) {
         raw_press = false;
     }
 
-    /* PRESS_DEBOUNCE = 2 (40 ms hold) + LOOSE coord-stability check.
-     *   - Single random spike → press_streak resets, no trigger
-     *   - Two random spikes >150 px apart → restart streak each time
-     *   - Real tap (drift <30 px) → streak builds normally
-     * 150 px tolerance is loose enough that real swipes/drags still
-     * register (we mostly want to reject teleports, not micro-drift). */
+    /* PRESS_DEBOUNCE = 2 (~30 ms hold with cache_ms idle=15) + LOOSE
+     * coord-stability check. The 8 s boot-mute above is the main
+     * phantom-touch defense; debounce=2 keeps post-boot taps feeling
+     * snappy. Real human taps last 150-200 ms minimum so 30 ms is
+     * well within real-tap tolerance. */
     static int press_streak = 0;
     static int release_streak = 0;
     static uint16_t s_streak_x = 0, s_streak_y = 0;

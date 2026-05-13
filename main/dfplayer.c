@@ -4,6 +4,7 @@
 #include "driver/gpio.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -18,14 +19,36 @@ static bool s_uart_ready = false;
 #define DFPLAYER_RX_PIN     38
 #endif
 
+// Track consecutive UART write failures so we can attempt a single
+// auto-reinit instead of staying muted forever after a transient blip.
+static int s_uart_fail_streak = 0;
+static int64_t s_last_reinit_us = 0;
+#define UART_AUTO_REINIT_AFTER_FAILS 1
+#define UART_REINIT_MIN_INTERVAL_US  (5 * 1000000LL)
+
+void dfplayer_init(void);  // forward decl for the reinit hook below
+
 static void dy_send_cmd(uint8_t cmd, const uint8_t *data, uint8_t len)
 {
     if (!s_audio_enabled) {
         return;
     }
     if (!s_uart_ready) {
-        ESP_LOGW(TAG, "Audio UART not ready, skipping cmd 0x%02X", cmd);
-        return;
+        // Auto-recover: a single UART write blip used to permanently
+        // disable audio until reboot. Try a self-heal reinit after a
+        // cooldown so a brief glitch doesn't kill all dispense alerts
+        // for the rest of the session.
+        int64_t now = esp_timer_get_time();
+        if (s_uart_fail_streak >= UART_AUTO_REINIT_AFTER_FAILS &&
+            (now - s_last_reinit_us) > UART_REINIT_MIN_INTERVAL_US) {
+            ESP_LOGW(TAG, "Audio UART previously failed — attempting reinit before cmd 0x%02X", cmd);
+            s_last_reinit_us = now;
+            dfplayer_init();
+        }
+        if (!s_uart_ready) {
+            ESP_LOGW(TAG, "Audio UART not ready, skipping cmd 0x%02X", cmd);
+            return;
+        }
     }
 
     uint8_t buf[16];
@@ -49,8 +72,11 @@ static void dy_send_cmd(uint8_t cmd, const uint8_t *data, uint8_t len)
     buf[idx++] = sum;
     int written = uart_write_bytes(DFPLAYER_UART_NUM, (const char *)buf, idx);
     if (written < 0) {
-        ESP_LOGW(TAG, "UART write failed for cmd 0x%02X, disabling audio UART until reinit", cmd);
+        ESP_LOGW(TAG, "UART write failed for cmd 0x%02X (streak=%d) — will retry init on next cmd",
+                 cmd, ++s_uart_fail_streak);
         s_uart_ready = false;
+    } else {
+        s_uart_fail_streak = 0;
     }
 }
 
@@ -123,14 +149,20 @@ void dfplayer_set_volume(uint8_t vol)
     if (vol == s_current_hw_vol) return;
 
     if (!s_audio_enabled || !s_uart_ready) {
-        s_current_hw_vol = vol;
+        // Don't cache vol when we couldn't actually send. Otherwise
+        // the next call with the same value would skip the write
+        // (line above) thinking the chip is already there.
         return;
     }
 
     uint8_t data[1] = { vol };
     dy_send_cmd(0x13, data, 1);
-    s_current_hw_vol = vol;
-    ESP_LOGI(TAG, "Set Volume: %d", vol);
+    if (s_uart_ready) {
+        s_current_hw_vol = vol;
+        ESP_LOGI(TAG, "Set Volume: %d", vol);
+    } else {
+        ESP_LOGW(TAG, "Volume cmd failed mid-send; not caching value");
+    }
 }
 
 void dfplayer_play_track(uint16_t num)

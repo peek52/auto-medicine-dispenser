@@ -1,0 +1,89 @@
+# ESP32-P4 Unified Cam — sdkconfig defaults
+
+# Target
+CONFIG_IDF_TARGET="esp32p4"
+
+# PSRAM (for camera frame buffers) — 200 MHz mode is gated behind
+# CONFIG_IDF_EXPERIMENTAL_FEATURES on ESP-IDF v5.3.x; ESP32-P4 hex PSRAM
+# is electrically rated for 200 MHz but IDF tags the option experimental
+# until v5.4. Without this, the choice silently falls back to 20 MHz —
+# which is what shipped before this commit and is why camera buffers /
+# JPEG encode were ~10x slower than they could be.
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_SPIRAM_BOOT_INIT=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# Compiler — -O2 release tier (default IDF is -Og). 30-50% perf gain on
+# JPEG / VL53 / dispenser hot paths for ~5% larger binary.
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# Custom partition table (เพิ่ม app เป็น 1.6MB)
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+
+# Camera / CSI
+CONFIG_MIPI_CSI_ISR_IRAM_SAFE=n
+
+# Camera Sensor Feature
+CONFIG_CAMERA_OV5647=y
+# Sensor format MUST match CSI_HRES/VRES in main/config.h (800×640).
+# Earlier the 800×800 format was selected but CSI receiver is configured
+# for 800×640 → frame size mismatch → MIPI never locks → "Frame wait
+# timeout" forever (the actual root cause behind weeks of camera issues).
+CONFIG_CAMERA_OV5647_MIPI_RAW8_800x640_50FPS=y
+# Kconfig must remain =y so the C reference `CONFIG_CAMERA_OV5647_CSI_
+# LINESYNC_ENABLE ? true : false` in the sensor driver compiles. The
+# real LINESYNC behaviour is overridden in main/camera_init.c which
+# writes 0x4800 = 0x00 directly via SCCB after S_STREAM 1, putting the
+# MIPI link into continuous-clock no-line-sync mode. ISP must match:
+# has_line_start_packet = false in main/camera_init.c.
+CONFIG_CAMERA_OV5647_CSI_LINESYNC_ENABLE=y
+# DISABLED: AF_ENABLE writes registers 0x3002/0x3010/0x300D in S_STREAM
+# which configure pad output for the DW9714 VCM auto-focus driver. The
+# camera module on this dispenser is fixed-focus (no DW9714 wired); when
+# those pads are repurposed for VCM control they STOP driving the MIPI
+# data lanes — sensor reports streaming OK via SCCB but no MIPI bits
+# come out, producing the chronic "Frame wait timeout" symptom across
+# every lane_bit_rate sweep value. With AF_ENABLE=n the S_STREAM path
+# only writes 0x4800 + 0x0100, leaving MIPI pads alone.
+CONFIG_CAMERA_OV5647_ISP_AF_ENABLE=n
+CONFIG_CAMERA_OV5647_DEFAULT_IPA_JSON_CONFIGURATION_FILE=y
+
+# HTTP server
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+CONFIG_HTTPD_MAX_URI_LEN=512
+
+# LWIP sockets — increase to support 2 httpd instances with more open connections
+# Port-80 server: max_open_sockets=12 + 3 internal = 15
+# Port-81 server: max_open_sockets=4  + 3 internal =  7
+# Total needed: ~22; set 24 for headroom
+CONFIG_LWIP_MAX_SOCKETS=24
+
+# WiFi (via esp_hosted co-processor on P4)
+CONFIG_ESP_WIFI_REMOTE_ENABLED=y
+
+# NVS for WiFi credentials
+CONFIG_NVS_ENCRYPTION=n
+
+# Stack / heap
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=4096
+
+# Logging
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_COLORS=y
+
+# Task Watchdog — increase timeout for WiFi scan + SPI draw (sdio_write blocks IDLE0 ~5s)
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=n
+
+# Coredump to flash — capture full stack/registers on panic so we can
+# diagnose the early-boot PANIC at ~14.8s that's been hiding behind
+# truncated UART output. `idf.py coredump-info` reads it back.
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y
+CONFIG_ESP_COREDUMP_LOGS=y

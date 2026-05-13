@@ -28,6 +28,11 @@ esp_err_t tca9548a_select_channel_locked(uint8_t ch);
 // Disable all channels (write 0x00)
 esp_err_t tca9548a_disable_all(void);
 
+// Same as tca9548a_disable_all but assumes the caller already holds g_i2c_mutex.
+// Use this to park the mux between VL53 read sequences while still inside
+// the locked region so faulty sensors don't pull the upstream bus.
+esp_err_t tca9548a_disable_all_locked(void);
+
 // Ping TCA9548A to check if it's present on I2C bus
 bool tca9548a_is_present(void);
 

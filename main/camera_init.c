@@ -1,6 +1,9 @@
 #include "camera_init.h"
 #include "driver/isp.h"
+#include "driver/isp_ccm.h"
 #include "hal/color_types.h"
+#include "soc/isp_reg.h"
+#include "esp_rom_sys.h"
 
 #include "esp_cache.h"
 #include "esp_cam_ctlr.h"
@@ -105,6 +108,13 @@ static size_t frame_buffer_size = 0;
 static volatile int dma_buf_idx = 0;
 static volatile int ready_buf_idx = -1;
 static volatile int enc_active_idx = -1;
+// Reverted 2026-05-11: an earlier overnight patch (E2) tried to wrap
+// the three indices above in portENTER_CRITICAL_ISR / portENTER_CRITICAL.
+// Live-tested afterwards and Telegram /photo started returning all-black
+// JPEGs — the synchronization disturbed the timing between DMA-finished
+// ISR + encoder buffer pickup just enough to corrupt the captured frame.
+// Going back to volatile-only access; the theoretical race the audit
+// described has not manifested in months of field use.
 
 static SemaphoreHandle_t frame_ready_sem;
 
@@ -163,6 +173,13 @@ void camera_auto_reinit_helper(void *arg)
 {
     (void)arg;
     vTaskDelay(pdMS_TO_TICKS(2000));
+    /* Wait out VL53 bootstrap. camera_ensure_initialized()'s SCCB block
+     * pulls every VL53 XSHUT pin LOW for ~150 ms — running concurrently
+     * with vl53_init_all() corrupts whichever channel is mid-init. */
+    int waits = 0;
+    while (vl53l0x_multi_is_bootstrapping() && waits++ < 60) {
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
     ESP_LOGW(TAG, "Auto re-init starting (no user trigger needed)");
     esp_err_t r = camera_ensure_initialized();
     ESP_LOGW(TAG, "Auto re-init -> %s", esp_err_to_name(r));
@@ -183,6 +200,15 @@ static void camera_background_retry_task(void *arg)
     (void)arg;
     for (int i = 0; i < 38; ++i) {
         vTaskDelay(pdMS_TO_TICKS(8000));
+        if (camera_is_initialized()) break;
+        /* Bootstrap of all 6 VL53L0X sensors takes ~15 s after boot and
+         * pulses XSHUT per channel. Camera retry pulls every VL53 XSHUT
+         * LOW for its SCCB burst — running concurrently corrupts every
+         * VL53 init that hasn't completed yet. Wait it out. */
+        int waits = 0;
+        while (vl53l0x_multi_is_bootstrapping() && waits++ < 60) {
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
         if (camera_is_initialized()) break;
         ESP_LOGW(TAG, "Background camera retry %d/38", i + 1);
         camera_mark_uninitialized();
@@ -242,13 +268,35 @@ static void camera_task(void *arg) {
              * attempt, fully tear down the camera + MIPI controller
              * and re-init from scratch. The 60 s cool-down stops us
              * from looping forever on a truly dead sensor. */
-            /* Cooldown: 15 s between recovery attempts (was 60 s — too
-             * long during boot since some boards need 2-3 recovery
-             * cycles to settle the DPHY). First-boot recovery
-             * (last_recovery_ms == 0) MUST fire on first 10 timeouts
-             * regardless of cooldown — otherwise the camera never comes
-             * up on boots where DPHY fails initial lock. */
-            bool cd_ok = (last_recovery_ms == 0) || ((now_ms - last_recovery_ms) > 15000);
+            /* Cooldown: 15 s between recovery attempts. Auto-reinit
+             * MUST also wait until the system has fully settled — log
+             * 2026-05-12 showed 16 SCCB failures in a row when the
+             * recovery fired DURING the WiFi + NETPIE TLS handshake
+             * storm (~12-23 s into boot). The shared I2C bus was being
+             * pulled left and right by other tasks during that window,
+             * starving SCCB. By 60 s into boot the bus is quiet and the
+             * camera comes back on attempt 1.
+             *
+             * Gates: (a) g_system_ready must be true (deferred_init has
+             * finished firing all peripherals); (b) uptime > 30 s so
+             * MQTT TLS handshake is also done; (c) regular 15 s cool-
+             * down between attempts. */
+            extern bool g_system_ready;
+            bool sys_ready = g_system_ready && (now_ms > 30000);
+            bool cd_ok = sys_ready &&
+                         ((last_recovery_ms == 0) ||
+                          ((now_ms - last_recovery_ms) > 15000));
+            /* Reset the counter when we're forced to wait — otherwise
+             * the log fills with "timeout 47/10, 48/10..." while the
+             * system is busy with boot tasks. Each new "10-second
+             * window" of waiting is a fresh attempt at the recovery
+             * gate. */
+            if (consec_timeouts >= 10 && !sys_ready) {
+                consec_timeouts = 0;
+                ESP_LOGI(TAG, "Camera auto-reinit deferred until system settled "
+                              "(uptime=%lu ms, sys_ready=%d)",
+                         (unsigned long)now_ms, (int)g_system_ready);
+            }
             if (consec_timeouts >= 10 && cd_ok) {
                 ESP_LOGE(TAG, "Camera frames stuck for 10 s — "
                               "performing full re-init");
@@ -489,6 +537,7 @@ esp_err_t camera_init(void) {
          * here; the existing vl53_poll_all retry-probe path will bring
          * the sensors back online within the next 5 s poll cycle (or
          * sooner via vl53l0x_request_refresh after dispense events). */
+#if VL53L0X_XSHUT_PRESENT
         static const gpio_num_t kXshut[PILL_SENSOR_COUNT] = {
             VL53L0X_XSHUT_M1, VL53L0X_XSHUT_M2, VL53L0X_XSHUT_M3,
             VL53L0X_XSHUT_M4, VL53L0X_XSHUT_M5, VL53L0X_XSHUT_M6,
@@ -498,6 +547,13 @@ esp_err_t camera_init(void) {
         }
         ESP_LOGI(TAG, "VL53 XSHUT lowered before SCCB (chips offline)");
         vTaskDelay(pdMS_TO_TICKS(20));
+#else
+        /* XSHUT pins not wired (config) — can't drop VL53s off the bus.
+         * Bus contention during SCCB is still serialized by the
+         * i2c_manager mutex; the worst case is the camera waits a few
+         * ms for an in-flight VL53 transaction. */
+        ESP_LOGI(TAG, "Skipping VL53 XSHUT pulldown (no GPIO wiring)");
+#endif
 
         esp_err_t r = i2c_manager_recover_bus();
         if (r != ESP_OK) {
@@ -755,6 +811,7 @@ esp_err_t camera_init(void) {
      * (~tens of µs) gets the chips out of the critical window before
      * MIPI tries to lock its first frame. The brief 6-chip inrush is
      * within the 5 V 10 A PSU budget verified by the user. */
+#if VL53L0X_XSHUT_PRESENT
     {
         static const gpio_num_t kXshut[PILL_SENSOR_COUNT] = {
             VL53L0X_XSHUT_M1, VL53L0X_XSHUT_M2, VL53L0X_XSHUT_M3,
@@ -765,6 +822,7 @@ esp_err_t camera_init(void) {
         }
         ESP_LOGI(TAG, "VL53 XSHUT restored after SCCB");
     }
+#endif
 
     if (!cam) {
         ESP_LOGE(TAG, "Failed to detect camera sensor after retries");
@@ -788,19 +846,18 @@ esp_err_t camera_init(void) {
         .ctlr_id                = 0,
         .h_res                  = CSI_HRES,
         .v_res                  = CSI_VRES,
-        /* MIPI lane bit rate locked at 400 Mbps — the spec value the
-         * OV5647 driver actually programs into the sensor at this format:
-         *   OV5647_MIPI_CSI_LINE_RATE_800x640_50FPS = 100 MHz × 4 = 400.
-         * Earlier sweeps tried 150–400 with no frames, but the real
-         * blocker turned out to be CONFIG_CAMERA_OV5647_ISP_AF_ENABLE=y
-         * muting the MIPI pads via the AF VCM register writes — see
-         * sdkconfig.defaults. With AF disabled we expect 400 to lock. */
         .lane_bit_rate_mbps     = 400,
         .input_data_color_type  = CAM_CTLR_COLOR_RAW8,
-        .output_data_color_type = CAM_CTLR_COLOR_YUV422,
+        /* Switched RGB565 — the YUV422 path on this OV5647 + ESP32-P4
+         * combo produced grayscale output (chroma was getting zeroed
+         * somewhere in the rgb2yuv conversion). RGB565 is what the IDF
+         * camera_dsi reference example uses successfully and gives
+         * proper colour preservation through demosaic. JPEG encoder
+         * accepts RGB565 directly. */
+        .output_data_color_type = CAM_CTLR_COLOR_RGB565,
         .data_lane_num          = 2,
         .byte_swap_en           = false,
-        .queue_items            = 2,   // Reverted to 2
+        .queue_items            = 2,
     };
     CAM_RETURN_ON_ERR(esp_cam_new_csi_ctlr(&csi_config, &cam_handle),
                       "Failed to create CSI controller");
@@ -825,7 +882,8 @@ esp_err_t camera_init(void) {
         .clk_hz                = 80 * 1000 * 1000,
         .input_data_source     = ISP_INPUT_DATA_SOURCE_CSI,
         .input_data_color_type = ISP_COLOR_RAW8,
-        .output_data_color_type= ISP_COLOR_YUV422,
+        /* RGB565 output — see CSI controller comment above. */
+        .output_data_color_type= ISP_COLOR_RGB565,
         .has_line_start_packet = true,
         .has_line_end_packet   = true,
         .h_res                 = CSI_HRES,
@@ -835,6 +893,37 @@ esp_err_t camera_init(void) {
                       "Failed to create ISP processor");
     CAM_RETURN_ON_ERR(esp_isp_enable(isp_proc),
                       "Failed to enable ISP processor");
+
+    /* Override ISP bayer_mode register — the demosaic block in
+     * ESP32-P4 ISP defaults to mode 0 (BG/GR = BGGR) which should
+     * theoretically match the OV5647's BGGR output, but field testing
+     * showed a strong purple cast in the produced YUV422 stream
+     * (purple = excess R+B, missing G). That symptom is classic
+     * R/B-channel swap in demosaic, so we override bayer_mode to 11
+     * (RG/GB = RGGB) which puts the demosaic in the opposite phase.
+     * If the resulting image still has wrong colors, try the other
+     * two modes (01 = GBRG, 10 = GRBG) in turn.
+     *
+     * Register: ISP_FRAME_CFG_REG at DR_REG_ISP_BASE + 0x10
+     * Field:    bayer_mode at bits 27-28 (2 bits) */
+    {
+        /* DEBUG: bayer_mode left at the value the IDF driver wrote
+         * (default 0 = BGGR). Both 0 and 3 (RGGB) tested previously
+         * produced similar purple cast → bayer alignment isn't the
+         * primary issue. Logging the current register value so we
+         * can see what's set. */
+        volatile uint32_t *reg = (volatile uint32_t *)ISP_FRAME_CFG_REG;
+        uint32_t v = *reg;
+        unsigned cur = (unsigned)((v >> 27) & 0x3U);
+        ESP_LOGI(TAG, "ISP frame_cfg = 0x%08lx, bayer_mode = %u (00=BGGR 01=GBRG 10=GRBG 11=RGGB)",
+                 (unsigned long)v, cur);
+    }
+
+    /* CCM disabled — diagonal 2.2× pushed pixel values into saturation
+     * which created the very dark output with vertical banding (looks
+     * like JPEG compression on near-black data). Brightness boost will
+     * be applied at sensor side instead, via OV5647 SDE Y-offset
+     * register written after S_STREAM. */
 
     CAM_RETURN_ON_ERR(esp_cam_ctlr_start(cam_handle),
                       "Failed to start camera controller");
@@ -873,6 +962,27 @@ esp_err_t camera_init(void) {
                 cam_config.sccb_handle, 0x4800, 0x10);
             ESP_LOGI(TAG, "Override 0x4800=0x10 (continuous clock + line sync): %s",
                      esp_err_to_name(ovr));
+
+            /* OV5647 SDE Y-offset only — adds a positive bias to the
+             * luma channel without touching U/V. The sensor's internal
+             * ISP first applies SDE before output, so this brightens
+             * the YUV stream from the start. No saturation or hue
+             * manipulation = no risk of colour cast.
+             *
+             * Register 0x5580 SDE_CTRL0:
+             *   bit 7 = Y-offset enable    ← ONLY THIS BIT
+             *   bit 6 = Y-gamma enable
+             *   bit 5 = V-offset enable
+             *   bit 4 = U-offset enable
+             *   bit 3 = contrast enable
+             *   bit 1 = saturation enable
+             *
+             * Register 0x5588 = sign byte (bit 0 = Y sign: 0=positive)
+             * Register 0x5587 = Y-offset magnitude (0..255) */
+            (void)esp_sccb_transmit_reg_a16v8(cam_config.sccb_handle, 0x5580, 0x80);
+            (void)esp_sccb_transmit_reg_a16v8(cam_config.sccb_handle, 0x5588, 0x00);
+            (void)esp_sccb_transmit_reg_a16v8(cam_config.sccb_handle, 0x5587, 0x40);
+            ESP_LOGI(TAG, "OV5647 SDE Y-offset = +64 (brightness boost, no chroma)");
         }
         ESP_LOGI(TAG, "Sensor stream-on issued AFTER CSI ready — first frame should arrive shortly");
     }

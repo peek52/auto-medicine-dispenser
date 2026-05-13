@@ -1,0 +1,13 @@
+=== STATS over 120s ===
+total bytes: 0
+reboots: 0
+PANICs: 0
+SW_CPU_RESET: 0
+Boots: []
+init complete: 0
+rst lines: []
+Saved PC: []
+Guru: 0
+abort: 0
+wdt: 0
+Backtrace: 0

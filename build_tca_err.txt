@@ -1,0 +1,15 @@
+﻿cmd : CMake Error: Error: generator : Ninja
+At line:1 char:1
++ cmd /c "call C:\Users\peekz\esp\esp-idf\export.bat >nul 2>&1 && idf.p ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (CMake Error: Error: generator : Ninja:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Does not match the generator used previously: Visual Studio 17 2022
+Either remove the CMakeCache.txt file and CMakeFiles directory or choose a different binary directory.
+cmake failed with exit code 1, output of the command is in the 
+D:\project\ddddddddd\unified_cam\build\log\idf_py_stderr_output_29344 and 
+D:\project\ddddddddd\unified_cam\build\log\idf_py_stdout_output_29344
+Executing action: all (aliases: build)
+Running cmake in directory D:\project\ddddddddd\unified_cam\build
+Executing "cmake -G Ninja -DPYTHON_DEPS_CHECKED=1 -DPYTHON=C:\Users\peekz\.espressif\python_env\idf5.3_py3.8_env\Scripts\python.exe -DESP_PLATFORM=1 -DCCACHE_ENABLE=1 D:\project\ddddddddd\unified_cam"...

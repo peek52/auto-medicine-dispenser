@@ -33,6 +33,7 @@ idf_component_register(SRCS "camera_init.c"
                             "usb_mouse.c"
                             "telegram_bot.c"
                             "tca9548a.c"
+                            "idle_music.c"
                     INCLUDE_DIRS "."
                     REQUIRES esp_http_server esp_driver_cam esp_driver_isp
                              esp_driver_jpeg nvs_flash esp_wifi driver

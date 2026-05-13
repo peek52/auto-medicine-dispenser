@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Pill Dispenser — Workflow & Conditions</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root{
+  --bg:#f5f7fb;--surface:#fff;--surface-2:#f0f3fa;--ink:#0b1220;--ink-2:#3b4252;
+  --ink-3:#6b7280;--line:#e5e7eb;--brand:#4f46e5;--brand-2:#7c3aed;
+  --green:#16a34a;--green-bg:#dcfce7;--amber:#d97706;--amber-bg:#fef3c7;
+  --red:#dc2626;--red-bg:#fee2e2;--blue:#2563eb;--blue-bg:#dbeafe;
+  --purple:#9333ea;--purple-bg:#f3e8ff;
+  --shadow:0 1px 2px rgba(15,23,42,.04),0 8px 24px rgba(15,23,42,.06);
+}
+body{font-family:'Inter','IBM Plex Sans Thai',system-ui,sans-serif;background:var(--bg);color:var(--ink);
+  line-height:1.6;font-size:15px;}
+.wrap{max-width:1100px;margin:0 auto;padding:32px 24px 80px;}
+.hero{background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 100%);color:#fff;
+  padding:48px 40px;border-radius:20px;margin-bottom:28px;box-shadow:var(--shadow);}
+.hero h1{font-size:32px;font-weight:800;margin-bottom:8px;letter-spacing:-.02em;}
+.hero p{font-size:16px;opacity:.92;}
+.hero .meta{display:flex;gap:18px;margin-top:18px;flex-wrap:wrap;font-size:13px;}
+.hero .meta span{padding:6px 12px;background:rgba(255,255,255,.18);border-radius:8px;
+  backdrop-filter:blur(4px);font-family:'JetBrains Mono',monospace;}
+section{background:var(--surface);border-radius:16px;padding:28px 32px;margin-bottom:20px;
+  box-shadow:var(--shadow);border:1px solid var(--line);}
+section h2{font-size:22px;font-weight:700;margin-bottom:18px;display:flex;align-items:center;gap:12px;
+  padding-bottom:14px;border-bottom:2px solid var(--surface-2);}
+section h2 .num{display:inline-flex;width:32px;height:32px;background:var(--brand);color:#fff;
+  border-radius:8px;align-items:center;justify-content:center;font-weight:700;font-size:14px;}
+section h3{font-size:17px;font-weight:600;margin:18px 0 10px;color:var(--ink);}
+section p{margin-bottom:10px;color:var(--ink-2);}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px;}
+th{text-align:left;padding:10px 12px;background:var(--surface-2);border-bottom:2px solid var(--line);
+  font-weight:600;color:var(--ink);}
+td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;}
+td.mono,th.mono{font-family:'JetBrains Mono',monospace;font-size:13px;}
+.flow{background:var(--surface-2);border-radius:12px;padding:18px 22px;margin:14px 0;
+  border-left:4px solid var(--brand);}
+.flow-step{display:flex;gap:14px;align-items:flex-start;padding:8px 0;}
+.flow-step .step-num{flex-shrink:0;width:26px;height:26px;border-radius:50%;
+  background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:13px;}
+.flow-step .step-body{flex:1;}
+.flow-step .step-body strong{font-weight:600;}
+.flow-step .step-body code{background:#1e293b;color:#7dd3fc;padding:2px 6px;border-radius:4px;
+  font-family:'JetBrains Mono',monospace;font-size:13px;}
+.tag{display:inline-block;padding:3px 10px;border-radius:8px;font-size:12px;font-weight:600;
+  margin-right:6px;}
+.tag.ok{background:var(--green-bg);color:var(--green);}
+.tag.warn{background:var(--amber-bg);color:var(--amber);}
+.tag.err{background:var(--red-bg);color:var(--red);}
+.tag.info{background:var(--blue-bg);color:var(--blue);}
+.tag.fix{background:var(--purple-bg);color:var(--purple);}
+ul.cond{list-style:none;padding-left:0;}
+ul.cond li{padding:8px 0 8px 28px;position:relative;border-bottom:1px dashed var(--line);}
+ul.cond li:last-child{border-bottom:none;}
+ul.cond li::before{content:"\25B8";position:absolute;left:0;top:8px;color:var(--brand);font-weight:700;}
+.callout{padding:14px 18px;border-radius:10px;margin:14px 0;font-size:14px;}
+.callout.ok{background:var(--green-bg);border-left:4px solid var(--green);}
+.callout.warn{background:var(--amber-bg);border-left:4px solid var(--amber);}
+.callout.fix{background:var(--purple-bg);border-left:4px solid var(--purple);}
+code.inline{background:#1e293b;color:#7dd3fc;padding:2px 7px;border-radius:4px;
+  font-family:'JetBrains Mono',monospace;font-size:13px;}
+.toc{background:var(--surface-2);border-radius:12px;padding:18px 22px;margin-bottom:20px;}
+.toc h3{margin-bottom:10px;font-size:15px;}
+.toc ol{padding-left:20px;font-size:14px;}
+.toc ol li{padding:3px 0;}
+.toc a{color:var(--brand);text-decoration:none;}
+.toc a:hover{text-decoration:underline;}
+.diagram{background:#0f172a;color:#cbd5e1;padding:18px 22px;border-radius:10px;
+  font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.65;
+  margin:12px 0;overflow-x:auto;white-space:pre;}
+footer{text-align:center;padding:30px 0;color:var(--ink-3);font-size:13px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="hero">
+  <h1>Workflow &amp; Conditions</h1>
+  <p>Smart Pill Dispenser - ESP32-P4-Nano - ระบบจ่ายยาอัตโนมัติพร้อมเซ็นเซอร์ + กล้อง + แจ้งเตือน Telegram</p>
+  <div class="meta">
+    <span>Version: 2026-05-06 (post stability fixes)</span>
+    <span>I2C @ 50 kHz</span>
+    <span>PSRAM 200 MHz</span>
+    <span>5V 10A PSU</span>
+  </div>
+</div>
+
+<div class="toc">
+  <h3>หัวข้อ</h3>
+  <ol>
+    <li><a href="#boot">Boot Sequence - ลำดับการเริ่มทำงาน</a></li>
+    <li><a href="#vl53">VL53L0X Sensor Init - กลไกฟื้นตัว</a></li>
+    <li><a href="#touch">Touch - Auto-Recovery</a></li>
+    <li><a href="#schedule">Scheduled Dispense - จ่ายยาตามเวลา</a></li>
+    <li><a href="#manual">Manual Dispense - คืนยา / +/- เม็ด</a></li>
+    <li><a href="#photo">Photo Events - เงื่อนไขส่งรูป Telegram</a></li>
+    <li><a href="#telegram">Telegram Bot - คำสั่งและตอบโต้</a></li>
+    <li><a href="#network">Network - WiFi / NTP / NETPIE / Offline</a></li>
+    <li><a href="#recovery">Recovery Mechanisms - ระบบกู้คืน</a></li>
+    <li><a href="#alerts">Audio + Telegram Alerts - เสียง + ข้อความ</a></li>
+  </ol>
+</div>
+
+<section id="boot">
+<h2><span class="num">1</span>Boot Sequence - ลำดับการเริ่มทำงาน</h2>
+<p>ตั้งแต่ <code class="inline">app_main()</code> จนถึง <code class="inline">init complete</code> ใช้เวลาประมาณ <strong>13-18 วินาที</strong></p>
+
+<div class="diagram">POWERON / RESET
+  Bootloader (ESP-ROM) -&gt; load app from flash @ 80 MHz
+  PSRAM init @ 200 MHz (10x faster than default 20 MHz)
+  CPU clock 360 MHz dual-core RISC-V
+       |
+       v
+app_main() phase  (~0-18 s)
+  1. NVS init
+  2. cloud_secrets load (Telegram + Sheets tokens)
+  3. I2C bus init  SDA=7 SCL=8 @ 50 kHz
+  4. Probe TCA9548A -&gt; PCA9685 -&gt; PCF8574 (each retry x N)
+  5. FT6336U init (3x retry + 4x ping fallback)
+  6. VL53L0X bootstrap (6 ch via TCA mux)
+  7. Display ST7796S init (SPI 40 MHz)
+  8. Clock task starts
+  9. Liveness canary task (TWDT 30 s)
+ 10. deferred_init_task spawned
+       |
+       v
+deferred_init_task  (~18-30 s)
+   - dfplayer_init (UART audio)
+   - settings_load_nvs (volume / language / config)
+   - start_webserver  (port 80, /tech endpoints)
+   - start_stream_server  (port 81, MJPEG)
+   - dispenser_scheduler_start (alarm task)
+   - usb_mouse_start
+   - wifi_sta_init  (esp_hosted SDIO co-processor, ~7 s)
+   - SNTP sync time
+   - netpie_init (MQTT broker)
+   - telegram_polling_task starts</div>
+
+<h3>เงื่อนไขการเข้าสู่ "Safe mode"</h3>
+<ul class="cond">
+  <li><span class="tag info">REMOVED</span> Safe mode ไม่ทำงานแล้ว (user request) - แม้ panic ครั้งก่อน ระบบเข้า full stack เสมอ</li>
+  <li><strong>ทุกอย่างยังเปิด</strong> หลัง panic: NTP sync, WiFi, camera, VL53, Telegram</li>
+  <li>เพียง <code class="inline">s_skip_i2c_restart = true</code> ถ้า reset 3 ครั้งติด - ผู้ใช้ต้อง power-cycle</li>
+</ul>
+
+<h3>เงื่อนไข "All I2C dead - disabling master bus"</h3>
+<ul class="cond">
+  <li>หาก probe ที่ boot phase: <strong>PCA9685 + PCF8574 + FT6336U ทั้งหมด NACK</strong></li>
+  <li>-&gt; <code class="inline">i2c_manager_disable_bus()</code> permanent ของ boot นี้ (ป้องกัน i2c_master ISR race panic)</li>
+  <li>Display + WiFi ยังทำงาน, แต่ touch/servo/IR/VL53 ปิด - ต้อง power-cycle</li>
+</ul>
+</section>
+
+<section id="vl53">
+<h2><span class="num">2</span>VL53L0X - กลไก Init + Recovery</h2>
+<p>เซ็นเซอร์ ToF 6 ตัว ผ่าน TCA9548A (channel 0-5) อ่านระยะยาในกระบอก คำนวณ pill_count</p>
+
+<h3>Init Sequence ต่อช่อง</h3>
+<div class="flow">
+<div class="flow-step"><div class="step-num">1</div><div class="step-body">
+<strong>vl53_release_xshut()</strong> - set ทุก XSHUT pin (GPIO 20/22/23/47/48/53) เป็น HIGH</div></div>
+<div class="flow-step"><div class="step-num">2</div><div class="step-body">
+<strong>tca9548a_disable_all()</strong> - ปิดทุก channel ก่อน -&gt; <code>vTaskDelay(250 ms)</code> ให้ chip boot</div></div>
+<div class="flow-step"><div class="step-num">3</div><div class="step-body">
+<strong>For each channel 0-5:</strong> tca_select -&gt; vl53_wait_for_model_id -&gt; vl53_init_device (~70 register ops) -&gt; start_continuous</div></div>
+<div class="flow-step"><div class="step-num">4</div><div class="step-body">
+<strong>ถ้า fail:</strong> XSHUT toggle hard-reset (LOW 5 ms -&gt; HIGH 30 ms) -&gt; retry init (สูงสุด 3 ครั้ง)</div></div>
+</div>
+
+<h3>Per-op Retry (ใน <code class="inline">vl53_io</code>)</h3>
+<ul class="cond">
+  <li><strong>5-attempt exponential backoff:</strong> 0 / 200 us / 1 ms / 3 ms / 8 ms</li>
+  <li>Re-select TCA channel ทุก retry (กัน channel-byte หาย)</li>
+  <li>แก้ปัญหา IDF v5.3.2 i2c_master ISR race: write หลัง read return <code>INVALID_STATE</code></li>
+</ul>
+
+<h3>Background poll task</h3>
+<table>
+<tr><th>เงื่อนไข</th><th>การทำงาน</th></tr>
+<tr><td>Idle</td><td>poll ทุก 5 วินาที (อ่านระยะ, คำนวณ pill_count)</td></tr>
+<tr><td>Camera busy</td><td>pause poll (cooperative) ระหว่าง SCCB burst</td></tr>
+<tr><td>Sensor missing</td><td>retry probe ทุก 5 นาที (สูงสุด 5 ครั้ง -&gt; permanently_missing)</td></tr>
+<tr><td>หลัง dispense / count adjust</td><td><code class="inline">vl53l0x_request_refresh()</code> -&gt; poll ทันทีรอบเดียว</td></tr>
+</table>
+
+<div class="callout fix">
+<strong>Fix วันนี้ (2026-05-06):</strong> Late-detect bug - TCA ping หลัง VL53 init storm NACK ชั่วคราว -&gt; re-bootstrap loop -&gt; ใช้ <code class="inline">tca_was_up_at_boot</code> flag แทน
+</div>
+</section>
+
+<section id="touch">
+<h2><span class="num">3</span>Touch (FT6336U) - Auto-Recovery</h2>
+<p>หน้าจอสัมผัส capacitive 480x320, อ่านผ่าน I2C @ addr 0x38</p>
+
+<h3>Read flow</h3>
+<div class="flow">
+<div class="flow-step"><div class="step-num">1</div><div class="step-body">
+clock_task เรียก <code>ft6336u_read_touch()</code> ใน main loop</div></div>
+<div class="flow-step"><div class="step-num">2</div><div class="step-body">
+อ่าน register 0x02 (6 bytes - touch count + x + y + weight)</div></div>
+<div class="flow-step"><div class="step-num">3</div><div class="step-body">
+Cache: idle 20 ms (50 Hz), pressed 10 ms (100 Hz)</div></div>
+<div class="flow-step"><div class="step-num">4</div><div class="step-body">
+PRESS_DEBOUNCE = 2, COORD_STABILITY 150 px, MIN_REPRESS_GAP 150 ms, BOOT_MUTE 3 s</div></div>
+</div>
+
+<h3>เงื่อนไขกู้คืนเมื่อ I2C ค้าง</h3>
+<table>
+<tr><th>Condition</th><th>Action</th></tr>
+<tr><td>fail 8 ครั้งติด (~160 ms)</td><td><code class="inline">i2c_manager_recover_bus()</code> bit-bang SDA + recreate master bus</td></tr>
+<tr><td>recovery cool-down</td><td>30 วินาที ระหว่าง attempt (กัน loop)</td></tr>
+<tr><td>หลัง recovery</td><td>force <code class="inline">s_touch_initialized = false</code> -&gt; re-init รอบถัดไป</td></tr>
+<tr><td>chip-id NACK ที่ boot</td><td>ลอง 3 รอบ + 4x ping -&gt; fallback mode (ใช้ register read แม้ ID อ่านไม่ได้)</td></tr>
+</table>
+
+<div class="callout fix">
+<strong>Fix วันนี้:</strong> Auto-recovery เพิ่มมาวันนี้ - เดิม touch fail แล้ว stuck ตลอดจนกว่า power-cycle ปัจจุบันกู้คืนเองภายใน ~200 ms
+</div>
+</section>
+
+<section id="schedule">
+<h2><span class="num">4</span>Scheduled Dispense - จ่ายยาตามเวลา</h2>
+
+<h3>Trigger conditions</h3>
+<ul class="cond">
+  <li>RTC ถึงเวลาที่ตั้งใน schedule (เช่น 08:00, 12:00, 18:00)</li>
+  <li>med ที่ <code>count &gt; 0</code> และ <code>enable = 1</code> ใน slot นั้น</li>
+  <li><code>g_quiet_hours_disabled = false</code> หรืออยู่นอก quiet window</li>
+  <li>System NTP synced (ถ้าไม่ sync -&gt; ข้ามจนกว่าจะ sync)</li>
+</ul>
+
+<h3>Per-pill flow (ต่อตัวยาต่อ slot)</h3>
+<div class="flow">
+<div class="flow-step"><div class="step-num">1</div><div class="step-body">
+<code>dispenser_set_busy()</code> + พูดเสียง <strong>track 32</strong> (กรุณารอ)</div></div>
+<div class="flow-step"><div class="step-num">2</div><div class="step-body">
+PCF8574 warmup x 8 reads (10 ms gap) - ล้าง stale state</div></div>
+<div class="flow-step"><div class="step-num">3</div><div class="step-body">
+<strong>servo go_work</strong> (ดันยาออก) -&gt; loop start, IR poll ~100 Hz</div></div>
+<div class="flow-step"><div class="step-num">4</div><div class="step-body">
+หลัง 1.5 s -&gt; <strong>servo go_home</strong> (ดึงกลับ)</div></div>
+<div class="flow-step"><div class="step-num">5</div><div class="step-body">
+IR poll ต่ออีก 4 + 2 s = 7.5 s รวม. ตรวจ <strong>3 consecutive LOW reads</strong> = pill detected</div></div>
+<div class="flow-step"><div class="step-num">6</div><div class="step-body">
+ถ้า detected -&gt; ลด count ใน NETPIE shadow + audit log + <strong>send Telegram photo</strong></div></div>
+<div class="flow-step"><div class="step-num">7</div><div class="step-body">
+ถ้า miss -&gt; append name ลง <code>missed_meds[]</code> + เสียง track 84 (ไม่พบยา)</div></div>
+</div>
+
+<h3>เงื่อนไขเสียงประกาศ</h3>
+<table>
+<tr><th>สถานการณ์</th><th>เสียง</th></tr>
+<tr><td>เริ่มจ่ายยา</td><td>track 28 + 32</td></tr>
+<tr><td>จ่ายยาสำเร็จ &gt;=1 เม็ด</td><td>track 9 (โปรดทานยา)</td></tr>
+<tr><td>ไม่พบยาเลย</td><td>track 7 (no meds)</td></tr>
+<tr><td>ใกล้หมด &lt;=2 เม็ด</td><td>track 22 (ใกล้หมด)</td></tr>
+<tr><td>ระบบหยุดเพราะ I2C error</td><td>track 84</td></tr>
+</table>
+
+<div class="callout fix">
+<strong>Fix วันนี้:</strong> IR phantom-detection จาก servo PWM coupling - เพิ่ม <code>IR_DEBOUNCE_LOW_SAMPLES = 3</code> (3 ครั้งติด LOW = ตรวจพบจริง) เดิม single read = ตรวจพบ -&gt; spike ของ servo PWM ถูกนับเป็นยา
+</div>
+</section>
+
+<section id="manual">
+<h2><span class="num">5</span>Manual Dispense - คืนยา / +/-/ All</h2>
+
+<h3>Trigger sources</h3>
+<ul class="cond">
+  <li>UI หน้าเครื่อง: ปุ่ม "+" / "-" ในหน้า meds setup</li>
+  <li>UI หน้าเครื่อง: ปุ่ม "คืนยาทั้งหมด" (qty=100 -&gt; ALL mode)</li>
+  <li>Web /tech: <code class="inline">POST /tech/dispense?med=N&amp;qty=N</code></li>
+</ul>
+
+<h3>เงื่อนไข qty</h3>
+<table>
+<tr><th>qty</th><th>ความหมาย</th></tr>
+<tr><td>1-99</td><td>จ่ายตามจำนวน</td></tr>
+<tr><td><strong>100</strong></td><td>ALL mode - eject ทั้งหมด ใช้ IR เป็น STOP signal (cartridge หมด)</td></tr>
+</table>
+
+<h3>เงื่อนไขหยุด ALL mode</h3>
+<ul class="cond">
+  <li>EMPTY_CONFIRM_CYCLES = 1 -&gt; ถ้าไม่พบยา 1 รอบติด -&gt; หยุด</li>
+  <li>กรณี IR ปิด (servo-trust mode) -&gt; loop จนถึง MAX_PILLS แล้วหยุด</li>
+  <li>หาก <code>err1 != ESP_OK</code> (servo command fail) -&gt; bail ทันที + Telegram fail message</li>
+</ul>
+
+<h3>Servo positions</h3>
+<table>
+<tr><th>Channel</th><th>home (degrees)</th><th>work (degrees)</th><th>หมายเหตุ</th></tr>
+<tr><td>1-6</td><td>66 (default)</td><td>33 (default)</td><td>ปรับได้ผ่าน /tech/servo, NVS-saved</td></tr>
+</table>
+</section>
+
+<section id="photo">
+<h2><span class="num">6</span>Photo Events - เงื่อนไขส่งรูป Telegram</h2>
+<p>กล้อง OV5647 + JPEG HW encoder + software 90 deg CCW rotation (Telegram strips EXIF)</p>
+
+<h3>เหตุการณ์ที่ trigger photo</h3>
+<table>
+<tr><th>เหตุการณ์</th><th>ใส่ caption</th></tr>
+<tr><td>จ่ายยาเสร็จ (ทุก slot)</td><td>"จ่ายยา &lt;med&gt; เวลา &lt;HH:MM&gt;"</td></tr>
+<tr><td>คืนยาเสร็จ (manual)</td><td>"คืนยา &lt;med&gt; จำนวน &lt;N&gt; เม็ด"</td></tr>
+<tr><td>+/- เม็ดยา</td><td>"แก้ไขจำนวน &lt;med&gt;: &lt;old&gt; -&gt; &lt;new&gt;"</td></tr>
+<tr><td>เปลี่ยนชื่อยา / clear</td><td>"เปลี่ยนชื่อช่อง &lt;N&gt;: &lt;old&gt; -&gt; &lt;new&gt;"</td></tr>
+<tr><td>Telegram cmd "ถ่ายภาพล่าสุด"</td><td>(ไม่มี caption)</td></tr>
+</table>
+
+<h3>Camera lazy init</h3>
+<div class="flow">
+<div class="flow-step"><div class="step-num">1</div><div class="step-body">
+First call to <code>camera_ensure_initialized()</code></div></div>
+<div class="flow-step"><div class="step-num">2</div><div class="step-body">
+<strong>vl53_pause()</strong> + 250 ms wait (กัน I2C contention)</div></div>
+<div class="flow-step"><div class="step-num">3</div><div class="step-body">
+JPEG encoder init (out_buf 1 MB x 2 + rot_buf 1 MB ใน PSRAM)</div></div>
+<div class="flow-step"><div class="step-num">4</div><div class="step-body">
+<strong>AVDD power-cycle:</strong> acquire -&gt; release -&gt; 200 ms -&gt; re-acquire (กัน inrush latch)</div></div>
+<div class="flow-step"><div class="step-num">5</div><div class="step-body">
+SCCB detect OV5647 (PID 0x5647) -&gt; format set -&gt; stream-on</div></div>
+<div class="flow-step"><div class="step-num">6</div><div class="step-body">
+Camera task starts -&gt; 700 ms warmup ก่อนรูปแรกพร้อม</div></div>
+<div class="flow-step"><div class="step-num">7</div><div class="step-body">
+<strong>vl53_resume()</strong> + กลับมา poll ปกติ</div></div>
+</div>
+</section>
+
+<section id="telegram">
+<h2><span class="num">7</span>Telegram Bot - คำสั่งและการตอบโต้</h2>
+
+<h3>Polling</h3>
+<ul class="cond">
+  <li><code>getUpdates</code> long-poll ทุก 5 วินาที (ใช้ <code>offset</code> เก็บ message_id ล่าสุด)</li>
+  <li>ใช้ TLS, certificate validation จาก <code>esp-x509-crt-bundle</code></li>
+  <li>ถ้า lock timeout (camera busy) -&gt; log warning + retry รอบหน้า</li>
+</ul>
+
+<h3>คำสั่งที่รับ</h3>
+<table>
+<tr><th>ข้อความ</th><th>การทำงาน</th></tr>
+<tr><td>ถ่ายภาพล่าสุด</td><td>ทริก <code>camera_ensure_initialized()</code> -&gt; sendPhoto JPEG</td></tr>
+<tr><td>วิธีใช้</td><td>ส่ง markdown help message</td></tr>
+<tr><td>ตารางยา</td><td>ดึง schedule + meds จาก NVS -&gt; ส่ง summary</td></tr>
+<tr><td>เซ็นเซอร์</td><td>VL53 reading + IR status ทั้ง 6 ช่อง</td></tr>
+</table>
+</section>
+
+<section id="network">
+<h2><span class="num">8</span>Network - WiFi / NTP / NETPIE / Offline</h2>
+
+<h3>เชื่อมต่อลำดับ</h3>
+<div class="flow">
+<div class="flow-step"><div class="step-num">1</div><div class="step-body">
+<strong>esp_hosted SDIO</strong> reset slave (GPIO 54) -&gt; init transport via SDIO 4-bit @ 40 MHz</div></div>
+<div class="flow-step"><div class="step-num">2</div><div class="step-body">
+WiFi STA connect -&gt; SSID/PASS จาก NVS (default: PJ_Main router_true)</div></div>
+<div class="flow-step"><div class="step-num">3</div><div class="step-body">
+SNTP sync -&gt; RTC DS3231 update</div></div>
+<div class="flow-step"><div class="step-num">4</div><div class="step-body">
+NETPIE MQTT broker (mqtt.netpie.io:1883) - shadow sync</div></div>
+<div class="flow-step"><div class="step-num">5</div><div class="step-body">
+Telegram polling task starts</div></div>
+</div>
+
+<h3>Offline event queue</h3>
+<ul class="cond">
+  <li>หาก Telegram/HTTP fail -&gt; <code>offline_sync_queue_event()</code> เก็บ event ลง NVS</li>
+  <li>Background retry ทุก 60 วินาที - ส่งซ้ำเมื่อ network กลับมา</li>
+  <li>Event types: <code>1=DOSE</code>, <code>2=MISS</code>, <code>3=PHOTO</code>, <code>4=ADJUST</code></li>
+</ul>
+</section>
+
+<section id="recovery">
+<h2><span class="num">9</span>Recovery Mechanisms - ระบบกู้คืน</h2>
+
+<table>
+<tr><th>ระบบ</th><th>เงื่อนไข trigger</th><th>การกู้คืน</th></tr>
+<tr><td>I2C bus wedge</td><td>ft6336u read fail x 8</td><td><code>i2c_manager_recover_bus()</code> bit-bang SDA</td></tr>
+<tr><td>VL53 chip stuck</td><td>init fail attempt 1</td><td>XSHUT toggle (LOW 5 ms -&gt; HIGH 30 ms) x 3 attempts</td></tr>
+<tr><td>VL53 missing channel</td><td>permanently_missing flag</td><td>retry probe ทุก 5 นาที x 5 ครั้ง</td></tr>
+<tr><td>Camera SCCB INVALID_STATE</td><td>i2c_master_transmit fail</td><td>local IDF patch: state-reset retry x 2</td></tr>
+<tr><td>Camera AVDD latch</td><td>boot-time inrush</td><td>AVDD power-cycle (release 200 ms -&gt; reacquire)</td></tr>
+<tr><td>Touch chip-id NACK</td><td>boot-time glitch</td><td>3x chip-id retry + 4x ping fallback</td></tr>
+<tr><td>Telegram HTTP fail</td><td>connection timeout</td><td>queue event ลง NVS, retry background</td></tr>
+<tr><td>Stuck task</td><td>Liveness canary timeout</td><td>TWDT auto-reboot (30 s)</td></tr>
+<tr><td>Servo command fail</td><td>err1/err2 != OK</td><td>Bail dispense + send Telegram fail msg + go_home retry</td></tr>
+<tr><td>Bus dead at boot</td><td>PCA + PCF + Touch all NACK</td><td>disable_bus permanent (ป้องกัน ISR panic)</td></tr>
+</table>
+</section>
+
+<section id="alerts">
+<h2><span class="num">10</span>Audio + Telegram Alerts</h2>
+
+<h3>Audio (DY-HV20T tracks)</h3>
+<table>
+<tr><th>Track</th><th>เนื้อความ</th><th>เมื่อไร</th></tr>
+<tr><td>7</td><td>ไม่พบยา</td><td>dispense miss ทุกเม็ด</td></tr>
+<tr><td>8 / 9</td><td>โปรดทานยา (TH/EN)</td><td>dispense start</td></tr>
+<tr><td>10</td><td>มื้อ &lt;name&gt;</td><td>med name announce</td></tr>
+<tr><td>22 / 23</td><td>ใกล้หมด / refill</td><td>count &lt;= 2</td></tr>
+<tr><td>28</td><td>เริ่มจ่ายยา</td><td>before dispense</td></tr>
+<tr><td>29</td><td>ตรวจพบยา</td><td>IR detected</td></tr>
+<tr><td>32</td><td>กรุณารอ</td><td>busy</td></tr>
+<tr><td>39</td><td>เม็ดที่ &lt;N&gt;</td><td>per-pill announce</td></tr>
+<tr><td>83</td><td>คืนยาเรียบร้อย</td><td>manual dispense success</td></tr>
+<tr><td>84</td><td>ไม่พบยาในการคืน</td><td>manual dispense miss</td></tr>
+<tr><td>85</td><td>คืนยาทั้งหมด</td><td>ALL mode start</td></tr>
+</table>
+
+<h3>Telegram messages</h3>
+<table>
+<tr><th>เงื่อนไข</th><th>หัวข้อ</th></tr>
+<tr><td>จ่ายยาสำเร็จ &gt;=1 เม็ด</td><td>OK จ่ายยาเรียบร้อย + photo</td></tr>
+<tr><td>คืนยาสำเร็จ</td><td>OK คืนยาสำเร็จ + photo</td></tr>
+<tr><td>คืน/จ่าย ALL จนหมด</td><td>กรุณาเติมยา</td></tr>
+<tr><td>มียาใกล้หมด &lt;=2</td><td>ยาใกล้หมด เหลือ 2 เม็ดสุดท้ายหรือน้อยกว่า</td></tr>
+<tr><td>คืน/จ่าย หาไม่พบยา</td><td>ตั้งค่ายาคงเหลือเป็น 0 กรุณาตรวจสอบและเติมยา</td></tr>
+<tr><td>Hardware I2C failure</td><td>คืนยาหรือจ่ายยาไม่สำเร็จ + servo home retry</td></tr>
+<tr><td>เปลี่ยนชื่อ/แก้จำนวน</td><td>แก้ไข &lt;field&gt; + photo</td></tr>
+</table>
+</section>
+
+<footer>
+Smart Pill Dispenser - Workflow &amp; Conditions - 2026-05-06<br>
+ESP32-P4-Nano - ESP-IDF v5.3.2 - OV5647 + ST7796S + FT6336U + VL53L0X x6 + PCA9685 + PCF8574 + DS3231 + DY-HV20T
+</footer>
+
+</div>
+</body>
+</html>

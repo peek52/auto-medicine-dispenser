@@ -1,0 +1,454 @@
+﻿espcoredump.py v1.16.0
+===============================================================
+==================== ESP32 CORE DUMP START ====================
+The ROM ELF file won't load automatically since it was not found for the provided chip type.
+
+Crashed task handle: 0x4ff2a490, name: '', GDB name: 'process 1341301904'
+Crash happened in the interrupt context
+
+================== CURRENT THREAD REGISTERS ===================
+ra             0x4ff0690c	0x4ff0690c <i2c_master_isr_handler_default+682>
+sp             0x4ff19190	0x4ff19190 <xIsrStack+2000>
+gp             0x4ff16180	0x4ff16180 <ui_setup_meds_render()::s_prev_med_count+20>
+tp             0x4ff2a460	0x4ff2a460
+t0             0xfff	4095
+t1             0x4ff06ea0	1341157024
+t2             0x0	0
+fp             0x48000c54	0x48000c54
+s1             0x4ff367f0	1341351920
+a0             0x485dd5cc	1214109132
+a1             0x0	0
+a2             0x1	1
+a3             0x40000000	1073741824
+
+==================== CURRENT THREAD STACK =====================
+a4             0xff	255
+a5             0x6	6
+a6             0x0	0
+a7             0x0	0
+s2             0x4ff191a0	1341231520
+s3             0x485dd5c4	1214109124
+s4             0x485dd5c4	1214109124
+s5             0x4ff18764	1341228900
+s6             0x4ff5c000	1341505536
+s7             0x0	0
+s8             0x0	0
+s9             0x0	0
+s10            0x0	0
+s11            0x0	0
+t3             0x0	0
+t4             0x0	0
+t5             0x0	0
+t6             0x0	0
+pc             0x4ff068f2	0x4ff068f2 <i2c_master_isr_handler_default+656>
+#0  0x4ff068f2 in i2c_ll_read_rxfifo (len=1 '\\001', ptr=0x6 <error: Cannot access memory at address 0x6>, hw=<error reading variable: Cannot access memory at address 0x485dd5d4>) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/i2c_ll.h:643
+#1  i2c_isr_receive_handler (i2c_master=0x48000c54) at D:/project/ddddddddd/unified_cam/components/esp_driver_i2c/i2c_master.c:659
+#2  i2c_master_isr_handler_default (arg=0x48000c54) at D:/project/ddddddddd/unified_cam/components/esp_driver_i2c/i2c_master.c:698
+#3  0x4ff5c000 in socket_ipv4_multicast_memberships ()
+Backtrace stopped: previous frame inner to this frame (corrupt stack?)
+
+======================== THREADS INFO =========================
+  Id   Target Id          Frame 
+* 1    process 1341301904 0x4ff068f2 in i2c_ll_read_rxfifo (len=1 '\\001', ptr=0x6 <error: Cannot access memory at address 0x6>, hw=<error reading variable: Cannot access memory at address 0x485dd5d4>) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/i2c_ll.h:643
+  2    process 1341352168 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x48000fcc) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  3    process 1341303788 0x4ff06be6 in esp_cpu_wait_for_intr () at C:/Users/peekz/esp/esp-idf/components/esp_hw_support/cpu.c:64
+  4    process 1341586012 0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+  5    process 1341367948 0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+  6    process 1341367260 0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+  7    process 1341368984 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff3aa0c) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  8    process 1341551828 0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+  9    process 1341367604 0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+  10   process 1341580916 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff6e934) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  11   process 1341342792 0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+  12   process 1341366916 0x4ff0440a in esp_crosscore_int_send (core_id=core_id@entry=1, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:39
+  13   process 1341348668 0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+  14   process 1341354384 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff37998) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  15   process 1341300020 0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+  16   process 1341564844 0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+  17   process 1341290448 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff15a08 <xKernelLock>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  18   process 1341521060 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff61e4c) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  19   process 1341534796 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff65404) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  20   process 1341558152 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff676d0) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  21   process 1341562596 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff67918) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  22   process 1341286004 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff23194) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  23   process 1341280520 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff2320c) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  24   process 1341354880 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff37334) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  25   process 1341244868 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff15a08 <xKernelLock>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  26   process 1341388464 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff3acb0) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  27   process 1341243496 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff15a08 <xKernelLock>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  28   process 1341260872 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff1d8c0) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  29   process 1341255388 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff1dabc) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  30   process 1341266356 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff1c960) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+  31   process 1341271840 0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff1c8f8) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+
+
+       TCB             NAME PRIO C/B  STACK USED/FREE
+---------- ---------------- -------- ----------------
+0x4ff2a490            IDLE0      0/0         240/1284
+0x4ff368e8         i2c_late      3/3         544/2524
+0x4ff2abec            IDLE1      0/0         240/1288
+0x4ff6fa5c         cli_task      5/5         512/3576
+0x4ff3a68c       idle_music      3/3         304/2756
+0x4ff3a3dc         clk_task      3/3         496/9740
+0x4ff3aa98              tiT    18/18         368/3200
+0x4ff674d4        dispenser      4/4        1024/7152
+0x4ff3a534         liveness      1/1         272/3816
+0x4ff6e674        mqtt_task      5/5         736/5392
+0x4ff34448    offline_watch      3/3         288/3804
+0x4ff3a284         i2c_wdog      2/2         288/3792
+0x4ff35b3c        cam_retry      3/3         304/3784
+0x4ff37190          tg_poll     18/5        3184/9100
+0x4ff29d34             main      1/1         464/8224
+0x4ff6a7ac        sync_time      5/5         384/3708
+0x4ff277d0        esp_timer    22/22         304/3780
+0x4ff5fca4            httpd      5/5         688/7492
+0x4ff6324c            httpd      5/5         688/7500
+0x4ff68d88          usb_lib      2/2         352/3740
+0x4ff69ee4        usb_class      3/3         368/3712
+0x4ff26674           rpc_tx    23/23         448/4656
+0x4ff25108           rpc_rx    23/23         448/4668
+0x4ff37380      tg_text_wrk      5/5         320/9912
+0x4ff1c5c4             ipc1      5/5          336/672
+0x4ff3f6b0          sys_evt    20/20         384/2428
+0x4ff1c068             ipc0      5/5          336/684
+0x4ff20448        sdio_read    23/23         400/4584
+0x4ff1eedc      sdio_rx_buf    23/23         416/4696
+0x4ff219b4  sdio_process_rx    23/23         400/4704
+0x4ff22f20       sdio_write    23/23         448/4660
+
+==================== THREAD 1 (TCB: 0x4ff2a490, name: 'IDLE0') =====================
+#0  0x4ff068f2 in i2c_ll_read_rxfifo (len=1 '\\001', ptr=0x6 <error: Cannot access memory at address 0x6>, hw=<error reading variable: Cannot access memory at address 0x485dd5d4>) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/i2c_ll.h:643
+#1  i2c_isr_receive_handler (i2c_master=0x48000c54) at D:/project/ddddddddd/unified_cam/components/esp_driver_i2c/i2c_master.c:659
+#2  i2c_master_isr_handler_default (arg=0x48000c54) at D:/project/ddddddddd/unified_cam/components/esp_driver_i2c/i2c_master.c:698
+#3  0x4ff5c000 in socket_ipv4_multicast_memberships ()
+Backtrace stopped: previous frame inner to this frame (corrupt stack?)
+
+==================== THREAD 2 (TCB: 0x4ff368e8, name: 'i2c_late') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x48000fcc) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c29c in xQueueReceive (xQueue=0x48000f80, pvBuffer=pvBuffer@entry=0x4ff3679c, xTicksToWait=<optimized out>, xTicksToWait@entry=10) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1632
+#2  0x40082200 in s_i2c_send_commands (i2c_master=i2c_master@entry=0x48000c54, ticks_to_wait=ticks_to_wait@entry=10) at D:/project/ddddddddd/unified_cam/components/esp_driver_i2c/i2c_master.c:495
+#3  0x40083d50 in i2c_master_probe (bus_handle=0x48000c54, address=address@entry=112, xfer_timeout_ms=xfer_timeout_ms@entry=100) at D:/project/ddddddddd/unified_cam/components/esp_driver_i2c/i2c_master.c:1232
+#4  0x4003b8fa in i2c_manager_ping (addr=addr@entry=112 'p') at D:/project/ddddddddd/unified_cam/main/i2c_manager.c:132
+#5  0x4001de9e in late_detect_task (arg=0x4ff35cd4, arg@entry=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/main/main.c:523
+#6  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 3 (TCB: 0x4ff2abec, name: 'IDLE1') =====================
+#0  0x4ff06be6 in esp_cpu_wait_for_intr () at C:/Users/peekz/esp/esp-idf/components/esp_hw_support/cpu.c:64
+#1  0x40058ea8 in esp_vApplicationIdleHook () at C:/Users/peekz/esp/esp-idf/components/esp_system/freertos_hooks.c:58
+#2  0x4ff0e1fc in prvIdleTask (pvParameters=<error reading variable: value has been optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/tasks.c:4353
+#3  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 4 (TCB: 0x4ff6fa5c, name: 'cli_task') =====================
+#0  0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+#1  0x4ff04446 in esp_crosscore_int_send_yield (core_id=core_id@entry=0) at C:/Users/peekz/esp/esp-idf/components/esp_system/crosscore_int.c:120
+#2  0x4ff0ccb4 in vPortYield () at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:652
+#3  0x4001e2c6 in cli_task (arg=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/main/main.c:171
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 5 (TCB: 0x4ff3a68c, name: 'idle_music') =====================
+#0  0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+#1  0x4ff04446 in esp_crosscore_int_send_yield (core_id=core_id@entry=0) at C:/Users/peekz/esp/esp-idf/components/esp_system/crosscore_int.c:120
+#2  0x4ff0ccb4 in vPortYield () at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:652
+#3  0x4003061c in idle_music_task (arg=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/main/idle_music.c:92
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 6 (TCB: 0x4ff3a3dc, name: 'clk_task') =====================
+#0  0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+#1  0x4ff04446 in esp_crosscore_int_send_yield (core_id=core_id@entry=0) at C:/Users/peekz/esp/esp-idf/components/esp_system/crosscore_int.c:120
+#2  0x4ff0ccb4 in vPortYield () at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:652
+#3  0x4003a202 in clock_task () at D:/project/ddddddddd/unified_cam/main/display_clock.cpp:1000
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 7 (TCB: 0x4ff3aa98, name: 'tiT') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff3aa0c) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c29c in xQueueReceive (xQueue=0x4ff3a9c0, pvBuffer=pvBuffer@entry=0x4ff5e05c, xTicksToWait=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1632
+#2  0x40072368 in sys_arch_mbox_fetch (mbox=mbox@entry=0x4ff5ca84 <tcpip_mbox>, msg=msg@entry=0x4ff5e05c, timeout=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/lwip/port/freertos/sys_arch.c:317
+#3  0x4005d750 in tcpip_timeouts_mbox_fetch (mbox=<optimized out>, msg=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/lwip/lwip/src/api/tcpip.c:104
+#4  tcpip_thread (arg=<error reading variable: value has been optimized out>) at C:/Users/peekz/esp/esp-idf/components/lwip/lwip/src/api/tcpip.c:142
+#5  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 8 (TCB: 0x4ff674d4, name: 'dispenser') =====================
+#0  0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+#1  0x4ff04446 in esp_crosscore_int_send_yield (core_id=core_id@entry=0) at C:/Users/peekz/esp/esp-idf/components/esp_system/crosscore_int.c:120
+#2  0x4ff0ccb4 in vPortYield () at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:652
+#3  0x40029160 in dispenser_task (arg=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/main/dispenser_scheduler.c:938
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 9 (TCB: 0x4ff3a534, name: 'liveness') =====================
+#0  0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+#1  0x4ff04446 in esp_crosscore_int_send_yield (core_id=core_id@entry=0) at C:/Users/peekz/esp/esp-idf/components/esp_system/crosscore_int.c:120
+#2  0x4ff0ccb4 in vPortYield () at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:652
+#3  0x4001eb46 in liveness_canary_task (arg=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/main/main.c:98
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 10 (TCB: 0x4ff6e674, name: 'mqtt_task') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff6e934) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c3ea in xQueueSemaphoreTake (xQueue=0x4ff6e8e8, xTicksToWait=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1853
+#2  0x400721f2 in sys_arch_sem_wait (sem=<optimized out>, timeout=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/lwip/port/freertos/sys_arch.c:175
+#3  0x40074dbc in lwip_select (maxfdp1=maxfdp1@entry=47, readset=readset@entry=0x4ff6e560, writeset=writeset@entry=0x0, exceptset=exceptset@entry=0x4ff6e568, timeout=timeout@entry=0x4ff6e570) at C:/Users/peekz/esp/esp-idf/components/lwip/lwip/src/api/sockets.c:2103
+#4  0x4000ccf8 in esp_vfs_select (nfds=nfds@entry=47, readfds=readfds@entry=0x4ff6e560, writefds=writefds@entry=0x0, errorfds=errorfds@entry=0x4ff6e568, timeout=0x4ff6e570) at C:/Users/peekz/esp/esp-idf/components/vfs/vfs.c:1118
+#5  0x4008ffda in base_poll_read (t=0x4ff6e7dc, timeout_ms=1000) at C:/Users/peekz/esp/esp-idf/components/tcp_transport/transport_ssl.c:171
+#6  0x40048e6c in esp_mqtt_task (pv=0x489c6284, pv@entry=<error reading variable: value has been optimized out>) at C:/Users/peekz/esp/esp-idf/components/mqtt/esp-mqtt/mqtt_client.c:1736
+#7  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 11 (TCB: 0x4ff34448, name: 'offline_watch') =====================
+#0  0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+#1  0x4ff04446 in esp_crosscore_int_send_yield (core_id=core_id@entry=0) at C:/Users/peekz/esp/esp-idf/components/esp_system/crosscore_int.c:120
+#2  0x4ff0ccb4 in vPortYield () at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:652
+#3  0x40027456 in offline_watch_task (arg=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/main/offline_sync.c:513
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 12 (TCB: 0x4ff3a284, name: 'i2c_wdog') =====================
+#0  0x4ff0440a in esp_crosscore_int_send (core_id=core_id@entry=1, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:39
+#1  0x4ff04446 in esp_crosscore_int_send_yield (core_id=core_id@entry=1) at C:/Users/peekz/esp/esp-idf/components/esp_system/crosscore_int.c:120
+#2  0x4ff0ccb4 in vPortYield () at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:652
+#3  0x4001dd7c in i2c_watchdog_task (arg=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/main/main.c:295
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 13 (TCB: 0x4ff35b3c, name: 'cam_retry') =====================
+#0  0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+#1  0x4ff04446 in esp_crosscore_int_send_yield (core_id=core_id@entry=0) at C:/Users/peekz/esp/esp-idf/components/esp_system/crosscore_int.c:120
+#2  0x4ff0ccb4 in vPortYield () at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:652
+#3  0x40031b60 in camera_background_retry_task (arg=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/main/camera_init.c:195
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 14 (TCB: 0x4ff37190, name: 'tg_poll') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff37998) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c29c in xQueueReceive (xQueue=0x4ff3794c, pvBuffer=pvBuffer@entry=0x4ff7231c, xTicksToWait=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1632
+#2  0x40072368 in sys_arch_mbox_fetch (mbox=mbox@entry=0x4ff378d4, msg=msg@entry=0x4ff7231c, timeout=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/lwip/port/freertos/sys_arch.c:317
+#3  0x4007594a in netconn_recv_data (conn=conn@entry=0x4ff378c4, new_buf=new_buf@entry=0x4ff723ac, apiflags=apiflags@entry=8 '\\b') at C:/Users/peekz/esp/esp-idf/components/lwip/lwip/src/api/api_lib.c:618
+#4  0x40075a8c in netconn_recv_data_tcp (conn=0x4ff378c4, new_buf=new_buf@entry=0x4ff723ac, apiflags=8 '\\b') at C:/Users/peekz/esp/esp-idf/components/lwip/lwip/src/api/api_lib.c:730
+#5  0x40076062 in netconn_recv_tcp_pbuf_flags (conn=<optimized out>, new_buf=new_buf@entry=0x4ff723ac, apiflags=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/lwip/lwip/src/api/api_lib.c:811
+#6  0x40072a34 in lwip_recv_tcp (sock=0x4ff5bbcc <sockets+140>, mem=mem@entry=0x4ff75b20, len=len@entry=5, flags=flags@entry=0) at C:/Users/peekz/esp/esp-idf/components/lwip/lwip/src/api/sockets.c:951
+#7  0x40074886 in lwip_recvfrom (s=<optimized out>, mem=0x4ff75b20, len=5, flags=0, from=0x0, fromlen=0x0) at C:/Users/peekz/esp/esp-idf/components/lwip/lwip/src/api/sockets.c:1218
+#8  0x4009edc0 in mbedtls_net_recv (ctx=<optimized out>, buf=<optimized out>, len=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/mbedtls/port/net_sockets.c:351
+#9  0x40098cf2 in mbedtls_ssl_fetch_input (nb_want=<optimized out>, ssl=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/mbedtls/mbedtls/library/ssl_msg.c:2310
+#10 mbedtls_ssl_fetch_input (ssl=0x4ff3843c, nb_want=5) at C:/Users/peekz/esp/esp-idf/components/mbedtls/mbedtls/library/ssl_msg.c:2145
+#11 0x40099248 in ssl_get_next_record (ssl=0x4ff3843c) at C:/Users/peekz/esp/esp-idf/components/mbedtls/mbedtls/library/ssl_msg.c:4859
+#12 mbedtls_ssl_read_record (ssl=0x4ff3843c, update_hs_digest=1) at C:/Users/peekz/esp/esp-idf/components/mbedtls/mbedtls/library/ssl_msg.c:4214
+#13 0x4009c5ba in ssl_parse_server_hello (ssl=0x4ff3843c) at C:/Users/peekz/esp/esp-idf/components/mbedtls/mbedtls/library/ssl_tls12_client.c:1197
+#14 mbedtls_ssl_handshake_client_step (ssl=0x4ff3843c) at C:/Users/peekz/esp/esp-idf/components/mbedtls/mbedtls/library/ssl_tls12_client.c:3521
+#15 0x4009a26a in mbedtls_ssl_handshake_step (ssl=0x4ff3843c) at C:/Users/peekz/esp/esp-idf/components/mbedtls/mbedtls/library/ssl_tls.c:4546
+#16 mbedtls_ssl_handshake_step (ssl=0x4ff3843c) at C:/Users/peekz/esp/esp-idf/components/mbedtls/mbedtls/library/ssl_tls.c:4498
+#17 0x4009a2e0 in mbedtls_ssl_handshake (ssl=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/mbedtls/mbedtls/library/ssl_tls.c:4610
+#18 mbedtls_ssl_handshake (ssl=ssl@entry=0x4ff3843c) at C:/Users/peekz/esp/esp-idf/components/mbedtls/mbedtls/library/ssl_tls.c:4587
+#19 0x4008f0b4 in esp_mbedtls_handshake (tls=tls@entry=0x4ff3843c, cfg=cfg@entry=0x4ff37700) at C:/Users/peekz/esp/esp-idf/components/esp-tls/esp_tls_mbedtls.c:220
+#20 0x4008e73e in esp_tls_handshake (cfg=0x4ff37700, tls=0x4ff3843c) at C:/Users/peekz/esp/esp-idf/components/esp-tls/esp_tls.c:120
+#21 0x4008e90e in esp_tls_conn_new_sync (hostname=hostname@entry=0x4ff38398 <error: Cannot access memory at address 0x4ff38398>, hostlen=16, port=port@entry=443, cfg=cfg@entry=0x4ff37700, tls=tls@entry=0x4ff3843c) at C:/Users/peekz/esp/esp-idf/components/esp-tls/esp_tls.c:544
+#22 0x4009033e in ssl_connect (t=0x4ff38310, host=0x4ff38398 <error: Cannot access memory at address 0x4ff38398>, port=443, timeout_ms=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/tcp_transport/transport_ssl.c:114
+#23 0x400927fc in esp_http_client_connect (client=<optimized out>, client@entry=0x4ff374d8) at C:/Users/peekz/esp/esp-idf/components/esp_http_client/esp_http_client.c:1455
+#24 0x400938da in esp_http_client_open (client=<optimized out>, client@entry=0x4ff374d8, write_len=write_len@entry=0) at C:/Users/peekz/esp/esp-idf/components/esp_http_client/esp_http_client.c:1619
+#25 0x4002f666 in telegram_poll_task (pvParameters=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/main/telegram_bot.c:1285
+#26 0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 15 (TCB: 0x4ff29d34, name: 'main') =====================
+#0  0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+#1  0x4ff04446 in esp_crosscore_int_send_yield (core_id=core_id@entry=0) at C:/Users/peekz/esp/esp-idf/components/esp_system/crosscore_int.c:120
+#2  0x4ff0ccb4 in vPortYield () at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:652
+#3  0x4001ef42 in app_main () at D:/project/ddddddddd/unified_cam/main/main.c:1003
+#4  0x400d3a46 in main_task (args=<error reading variable: value has been optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/app_startup.c:208
+#5  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 16 (TCB: 0x4ff6a7ac, name: 'sync_time') =====================
+#0  0x4ff0441c in esp_crosscore_int_send (core_id=core_id@entry=0, reason_mask=reason_mask@entry=1) at C:/Users/peekz/esp/esp-idf/components/hal/esp32p4/include/hal/crosscore_int_ll.h:37
+#1  0x4ff04446 in esp_crosscore_int_send_yield (core_id=core_id@entry=0) at C:/Users/peekz/esp/esp-idf/components/esp_system/crosscore_int.c:120
+#2  0x4ff0ccb4 in vPortYield () at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:652
+#3  0x4001e7ba in sync_time_task (arg=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/main/main.c:360
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 17 (TCB: 0x4ff277d0, name: 'esp_timer') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff15a08 <xKernelLock>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0fa7c in ulTaskGenericNotifyTake (uxIndexToWait=uxIndexToWait@entry=0, xClearCountOnExit=xClearCountOnExit@entry=1, xTicksToWait=xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/tasks.c:5765
+#2  0x4005d138 in timer_task (arg=<error reading variable: value has been optimized out>) at C:/Users/peekz/esp/esp-idf/components/esp_timer/src/esp_timer.c:480
+#3  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 18 (TCB: 0x4ff5fca4, name: 'httpd') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff61e4c) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c3ea in xQueueSemaphoreTake (xQueue=0x4ff61e00, xTicksToWait=<optimized out>, xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1853
+#2  0x400721d2 in sys_arch_sem_wait (sem=<optimized out>, timeout=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/lwip/port/freertos/sys_arch.c:165
+#3  0x40074dbc in lwip_select (maxfdp1=maxfdp1@entry=42, readset=readset@entry=0x4ff61d30, writeset=writeset@entry=0x0, exceptset=exceptset@entry=0x0, timeout=timeout@entry=0x0) at C:/Users/peekz/esp/esp-idf/components/lwip/lwip/src/api/sockets.c:2103
+#4  0x4000ccf8 in esp_vfs_select (nfds=42, readfds=readfds@entry=0x4ff61d30, writefds=writefds@entry=0x0, errorfds=errorfds@entry=0x0, timeout=timeout@entry=0x0) at C:/Users/peekz/esp/esp-idf/components/vfs/vfs.c:1118
+#5  0x40094948 in httpd_server (hd=0x4ff5ebe8) at C:/Users/peekz/esp/esp-idf/components/esp_http_server/src/httpd_main.c:294
+#6  httpd_thread (arg=0x4ff5ebe8, arg@entry=<error reading variable: value has been optimized out>) at C:/Users/peekz/esp/esp-idf/components/esp_http_server/src/httpd_main.c:339
+#7  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 19 (TCB: 0x4ff6324c, name: 'httpd') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff65404) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c3ea in xQueueSemaphoreTake (xQueue=0x4ff653b8, xTicksToWait=<optimized out>, xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1853
+#2  0x400721d2 in sys_arch_sem_wait (sem=<optimized out>, timeout=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/lwip/port/freertos/sys_arch.c:165
+#3  0x40074dbc in lwip_select (maxfdp1=maxfdp1@entry=45, readset=readset@entry=0x4ff652e0, writeset=writeset@entry=0x0, exceptset=exceptset@entry=0x0, timeout=timeout@entry=0x0) at C:/Users/peekz/esp/esp-idf/components/lwip/lwip/src/api/sockets.c:2103
+#4  0x4000ccf8 in esp_vfs_select (nfds=45, readfds=readfds@entry=0x4ff652e0, writefds=writefds@entry=0x0, errorfds=errorfds@entry=0x0, timeout=timeout@entry=0x0) at C:/Users/peekz/esp/esp-idf/components/vfs/vfs.c:1118
+#5  0x40094948 in httpd_server (hd=0x4ff624a0) at C:/Users/peekz/esp/esp-idf/components/esp_http_server/src/httpd_main.c:294
+#6  httpd_thread (arg=0x4ff624a0, arg@entry=<error reading variable: value has been optimized out>) at C:/Users/peekz/esp/esp-idf/components/esp_http_server/src/httpd_main.c:339
+#7  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 20 (TCB: 0x4ff68d88, name: 'usb_lib') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff676d0) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c3ea in xQueueSemaphoreTake (xQueue=0x4ff67684, xTicksToWait=<optimized out>, xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1853
+#2  0x4004d432 in usb_host_lib_handle_events (timeout_ticks=timeout_ticks@entry=4294967295, event_flags_ret=event_flags_ret@entry=0x4ff68d1c) at C:/Users/peekz/esp/esp-idf/components/usb/usb_host.c:639
+#3  0x4002d8c8 in usb_lib_task (arg=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/main/usb_mouse.c:162
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 21 (TCB: 0x4ff69ee4, name: 'usb_class') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff67918) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c3ea in xQueueSemaphoreTake (xQueue=0x4ff678cc, xTicksToWait=<optimized out>, xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1853
+#2  0x4004d706 in usb_host_client_handle_events (client_hdl=0x486d8178, timeout_ticks=timeout_ticks@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/usb/usb_host.c:892
+#3  0x4002d514 in usb_class_task (arg=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/main/usb_mouse.c:181
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 22 (TCB: 0x4ff26674, name: 'rpc_tx') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff23194) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c3ea in xQueueSemaphoreTake (xQueue=0x4ff23148, xTicksToWait=<optimized out>, xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1853
+#2  0x4001c982 in hosted_get_semaphore (semaphore_handle=<optimized out>, timeout=<optimized out>) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/port/os_wrapper.c:534
+#3  0x400122f2 in rpc_tx_thread (arg=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/drivers/rpc/core/rpc_core.c:517
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 23 (TCB: 0x4ff25108, name: 'rpc_rx') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff2320c) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c3ea in xQueueSemaphoreTake (xQueue=0x4ff231c0, xTicksToWait=<optimized out>, xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1853
+#2  0x4001c982 in hosted_get_semaphore (semaphore_handle=<optimized out>, timeout=<optimized out>) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/port/os_wrapper.c:534
+#3  0x40011d48 in serial_drv_read (serial_drv_handle=<optimized out>, out_nbyte=out_nbyte@entry=0x4ff25064) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/drivers/serial/serial_drv.c:111
+#4  0x40016ea8 in transport_pserial_read (out_nbyte=out_nbyte@entry=0x4ff25064) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/drivers/virtual_serial_if/serial_if.c:218
+#5  0x40012850 in rpc_rx_thread (arg=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/drivers/rpc/core/rpc_core.c:457
+#6  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 24 (TCB: 0x4ff37380, name: 'tg_text_wrk') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff37334) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c29c in xQueueReceive (xQueue=0x4ff372e8, pvBuffer=pvBuffer@entry=0x4ff7562c, xTicksToWait=<optimized out>, xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1632
+#2  0x4002e838 in telegram_text_worker (arg=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/main/telegram_bot.c:838
+#3  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 25 (TCB: 0x4ff1c5c4, name: 'ipc1') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff15a08 <xKernelLock>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0fa7c in ulTaskGenericNotifyTake (uxIndexToWait=uxIndexToWait@entry=0, xClearCountOnExit=xClearCountOnExit@entry=1, xTicksToWait=xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/tasks.c:5765
+#2  0x4ff044ce in ipc_task (arg=0x1, arg@entry=<error reading variable: value has been optimized out>) at C:/Users/peekz/esp/esp-idf/components/esp_system/esp_ipc.c:62
+#3  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 26 (TCB: 0x4ff3f6b0, name: 'sys_evt') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff3acb0) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c29c in xQueueReceive (xQueue=0x4ff3ac64, pvBuffer=pvBuffer@entry=0x4ff5eb30, xTicksToWait=<optimized out>, xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1632
+#2  0x400cf604 in esp_event_loop_run (event_loop=event_loop@entry=0x4ff3ac48, ticks_to_run=ticks_to_run@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/esp_event/esp_event.c:560
+#3  0x400cf700 in esp_event_loop_run_task (args=0x4ff3ac48, args@entry=<error reading variable: value has been optimized out>) at C:/Users/peekz/esp/esp-idf/components/esp_event/esp_event.c:105
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 27 (TCB: 0x4ff1c068, name: 'ipc0') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff15a08 <xKernelLock>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0fa7c in ulTaskGenericNotifyTake (uxIndexToWait=uxIndexToWait@entry=0, xClearCountOnExit=xClearCountOnExit@entry=1, xTicksToWait=xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/tasks.c:5765
+#2  0x4ff044ce in ipc_task (arg=0x0, arg@entry=<error reading variable: value has been optimized out>) at C:/Users/peekz/esp/esp-idf/components/esp_system/esp_ipc.c:62
+#3  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 28 (TCB: 0x4ff20448, name: 'sdio_read') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff1d8c0) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c3ea in xQueueSemaphoreTake (xQueue=0x4ff1d874, xTicksToWait=<optimized out>, xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1853
+#2  0x400815d0 in sdmmc_host_io_int_wait (slot=<optimized out>, timeout_ticks=4294967295) at C:/Users/peekz/esp/esp-idf/components/esp_driver_sdmmc/src/sdmmc_host.c:850
+#3  0x4001bbe8 in sdio_read_task (pvParameters=<optimized out>) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/drivers/transport/sdio/sdio_drv.c:789
+#4  sdio_read_task (pvParameters=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/drivers/transport/sdio/sdio_drv.c:733
+#5  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 29 (TCB: 0x4ff1eedc, name: 'sdio_rx_buf') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff1dabc) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c3ea in xQueueSemaphoreTake (xQueue=0x4ff1da70, xTicksToWait=<optimized out>, xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1853
+#2  0x4001c982 in hosted_get_semaphore (semaphore_handle=<optimized out>, timeout=<optimized out>) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/port/os_wrapper.c:534
+#3  0x4001b282 in sdio_data_to_rx_buf_task (pvParameters=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/drivers/transport/sdio/sdio_drv.c:715
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 30 (TCB: 0x4ff219b4, name: 'sdio_process_rx') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff1c960) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c3ea in xQueueSemaphoreTake (xQueue=0x4ff1c914, xTicksToWait=<optimized out>, xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1853
+#2  0x4001c982 in hosted_get_semaphore (semaphore_handle=<optimized out>, timeout=<optimized out>) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/port/os_wrapper.c:534
+#3  0x4001b4ee in sdio_process_rx_task (pvParameters=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/drivers/transport/sdio/sdio_drv.c:937
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+==================== THREAD 31 (TCB: 0x4ff22f20, name: 'sdio_write') =====================
+#0  0x4ff0cbce in vPortExitCriticalMultiCore (mux=mux@entry=0x4ff1c8f8) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:583
+#1  0x4ff0c3ea in xQueueSemaphoreTake (xQueue=0x4ff1c8ac, xTicksToWait=<optimized out>, xTicksToWait@entry=4294967295) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/queue.c:1853
+#2  0x4001c982 in hosted_get_semaphore (semaphore_handle=<optimized out>, timeout=<optimized out>) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/port/os_wrapper.c:534
+#3  0x4001b726 in sdio_write_task (pvParameters=<error reading variable: value has been optimized out>) at D:/project/ddddddddd/unified_cam/managed_components/espressif__esp_hosted/host/drivers/transport/sdio/sdio_drv.c:363
+#4  0x4ff0c6fc in vPortTaskWrapper (pxCode=<optimized out>, pvParameters=<optimized out>) at C:/Users/peekz/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:255
+
+
+======================= ALL MEMORY REGIONS ========================
+Name   Address   Size   Attrs
+.rtc.force_fast 0x50108080 0x0 RW  
+.rtc.force_slow 0x5010808c 0x0 RW  
+.tcm.text 0x30100000 0x1e R XA
+.tcm.data 0x30100020 0x3c RW A
+.iram0.text 0x4ff00000 0x15914 R XA
+.iram0.data 0x4ff15980 0x0 RW  
+.iram0.bss 0x4ff15980 0x0 RW  
+.dram0.data 0x4ff15980 0x2c3d RW A
+.dram1.data 0x4ff40000 0x0 RW A
+.flash.text 0x40000020 0xd5a80 R XA
+.flash.appdesc 0x400e0020 0x100 R  A
+.flash.rodata 0x400e0120 0xcdfa0 RW A
+.eh_frame_hdr 0x401ae1c8 0x0 RW  
+.eh_frame 0x401ae1c8 0x0 RW  
+.flash.tdata 0x401ae1c8 0x0 RW  
+.dram1.heap_start_high 0x4ff5cbf0 0x0 RW  
+.coredump.tasks.data 0x4ff368e8 0x154 RW 
+.coredump.tasks.data 0x4ff366c0 0x220 RW 
+.coredump.tasks.data 0x4ff2a490 0x154 RW 
+.coredump.tasks.data 0x4ff190f0 0x930 RW 
+.coredump.tasks.data 0x4ff2a390 0xf0 RW 
+.coredump.tasks.data 0x4ff2abec 0x154 RW 
+.coredump.tasks.data 0x4ff2aaf0 0xf0 RW 
+.coredump.tasks.data 0x4ff6fa5c 0x154 RW 
+.coredump.tasks.data 0x4ff6f850 0x200 RW 
+.coredump.tasks.data 0x4ff3a68c 0x154 RW 
+.coredump.tasks.data 0x4ff3f570 0x130 RW 
+.coredump.tasks.data 0x4ff3a3dc 0x154 RW 
+.coredump.tasks.data 0x4ff3d8b0 0x1f0 RW 
+.coredump.tasks.data 0x4ff3aa98 0x154 RW 
+.coredump.tasks.data 0x4ff5df60 0x170 RW 
+.coredump.tasks.data 0x4ff674d4 0x154 RW 
+.coredump.tasks.data 0x4ff670c0 0x400 RW 
+.coredump.tasks.data 0x4ff3a534 0x154 RW 
+.coredump.tasks.data 0x4ff3e990 0x110 RW 
+.coredump.tasks.data 0x4ff6e674 0x154 RW 
+.coredump.tasks.data 0x4ff6e380 0x2e0 RW 
+.coredump.tasks.data 0x4ff34448 0x154 RW 
+.coredump.tasks.data 0x4ff34320 0x120 RW 
+.coredump.tasks.data 0x4ff3a284 0x154 RW 
+.coredump.tasks.data 0x4ff3a150 0x120 RW 
+.coredump.tasks.data 0x4ff35b3c 0x154 RW 
+.coredump.tasks.data 0x4ff35a00 0x130 RW 
+.coredump.tasks.data 0x4ff37190 0x154 RW 
+.coredump.tasks.data 0x4ff72220 0xc70 RW 
+.coredump.tasks.data 0x4ff29d34 0x154 RW 
+.coredump.tasks.data 0x4ff29b50 0x1d0 RW 
+.coredump.tasks.data 0x4ff6a7ac 0x154 RW 
+.coredump.tasks.data 0x4ff6c3c0 0x180 RW 
+.coredump.tasks.data 0x4ff277d0 0x154 RW 
+.coredump.tasks.data 0x4ff27690 0x130 RW 
+.coredump.tasks.data 0x4ff5fca4 0x154 RW 
+.coredump.tasks.data 0x4ff61b40 0x2b0 RW 
+.coredump.tasks.data 0x4ff6324c 0x154 RW 
+.coredump.tasks.data 0x4ff650f0 0x2b0 RW 
+.coredump.tasks.data 0x4ff68d88 0x154 RW 
+.coredump.tasks.data 0x4ff68c20 0x160 RW 
+.coredump.tasks.data 0x4ff69ee4 0x154 RW 
+.coredump.tasks.data 0x4ff69d60 0x170 RW 
+.coredump.tasks.data 0x4ff26674 0x154 RW 
+.coredump.tasks.data 0x4ff264a0 0x1c0 RW 
+.coredump.tasks.data 0x4ff25108 0x154 RW 
+.coredump.tasks.data 0x4ff24f40 0x1c0 RW 
+.coredump.tasks.data 0x4ff37380 0x154 RW 
+.coredump.tasks.data 0x4ff75550 0x140 RW 
+.coredump.tasks.data 0x4ff1c5c4 0x154 RW 
+.coredump.tasks.data 0x4ff1c460 0x150 RW 
+.coredump.tasks.data 0x4ff3f6b0 0x154 RW 
+.coredump.tasks.data 0x4ff5ea60 0x180 RW 
+.coredump.tasks.data 0x4ff1c068 0x154 RW 
+.coredump.tasks.data 0x4ff1bf10 0x150 RW 
+.coredump.tasks.data 0x4ff20448 0x154 RW 
+.coredump.tasks.data 0x4ff202b0 0x190 RW 
+.coredump.tasks.data 0x4ff1eedc 0x154 RW 
+.coredump.tasks.data 0x4ff1ed30 0x1a0 RW 
+.coredump.tasks.data 0x4ff219b4 0x154 RW 
+.coredump.tasks.data 0x4ff21810 0x190 RW 
+.coredump.tasks.data 0x4ff22f20 0x154 RW 
+.coredump.tasks.data 0x4ff22d50 0x1c0 RW 
+
+===================== ESP32 CORE DUMP END =====================
+===============================================================
+Done!

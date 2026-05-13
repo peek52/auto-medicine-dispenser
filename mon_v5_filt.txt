@@ -1,0 +1,132 @@
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0x1 (POWERON),boot:0x10f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x18e4
+load:0x4ff2abd0,len:0xd74
+load:0x4ff2cbd0,len:0x322c
+entry 0x4ff2abda
+I (25) boot: ESP-IDF v5.3.2-dirty 2nd stage bootloader
+I (26) boot: compile time May 10 2026 16:29:07
+I (26) boot: Multicore bootloader
+I (30) boot: chip revision: v1.3
+I (33) boot: efuse block revision: v0.3
+I (38) boot.esp32p4: SPI Speed      : 80MHz
+I (42) boot.esp32p4: SPI Mode       : DIO
+I (47) boot.esp32p4: SPI Flash Size : 16MB
+I (52) boot: Enabling RNG early entropy source...
+I (57) boot: Partition Table:
+I (61) boot: ## Label            Usage          Type ST Offset   Length
+I (68) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (76) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (83) boot:  2 factory          factory app      00 00 00010000 00300000
+I (90) boot:  3 coredump         Unknown data     01 03 00310000 00010000
+I (99) boot: End of partition table
+I (437) boot: Loaded app from partition at offset 0x10000
+I (438) boot: Disabling RNG early entropy source...
+I (503) MSPI DQS: tuning success, best phase id is 2
+I (681) MSPI DQS: tuning success, best delayline id is 11
+I (681) esp_psram: Found 32MB PSRAM device
+I (681) esp_psram: Speed: 200MHz
+I (689) cpu_start: Multicore app
+I (1599) esp_psram: SPI SRAM memory test OK
+W (1608) clk: esp_perip_clk_init() has not been implemented yet
+I (1615) cpu_start: Pro cpu start user code
+I (1615) cpu_start: cpu freq: 360000000 Hz
+I (1615) app_init: Application information:
+I (1618) app_init: Project name:     unified_cam
+I (1623) app_init: App version:      backup-camera-working-2026-05-0
+I (1630) app_init: Compile time:     May 10 2026 16:28:32
+I (1636) app_init: ELF file SHA256:  9592da861...
+I (1642) app_init: ESP-IDF:          v5.3.2-dirty
+I (1701) esp_psram: Adding pool of 32768K of PSRAM memory to heap allocator
+I (1709) spi_flash: detected chip: generic
+I (1713) spi_flash: flash io: dio
+I (1717) host_init: ESP Hosted : Host chip_ip[18]
+I (1751) H_API: ESP-Hosted starting. Hosted_Tasks: prio:23, stack: 5120 RPC_task_stack: 5120
+sdio_mempool_create free:33711892 min-free:33711892 lfb-def:33030144 lfb-8bit:33030144
+I (1813) H_API: ** add_esp_wifi_remote_channels **
+I (1818) transport: Add ESP-Hosted channel IF[1]: S[0] Tx[0x4001093e] Rx[0x4001dc28]
+I (1827) transport: Add ESP-Hosted channel IF[2]: S[0] Tx[0x40010884] Rx[0x4001dc28]
+I (1835) esp_core_dump_flash: Init core dump to flash
+I (1841) esp_core_dump_flash: Found partition 'coredump' @ 310000 65536 bytes
+I (1881) esp_core_dump_flash: Core dump data checksum is correct
+I (1881) esp_core_dump_flash: Found core dump 36804 bytes in flash @ 0x310000
+I (1884) main_task: Started on CPU0
+I (1894) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations
+I (1894) main_task: Calling app_main()
+I (1904) unified_cam: Starting Unified Cam & Modules (ESP32-P4 Nano)
+W (1904) unified_cam: Boot #1, reset reason: POWERON (1)
+I (1924) cloud_secrets: Cloud secrets loaded from NVS (telegram=set, sheets=set)
+I (1984) i2c_mgr: I2C_NUM_0 ready — SDA=7 SCL=8 @ 50000 Hz
+I (1984) unified_cam: Skipping bus scan (per-device pings only)
+W (1994) unified_cam: I2C scan begin (full bus)...
+W (2014) unified_cam: I2C ACK: 0x18 0x20 0x36 0x40 0x56 0x68
+W (2014) unified_cam: I2C scan end. Camera should be 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (2024) unified_cam: CAMERA INIT (early, before any peripheral driver init)
+I (2024) camera_init: Lazy camera_init triggered (first /capture or /photo)
+I (2214) camera_init: Initializing JPEG encoder for 800x640
+W (2214) jpeg_enc: DIAG-LEAK entry  PSRAM free=30478208 largest=30408704
+W (2214) jpeg_enc: DIAG-LEAK deinit PSRAM free=30478208
+I (2274) jpeg_enc: JPEG HW encoder initialized: 800x640, out_buf=1024000 bytes x2 + rot_buf=1024000
+W (2274) jpeg_enc: DIAG-LEAK exit   PSRAM free=26381072 largest=26214400
+I (2574) camera_init: MIPI PHY LDO power-cycled (200 ms off)
+I (2574) camera_init: XCLK 24000000 Hz generated on GPIO33
+I (2774) camera_init: VL53 XSHUT lowered before SCCB (chips offline)
+I (2844) camera_init: Shared I2C bus recovered before SCCB init
+W (3004) camera_init: I2C scan begin (looking for camera + others)...
+W (3014) camera_init: I2C scan ACK: 0x18 0x20 0x36 0x40 0x56 0x68
+W (3014) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (3294) camera_init: set_format readback 0x4837=0x15 (ESP_OK, expect 0x28)
+W (3294) camera_init: PCLK reg verify failed — forcing attempt retry
+W (4234) camera_init: set_format readback 0x4837=0x00 (ESP_ERR_INVALID_STATE, expect 0x28)
+W (4244) camera_init: PCLK reg verify failed — forcing attempt retry
+W (4864) camera_init: set_format readback 0x4837=0x47 (ESP_OK, expect 0x28)
+W (4864) camera_init: PCLK reg verify failed — forcing attempt retry
+W (5584) camera_init: set_format readback 0x4837=0x47 (ESP_OK, expect 0x28)
+W (5584) camera_init: PCLK reg verify failed — forcing attempt retry
+W (6194) camera_init: set_format readback 0x4837=0x15 (ESP_OK, expect 0x28)
+W (6194) camera_init: PCLK reg verify failed — forcing attempt retry
+W (6824) camera_init: set_format readback 0x4837=0x47 (ESP_OK, expect 0x28)
+W (6824) camera_init: PCLK reg verify failed — forcing attempt retry
+W (7444) camera_init: set_format readback 0x4837=0x28 (ESP_OK, expect 0x28)
+I (7444) camera_init: Camera detect + format OK (attempt 8) — stream-on deferred until CSI ready
+I (7444) camera_init: VL53 XSHUT restored after SCCB
+I (7454) camera_init: ISP frame_cfg = 0x6031f27f, bayer_mode = 0 (00=BGGR 01=GBRG 10=GRBG 11=RGGB)
+I (7474) camera_init: Override 0x4800=0x10 (continuous clock + line sync): ESP_OK
+I (7474) camera_init: OV5647 SDE Y-offset = +64 (brightness boost, no chroma)
+I (7474) camera_init: Sensor stream-on issued AFTER CSI ready — first frame should arrive shortly
+I (7484) camera_init: Camera capture task started (MJPEG mode)
+I (7494) camera_init: Camera + JPEG HW Encoder Initialized OK
+I (7504) camera_init: Lazy camera_init -> ESP_OK
+W (8204) unified_cam: Early camera init → ESP_OK
+W (8494) camera_init: Frame wait timeout, retrying... (1/10)
+W (9494) camera_init: Frame wait timeout, retrying... (2/10)
+I (10374) unified_cam: FT6336U responded on initial ping
+W (10494) camera_init: Frame wait timeout, retrying... (3/10)
+W (11494) camera_init: Frame wait timeout, retrying... (4/10)
+W (11874) tca9548a: TCA9548A not found at 0x70 after retries — VL53 sensors disabled
+W (11874) unified_cam: TCA9548A not found at 0x70 — VL53 will be skipped
+I (11874) pca9685: No NVS config for servo found, using defaults
+I (11884) pca9685: PCA9685 initialized (prescale=121, ~50Hz)
+I (11884) unified_cam: PCF8574 initialized â€” all pins set to INPUT (0xFF)
+I (11904) FT6336U: Resetting touch controller
+W (12064) FT6336U: Touch chip-id 0x00 not recognised on attempt 1 — retrying
+W (12264) FT6336U: Touch chip-id 0x00 not recognised on attempt 2 — retrying
+W (12464) FT6336U: Touch chip-id 0x00 not recognised on attempt 3 — retrying
+W (12494) camera_init: Frame wait timeout, retrying... (5/10)
+W (12664) FT6336U: Touch chip-id check failed but I2C address ACKs (ping attempt 1) — enabling touch in fallback mode
+I (12664) display_clk: Init ST7796S 480x320 - Interactive UI Layout
+I (12734) display_clk: SPI2 OK 40MHz
+I (12734) display_clk: Display SPI ready
+I (13214) display_clk: Display controller initialized
+I (13214) display_clk: Display initialized
+I (13214) unified_cam: SD card init disabled
+W (13494) camera_init: Frame wait timeout, retrying... (6/10)
+W (13714) unified_cam: I2C watchdog skipped — TCA9548A absent at boot (would crash on probe)
+I (13934) display_clk: Clock task started
+[LIVENESS] canary armed (TWDT auto-reboot if stuck)
+I (13934) unified_cam: app_main: init complete, entering keepalive loop
+W (14494) camera_init: Frame wait timeout, retrying... (7/10)
+W (15494) camera_init: Frame wait timeout, retrying... (8/10)
+I (15714) �              

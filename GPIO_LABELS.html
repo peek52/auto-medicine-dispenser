@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>GPIO Labels — Smart Pill Dispenser</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', 'Tahoma', sans-serif;
+    background: #fff; color: #000; padding: 14px;
+    font-size: 12px;
+  }
+  h1 {
+    font-size: 18px; margin-bottom: 4px;
+    text-align: center;
+  }
+  .meta {
+    text-align: center; font-size: 11px; color: #555;
+    margin-bottom: 14px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px 16px;
+    margin-bottom: 14px;
+  }
+  .group {
+    border: 2px solid #000;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .group h2 {
+    background: #000; color: #fff;
+    padding: 4px 10px;
+    font-size: 13px;
+    letter-spacing: .04em;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #ccc;
+    vertical-align: middle;
+  }
+  td:first-child {
+    font-family: 'Consolas', monospace; font-weight: 700;
+    background: #f0f0f0;
+    width: 70px; text-align: center;
+    border-right: 1px solid #ccc;
+  }
+  tr:last-child td { border-bottom: 0; }
+  .labels-section {
+    border-top: 3px solid #000;
+    padding-top: 12px;
+    margin-top: 4px;
+  }
+  .labels-section h2 {
+    font-size: 14px; margin-bottom: 8px;
+    text-align: center;
+  }
+  .labels-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+  }
+  .label {
+    border: 1.5px solid #000;
+    border-radius: 4px;
+    padding: 8px 4px;
+    text-align: center;
+    background: #fff;
+    page-break-inside: avoid;
+  }
+  .label .pin {
+    font-family: 'Consolas', monospace;
+    font-size: 11px; font-weight: 700;
+    color: #555;
+    line-height: 1;
+  }
+  .label .name {
+    font-family: 'Consolas', monospace;
+    font-size: 13px; font-weight: 700;
+    color: #000;
+    line-height: 1.1;
+    margin-top: 3px;
+    word-break: break-word;
+  }
+  .footer {
+    text-align: center; font-size: 10px; color: #888;
+    margin-top: 14px;
+  }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+
+<h1>📌 GPIO Labels — Smart Pill Dispenser (ESP32-P4-Nano)</h1>
+<div class="meta">รายชื่อขาทั้งหมด · พิมพ์ A4 · ตัด-ติดที่บอร์ดได้</div>
+
+<div class="grid">
+
+  <!-- I2C BUS -->
+  <div class="group">
+    <h2>🚌 I²C Bus 0 (shared)</h2>
+    <table>
+      <tr><td>GPIO 7</td><td>SDA — ทุก I²C peripheral</td></tr>
+      <tr><td>GPIO 8</td><td>SCL — ทุก I²C peripheral</td></tr>
+    </table>
+  </div>
+
+  <!-- TOUCH -->
+  <div class="group">
+    <h2>👆 Touch FT6336U</h2>
+    <table>
+      <tr><td>GPIO 21</td><td>CTP_RST — Touch reset (active-low)</td></tr>
+      <tr><td>I²C 0x38</td><td>SDA/SCL via GPIO 7/8</td></tr>
+    </table>
+  </div>
+
+  <!-- VL53 XSHUT -->
+  <div class="group">
+    <h2>📏 VL53L0X x6 — XSHUT Pins</h2>
+    <table>
+      <tr><td>GPIO 20</td><td>XSHUT M1 (TCA ch0 → 0x71)</td></tr>
+      <tr><td>GPIO 22</td><td>XSHUT M2 (TCA ch1 → 0x72)</td></tr>
+      <tr><td>GPIO 23</td><td>XSHUT M3 (TCA ch2 → 0x73)</td></tr>
+      <tr><td>GPIO 47</td><td>XSHUT M4 (TCA ch3 → 0x74)</td></tr>
+      <tr><td>GPIO 48</td><td>XSHUT M5 (TCA ch4 → 0x75)</td></tr>
+      <tr><td>GPIO 53</td><td>XSHUT M6 (TCA ch5 → 0x76)</td></tr>
+    </table>
+  </div>
+
+  <!-- TFT DISPLAY -->
+  <div class="group">
+    <h2>📺 TFT Display ST7796S (SPI 2)</h2>
+    <table>
+      <tr><td>GPIO 32</td><td>MOSI — SPI data out</td></tr>
+      <tr><td>GPIO 36</td><td>SCK — SPI clock</td></tr>
+      <tr><td>GPIO 26</td><td>CS — chip select</td></tr>
+      <tr><td>GPIO 24</td><td>DC — data/command</td></tr>
+      <tr><td>GPIO 25</td><td>RST — reset</td></tr>
+    </table>
+  </div>
+
+  <!-- CAMERA -->
+  <div class="group">
+    <h2>📷 Camera OV5647 (MIPI-CSI)</h2>
+    <table>
+      <tr><td>GPIO 33</td><td>XCLK — 24 MHz clock to sensor</td></tr>
+      <tr><td>MIPI-CSI</td><td>D0±, D1±, CLK± (built-in)</td></tr>
+      <tr><td>I²C 0x36</td><td>SCCB via GPIO 7/8 (shared)</td></tr>
+      <tr><td>LDO ch3</td><td>AVDD 2.8V (internal)</td></tr>
+    </table>
+  </div>
+
+  <!-- AUDIO -->
+  <div class="group">
+    <h2>🔊 Audio DY-HV20T (UART 1)</h2>
+    <table>
+      <tr><td>GPIO 37</td><td>TX → Audio module RX</td></tr>
+      <tr><td>GPIO 38</td><td>RX ← Audio module TX (ไม่ใช้)</td></tr>
+    </table>
+  </div>
+
+  <!-- WIFI SDIO -->
+  <div class="group">
+    <h2>📡 WiFi (esp_hosted SDIO)</h2>
+    <table>
+      <tr><td>GPIO 18</td><td>SDIO CLK</td></tr>
+      <tr><td>GPIO 19</td><td>SDIO CMD</td></tr>
+      <tr><td>GPIO 14</td><td>SDIO D0</td></tr>
+      <tr><td>GPIO 15</td><td>SDIO D1</td></tr>
+      <tr><td>GPIO 16</td><td>SDIO D2</td></tr>
+      <tr><td>GPIO 17</td><td>SDIO D3</td></tr>
+      <tr><td>GPIO 54</td><td>Slave reset</td></tr>
+    </table>
+  </div>
+
+  <!-- SD CARD (DISABLED) -->
+  <div class="group">
+    <h2>💾 SD Card (ปิดใช้)</h2>
+    <table>
+      <tr><td>GPIO 39</td><td>SD D0 (ว่าง)</td></tr>
+      <tr><td>GPIO 40</td><td>SD D1 (ว่าง)</td></tr>
+      <tr><td>GPIO 41</td><td>SD D2 (ว่าง)</td></tr>
+      <tr><td>GPIO 42</td><td>SD D3 (ว่าง)</td></tr>
+      <tr><td>GPIO 43</td><td>SD CLK (ว่าง)</td></tr>
+      <tr><td>GPIO 44</td><td>SD CMD (ว่าง)</td></tr>
+      <tr><td>GPIO 45</td><td>SD POWER (ว่าง)</td></tr>
+    </table>
+  </div>
+
+</div>
+
+<!-- ========== STICKER LABELS — ตัดตามรอย แล้วแปะที่ขาบอร์ด ========== -->
+<div class="labels-section">
+  <h2>✂️ ป้ายเล็ก ตัดติดขา (3.0 × 1.5 cm)</h2>
+  <div class="labels-grid">
+
+    <div class="label"><div class="pin">GPIO 7</div><div class="name">SDA</div></div>
+    <div class="label"><div class="pin">GPIO 8</div><div class="name">SCL</div></div>
+
+    <div class="label"><div class="pin">GPIO 20</div><div class="name">XSHUT M1</div></div>
+    <div class="label"><div class="pin">GPIO 21</div><div class="name">TOUCH RST</div></div>
+    <div class="label"><div class="pin">GPIO 22</div><div class="name">XSHUT M2</div></div>
+    <div class="label"><div class="pin">GPIO 23</div><div class="name">XSHUT M3</div></div>
+    <div class="label"><div class="pin">GPIO 24</div><div class="name">TFT DC</div></div>
+    <div class="label"><div class="pin">GPIO 25</div><div class="name">TFT RST</div></div>
+
+    <div class="label"><div class="pin">GPIO 26</div><div class="name">TFT CS</div></div>
+    <div class="label"><div class="pin">GPIO 32</div><div class="name">TFT MOSI</div></div>
+    <div class="label"><div class="pin">GPIO 33</div><div class="name">CAM XCLK</div></div>
+    <div class="label"><div class="pin">GPIO 36</div><div class="name">TFT SCK</div></div>
+    <div class="label"><div class="pin">GPIO 37</div><div class="name">AUDIO TX</div></div>
+    <div class="label"><div class="pin">GPIO 38</div><div class="name">AUDIO RX</div></div>
+    <div class="label"><div class="pin">GPIO 47</div><div class="name">XSHUT M4</div></div>
+    <div class="label"><div class="pin">GPIO 48</div><div class="name">XSHUT M5</div></div>
+
+    <div class="label"><div class="pin">GPIO 53</div><div class="name">XSHUT M6</div></div>
+
+    <div class="label"><div class="pin">3V3</div><div class="name">POWER</div></div>
+    <div class="label"><div class="pin">GND</div><div class="name">GROUND</div></div>
+    <div class="label"><div class="pin">5V</div><div class="name">SERVO PWR</div></div>
+
+  </div>
+</div>
+
+<!-- I2C ADDRESS REFERENCE -->
+<div class="labels-section">
+  <h2>📋 I²C Address Map (อ้างอิง)</h2>
+  <table style="width:100%;border:1px solid #000">
+    <tr style="background:#000;color:#fff">
+      <td style="background:#000;color:#fff;text-align:center"><b>Addr</b></td>
+      <td style="color:#fff;background:#000"><b>Device</b></td>
+      <td style="background:#000;color:#fff;text-align:center"><b>Addr</b></td>
+      <td style="color:#fff;background:#000"><b>Device</b></td>
+    </tr>
+    <tr><td>0x20</td><td>PCF8574 (IR sensor)</td><td>0x40</td><td>PCA9685 (Servo PWM)</td></tr>
+    <tr><td>0x36</td><td>OV5647 (Camera SCCB)</td><td>0x68</td><td>DS3231 (RTC)</td></tr>
+    <tr><td>0x38</td><td>FT6336U (Touch)</td><td>0x70</td><td>TCA9548A (I²C mux)</td></tr>
+    <tr><td>0x71-76</td><td>VL53L0X x6 (via TCA ch0-5)</td><td>SCCB</td><td>OV5647 ผ่าน I²C bus</td></tr>
+  </table>
+</div>
+
+<div class="footer">
+  Smart Pill Dispenser · ESP32-P4-Nano · GPIO Reference Sheet · 2026
+</div>
+
+</body>
+</html>

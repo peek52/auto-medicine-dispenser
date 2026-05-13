@@ -7,6 +7,7 @@
 #include "wifi_sta.h"
 #include "ui_standby_thai_labels.h"
 #include "ui_utf8_text.h"
+#include "pill_sensor_status.h"
 #include "esp_log.h"
 #include <string.h>
 #include <stdio.h>
@@ -313,7 +314,12 @@ static int standby_slot_assigned_med_count(int slot_idx, bool include_empty_stoc
     int count = 0;
     for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
         if (!((sh->med[i].slots >> slot_idx) & 0x01)) continue;
-        if (!include_empty_stock && sh->med[i].count <= 0) continue;
+        if (!include_empty_stock) {
+            const pill_sensor_status_t *ps = pill_sensor_status_get(i);
+            int stock = (ps && ps->valid && ps->pill_count >= 0)
+                            ? ps->pill_count : sh->med[i].count;
+            if (stock <= 0) continue;
+        }
         ++count;
     }
     return count;
@@ -367,10 +373,10 @@ static void standby_build_slot_status(int slot_idx, int now_minutes, ui_language
 
     if (slot_minutes < now_minutes) {
         if (dispenser_get_missed_slots() & (1 << slot_idx)) {
-            safe_copy(buf, buf_len, (lang == UI_LANG_TH) ? "พลาดการทาน" : "Missed");
+            safe_copy(buf, buf_len, (lang == UI_LANG_TH) ? "พลาดมื้อ" : "Missed");
             if (color) *color = THEME_BAD;
         } else {
-            safe_copy(buf, buf_len, (lang == UI_LANG_TH) ? "ผ่านเวลา" : "Passed");
+            safe_copy(buf, buf_len, (lang == UI_LANG_TH) ? "เลยเวลาแล้ว" : "Passed");
             if (color) *color = THEME_TXT_MUTED;
         }
     } else if (slot_minutes == now_minutes) {
@@ -392,9 +398,14 @@ static int standby_build_slot_detail_lines(int slot_idx, char lines[][96], int m
     for (int i = 0; i < DISPENSER_MED_COUNT && line_count < max_lines; ++i) {
         if (!((sh->med[i].slots >> slot_idx) & 0x01)) continue;
 
-        const char *name = sh->med[i].name[0] ? sh->med[i].name : ((lang == UI_LANG_TH) ? "ไม่ได้ตั้งชื่อยา" : "Unnamed med");
-        if (sh->med[i].count > 0) {
-            snprintf(lines[line_count], 96, "%d. %s", line_count + 1, name);
+        const char *name = sh->med[i].name[0] ? sh->med[i].name : ((lang == UI_LANG_TH) ? "ยังไม่ได้ตั้งชื่อ" : "Unnamed med");
+        /* Prefer VL53-derived count when the sensor reading is valid;
+         * fall back to dispenser-tracked count otherwise. */
+        const pill_sensor_status_t *ps = pill_sensor_status_get(i);
+        int stock = (ps && ps->valid && ps->pill_count >= 0)
+                        ? ps->pill_count : sh->med[i].count;
+        if (stock > 0) {
+            snprintf(lines[line_count], 96, "%d. %s (%d)", line_count + 1, name, stock);
         } else {
             snprintf(lines[line_count], 96, "%d. %s %s", line_count + 1, name,
                      (lang == UI_LANG_TH) ? "(หมด)" : "(Out)");
@@ -804,7 +815,7 @@ static void draw_standby_page(bool force, const char *hhmm, const char *ss, cons
                 // scaled UTF-8 renderer at the same size used elsewhere
                 // for prominent Thai status text.
                 draw_utf8_centered_line_scaled(content_center_x, DOSE_Y + 28,
-                                               "ยังไม่มีตารางยาถัดไป",
+                                               "ไม่มีการจ่ายยาต่อไป",
                                                ST_DOSE_MUTED, ST_DOSE_CARD, 28);
             } else {
                 draw_string_centered(content_center_x, DOSE_Y + 52, "No upcoming schedule", ST_DOSE_MUTED, ST_DOSE_CARD, &FreeSans12pt7b);
@@ -849,8 +860,8 @@ static void draw_standby_page(bool force, const char *hhmm, const char *ss, cons
     } else if (ap_mode) {
         safe_copy(ip_line, sizeof(ip_line), "AP: 192.168.4.1");
     } else {
-        safe_copy(wifi_name, sizeof(wifi_name), (g_ui_language == UI_LANG_TH) ? "ยังไม่เชื่อม Wi-Fi" : "Wi-Fi not connected");
-        safe_copy(web_url, sizeof(web_url), (g_ui_language == UI_LANG_TH) ? "แตะเพื่อดูการเชื่อมต่อ" : "Tap to view network");
+        safe_copy(wifi_name, sizeof(wifi_name), (g_ui_language == UI_LANG_TH) ? "ยังไม่ได้เชื่อม Wi-Fi" : "Wi-Fi not connected");
+        safe_copy(web_url, sizeof(web_url), (g_ui_language == UI_LANG_TH) ? "แตะเพื่อตั้งค่า Wi-Fi" : "Tap to configure Wi-Fi");
     }
 
     if (ip_line[0] == '\0') {
@@ -1202,14 +1213,14 @@ static void ui_standby_render_modal(uint32_t now)
 
         if (g_ui_language == UI_LANG_TH) {
             (void)0; // ESP_LOGI("popup4", "TH render start");
-            draw_utf8_centered_line_scaled(LCD_W / 2, 42, s_show_only_missed ? "มื้อที่พลาดไป" : "ตารางยาวันนี้", 0xFFFF, THEME_PANEL, 26);
+            draw_utf8_centered_line_scaled(LCD_W / 2, 42, s_show_only_missed ? "มื้อที่พลาด" : "ตารางยาวันนี้", 0xFFFF, THEME_PANEL, 26);
             (void)0; // ESP_LOGI("popup4", "TH title done");
             
             char toggle_str[64];
             if (s_show_only_missed) {
                 snprintf(toggle_str, sizeof(toggle_str), "ดูทั้งหมด");
             } else {
-                snprintf(toggle_str, sizeof(toggle_str), "พลาดไป %d มื้อ", missed_count);
+                snprintf(toggle_str, sizeof(toggle_str), "มื้อที่พลาด %d มื้อ", missed_count);
             }
             uint16_t btn_color = s_show_only_missed ? THEME_TXT_MUTED : ((missed_count > 0) ? THEME_BAD : ST_RGB565(34, 197, 94));
             draw_schedule_text_line(kSchedulePopupX + 16, 46, 100, toggle_str, btn_color, THEME_PANEL, 16);
@@ -1236,7 +1247,7 @@ static void ui_standby_render_modal(uint32_t now)
 
         if (s_schedule_visible_count == 0) {
             if (g_ui_language == UI_LANG_TH) {
-                draw_utf8_centered_line_scaled(LCD_W / 2, 140, s_show_only_missed ? "ไม่มีมื้อที่พลาด" : "วันนี้ยังไม่มีรายการจ่ายยา", THEME_TXT_MUTED, THEME_PANEL, 22);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 140, s_show_only_missed ? "ไม่มีมื้อที่พลาด" : "วันนี้ไม่มีการจ่ายยา", THEME_TXT_MUTED, THEME_PANEL, 22);
             } else {
                 draw_string_centered(240, 164, s_show_only_missed ? "No missed doses today" : "No dispensing schedule for today", THEME_TXT_MUTED, THEME_PANEL, &FreeSans12pt7b);
             }
@@ -1408,18 +1419,16 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
         return;
     }
 
-    /* Foot card (network status / IP) tap zone — covers the entire card
-     * so a tap anywhere on the network area opens the WiFi status page.
-     * The previous tx_n<150 zone missed the right half of the IP text
-     * (e.g. "IP: 192.168.1.68" extends to ~x=248), so a finger landing
-     * on the digits silently fell through to the menu page instead of
-     * opening WiFi status. The schedule tap zone above ends at y<=256
-     * and the foot card starts at y=258, so widening to y>=256 doesn't
-     * collide. */
+    /* Foot card (network status / IP) tap zone — covers the bottom
+     * card so a tap on the WiFi/IP area opens the WiFi status page. */
     if (tx_n >= 16 && tx_n <= 320 && ty_n >= 256) {
         if (strcmp(s_ip, "0.0.0.0") != 0) pending_page = PAGE_WIFI_STATUS;
         else pending_page = PAGE_WIFI_SCAN;
-    } else if (tx_n >= 16 && tx_n <= (LCD_W - 16) && ty_n >= 174 && ty_n <= 256) {
+        return;
+    }
+
+    /* Dose card (middle): tap opens "today's schedule" popup. */
+    if (tx_n >= 16 && tx_n <= (LCD_W - 16) && ty_n >= 174 && ty_n <= 256) {
         if (g_ui_language == UI_LANG_TH) {
             dfplayer_play_track(89);
         } else {
@@ -1429,10 +1438,20 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
         s_today_schedule_popup_drawn = false;
         s_popup_state = 4;
         force_redraw = true;
-    } else {
+        return;
+    }
+
+    /* Time / date card (top): tap opens the main menu. The ft6336u
+     * driver already filters phantom touches via 8 s boot-mute,
+     * 4-sample press debounce, coord-stability check, and tap-spam
+     * guard, so spurious presses landing here are rare in practice. */
+    if (tx_n >= 16 && tx_n <= (LCD_W - 16) && ty_n >= 16 && ty_n <= 164) {
         dfplayer_play_track(9);
         pending_page = PAGE_MENU;
+        return;
     }
+
+    /* Anywhere else (tiny gaps between cards): do nothing. */
 }
 
 void ui_standby_handle_touch(uint16_t tx_n, uint16_t ty_n)

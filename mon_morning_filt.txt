@@ -1,0 +1,9 @@
+I (26) boot: compile time May 10 2026 16:29:07
+I (68) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (1631) app_init: Compile time:     May 10 2026 16:28:32
+I (1689) heap_init: At 5010808C len 00007F74 (31 KiB): RTCRAM
+I (1814) H_API: ** add_esp_wifi_remote_channels **
+W (1904) unified_cam: Boot #1, reset reason: POWERON (1)
+W (2024) unified_cam: I2C scan end. Camera should be 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+W (3024) camera_init: I2C scan end. Camera should be at 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38
+I (14064) unified_cam: app_main: init complete, entering keepalive loop

@@ -40,18 +40,31 @@
 #define SB_COLOR_OK        THEME_OK
 #define SB_COLOR_OFF       THEME_INACTIVE
 
-#define KB_COLOR_BG ST_RGB565(18, 28, 42)
-#define KB_KEY     ST_RGB565(58, 86, 128)
-#define KB_KEY_BD  ST_RGB565(98, 142, 196)
-#define KB_TXT     0xFFFF
-#define KB_SYM     ST_RGB565(198, 210, 224)
-#define KB_SPACE   ST_RGB565(70, 96, 138)
-#define KB_ENT     ST_RGB565(34, 166, 133)
-#define KB_DEL     ST_RGB565(214, 90, 110)
-#define KB_SHIFT   ST_RGB565(224, 146, 74)
-#define KB_NUMPAD  ST_RGB565(72, 86, 108)
-#define KB_HDR     ST_RGB565(12, 20, 32)
-#define KB_HDR_TXT 0xFFFF
+/* iOS-style keyboard palette (light theme):
+ *   bg     — light grey backdrop          #d1d5db
+ *   key    — clean white letter face      #ffffff
+ *   txt    — near-black main letter       #1c1c1e
+ *   sym    — secondary hint label         #6b7280
+ *   space  — same white as letter         #ffffff
+ *   ctrl   — slightly darker grey (shift/123/TH) #adb5bd
+ *   shadow — subtle border under key      #b0b3b8
+ *   ent    — iOS-system blue (return/SAVE) #007aff
+ *   del    — iOS-system red (cancel/BS)   #ff3b30
+ *   shift  — iOS-system orange (toggle)   #ff9500
+ *   hdr    — same as bg (seamless)        #d1d5db
+ *   hdr_txt — near-black                  #1c1c1e */
+#define KB_COLOR_BG ST_RGB565(209, 213, 219)
+#define KB_KEY     0xFFFF
+#define KB_KEY_BD  ST_RGB565(176, 179, 184)
+#define KB_TXT     ST_RGB565( 28,  28,  30)
+#define KB_SYM     ST_RGB565(107, 114, 128)
+#define KB_SPACE   0xFFFF
+#define KB_ENT     ST_RGB565(  0, 122, 255)
+#define KB_DEL     ST_RGB565(255,  59,  48)
+#define KB_SHIFT   ST_RGB565(255, 149,   0)
+#define KB_NUMPAD  ST_RGB565(173, 181, 189)
+#define KB_HDR     ST_RGB565(209, 213, 219)
+#define KB_HDR_TXT ST_RGB565( 28,  28,  30)
 
 #define COLOR_BG          THEME_BG
 #define COLOR_CARD        THEME_PANEL
@@ -135,6 +148,19 @@ void ui_setup_meds_handle_touch(uint16_t tx_n, uint16_t ty_n);
 
 void ui_setup_meds_detail_render(void);
 void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* Called by the page-transition watcher when the user leaves the
+ * meds-detail page through a path other than Save/Back (e.g. a
+ * scheduled-dispense Confirm popup interrupts editing). Releases the
+ * NETPIE publish inhibit and commits any pending diff. No-op if no
+ * edit session is active. */
+void ui_setup_meds_end_edit_session_if_any(void);
+#ifdef __cplusplus
+}
+#endif
 
 #define MAX_SCANNED_UI_APS 15
 #include "esp_wifi_types.h"

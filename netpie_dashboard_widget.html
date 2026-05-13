@@ -494,6 +494,47 @@
       .mod-controls { flex-direction: column; align-items: stretch; gap: 12px; }
       .mod-badge { align-self: flex-start; }
     }
+
+    /* ===== VL53 fill-level row (level-only, no numeric mm) ===== */
+    .sensor-row {
+      display: flex; flex-direction: column;
+      gap: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      background: var(--surface-alt);
+      border: 1px solid var(--line-2);
+      border-radius: 12px;
+    }
+    .sensor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .sensor-label { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--muted); }
+    .sensor-chip {
+      font-size: 11.5px; font-weight: 700;
+      padding: 4px 11px;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      white-space: nowrap;
+    }
+    .sensor-chip.full   { background:#dcfce7; border-color:#bbf7d0; color:#15803d; }
+    .sensor-chip.ok     { background:#dcfce7; border-color:#bbf7d0; color:#16a34a; }
+    .sensor-chip.mid    { background:#fef3c7; border-color:#fde68a; color:#a16207; }
+    .sensor-chip.low    { background:#ffedd5; border-color:#fed7aa; color:#c2410c; }
+    .sensor-chip.empty  { background:#fee2e2; border-color:#fecaca; color:#b91c1c; }
+    .sensor-chip.na     { color: var(--muted-2); }
+
+    .fill-bar { display: flex; gap: 3px; height: 14px; }
+    .fill-seg {
+      flex: 1;
+      background: var(--line);
+      border-radius: 3px;
+      transition: background .25s var(--ease);
+    }
+    .fill-seg.on.full  { background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%); }
+    .fill-seg.on.ok    { background: linear-gradient(180deg, #4ade80 0%, #22c55e 100%); }
+    .fill-seg.on.mid   { background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%); }
+    .fill-seg.on.low   { background: linear-gradient(180deg, #fb923c 0%, #ea580c 100%); }
+    .fill-seg.on.empty { background: linear-gradient(180deg, #f87171 0%, #dc2626 100%); }
   </style>
 </head>
 
@@ -759,6 +800,21 @@
     window._sh.med6_count = "${#["esp32cam_dispenser"]["shadow"]["med6_count"]}";
     window._sh.med6_slots = "${#["esp32cam_dispenser"]["shadow"]["med6_slots"]}";
   </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med1_dist  = "${#["esp32cam_dispenser"]["shadow"]["med1_dist"]}";
+    window._sh.med2_dist  = "${#["esp32cam_dispenser"]["shadow"]["med2_dist"]}";
+    window._sh.med3_dist  = "${#["esp32cam_dispenser"]["shadow"]["med3_dist"]}";
+    window._sh.med4_dist  = "${#["esp32cam_dispenser"]["shadow"]["med4_dist"]}";
+    window._sh.med5_dist  = "${#["esp32cam_dispenser"]["shadow"]["med5_dist"]}";
+    window._sh.med6_dist  = "${#["esp32cam_dispenser"]["shadow"]["med6_dist"]}";
+    window._sh.med1_pills = "${#["esp32cam_dispenser"]["shadow"]["med1_pills"]}";
+    window._sh.med2_pills = "${#["esp32cam_dispenser"]["shadow"]["med2_pills"]}";
+    window._sh.med3_pills = "${#["esp32cam_dispenser"]["shadow"]["med3_pills"]}";
+    window._sh.med4_pills = "${#["esp32cam_dispenser"]["shadow"]["med4_pills"]}";
+    window._sh.med5_pills = "${#["esp32cam_dispenser"]["shadow"]["med5_pills"]}";
+    window._sh.med6_pills = "${#["esp32cam_dispenser"]["shadow"]["med6_pills"]}";
+  </script>
 
   <!-- ============================================================ -->
   <!-- SCRIPT 2: Main logic                                         -->
@@ -769,8 +825,18 @@
     var SLOT_LABELS = ["เช้า-ก่อน","เช้า-หลัง","เที่ยง-ก่อน","เที่ยง-หลัง","เย็น-ก่อน","เย็น-หลัง","ก่อนนอน"];
     var MAX_PILLS = 16;
 
+    /* --- VL53 → ระดับยา (ไม่แสดงตัวเลข mm) ---
+       หลอดทึบแสง: ยาว 260 mm, ตลับสูง 15 mm, เต็ม 15 ตลับ
+       แปลงระยะ → จำนวนตลับ: pills = round((TUBE_LEN - d) / PILL_H)
+       หลังจากนั้นแบ่งเป็น 5 ระดับสำหรับการแสดงผลภาพรวม */
+    var TUBE_LENGTH_MM   = 260;  // ระยะอ้างอิงเมื่อหลอดว่าง
+    var PILL_HEIGHT_MM   = 15;   // ความสูงต่อ 1 ตลับ
+    var FULL_DIST_MM     = 38;   // ≤ 38 mm → เต็ม 15 ตลับ
+    var EMPTY_DIST_MM    = 248;  // ≥ 248 mm → ยาหมด
+    var MAX_PILLS_IN_TUBE = 15;
+
     var modules = [];
-    for (var i = 0; i < 6; i++) modules.push({ id: i+1, name: "", count: 0, slots: 0 });
+    for (var i = 0; i < 6; i++) modules.push({ id: i+1, name: "", count: 0, slots: 0, dist: null, pills: null });
 
     function safeStr(v){ if(v===undefined||v===null||v==="undefined"||v==="null"||v==="")return ""; return String(v); }
     function safeInt(v){ var n=parseInt(v,10); return isNaN(n)?0:n; }
@@ -815,7 +881,47 @@
         modules[i].name  = safeStr(sh["med"+idx+"_name"]);
         modules[i].count = clamp(sh["med"+idx+"_count"], 0, MAX_PILLS);
         modules[i].slots = normalizeSlotsMask(sh["med"+idx+"_slots"]);
+        modules[i].dist  = parseNum(sh["med"+idx+"_dist"]);
+        modules[i].pills = parseNum(sh["med"+idx+"_pills"]);
       }
+    }
+
+    function parseNum(v){
+      var s = safeStr(v);
+      if (s === "" || s === "null") return null;
+      var n = parseInt(s, 10);
+      if (isNaN(n) || n < 0) return null;
+      return n;
+    }
+
+    /* แปลงระยะ (mm) → จำนวนตลับยาประมาณ (0..15) */
+    function distToPills(d){
+      if (d === null || d === undefined) return null;
+      if (d <= FULL_DIST_MM)  return MAX_PILLS_IN_TUBE;
+      if (d >= EMPTY_DIST_MM) return 0;
+      var p = Math.round((TUBE_LENGTH_MM - d) / PILL_HEIGHT_MM);
+      if (p < 0) p = 0;
+      if (p > MAX_PILLS_IN_TUBE) p = MAX_PILLS_IN_TUBE;
+      return p;
+    }
+
+    /* แบ่งระดับเป็น 5 ขั้น (ไม่แสดงตัวเลข mm/ตลับ) */
+    function pillsToLevel(p){
+      if (p === null || p === undefined) return { label: "ไม่พบเซ็นเซอร์", cls: "na",    fillCount: 0 };
+      if (p === 0)                       return { label: "ยาหมด",          cls: "empty", fillCount: 0 };
+      if (p <= 3)                        return { label: "ใกล้หมด",        cls: "low",   fillCount: p };
+      if (p <= 7)                        return { label: "เหลือน้อย",      cls: "mid",   fillCount: p };
+      if (p <= 11)                       return { label: "เหลือพอใช้",      cls: "ok",    fillCount: p };
+      return                                    { label: "เต็มหลอด",        cls: "full",  fillCount: p };
+    }
+
+    function buildFillBar(segCls, fillCount){
+      var s = '<div class="fill-bar">';
+      for (var i = 0; i < MAX_PILLS_IN_TUBE; i++) {
+        s += '<div class="fill-seg' + (i < fillCount ? ' on ' + segCls : '') + '"></div>';
+      }
+      s += '</div>';
+      return s;
     }
 
     function renderModules(){
@@ -833,6 +939,18 @@
         html += '      <span class="mod-sub">ชื่อยา · จำนวน · เวลา</span>';
         html += '    </div>';
         html += '    <span id="slot-badge-'+m.id+'" class="'+badgeCls+'">'+sl+'</span>';
+        html += '  </div>';
+
+        /* prefer firmware-computed pill count (NETPIE shadow medN_pills);
+           fall back to JS distance→pills only if firmware hasn't published yet */
+        var pills = (m.pills !== null) ? m.pills : distToPills(m.dist);
+        var lvl   = pillsToLevel(pills);
+        html += '  <div class="sensor-row">';
+        html += '    <div class="sensor-head">';
+        html += '      <span class="sensor-label">💊 ปริมาณยาในหลอด</span>';
+        html += '      <span id="lvl-'+m.id+'" class="sensor-chip '+lvl.cls+'">'+lvl.label+'</span>';
+        html += '    </div>';
+        html += '    <div id="bar-'+m.id+'">'+buildFillBar(lvl.cls, lvl.fillCount)+'</div>';
         html += '  </div>';
 
         html += '  <div class="mod-name-wrap">';

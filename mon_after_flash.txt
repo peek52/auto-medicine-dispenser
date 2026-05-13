@@ -1,0 +1,103 @@
+﻿ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0x10 (CHIP_LP_WDT_RESET),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x18e4
+load:0x4ff2abd0,len:0xd74
+load:0x4ff2cbd0,len:0x322c
+entry 0x4ff2abda
+[0;32mI (26) boot: ESP-IDF v5.3.2-dirty 2nd stage bootloader[0m
+[0;32mI (27) boot: compile time May  6 2026 23:05:10[0m
+[0;32mI (27) boot: Multicore bootloader[0m
+[0;32mI (31) boot: chip revision: v1.3[0m
+[0;32mI (34) boot: efuse block revision: v0.3[0m
+[0;32mI (38) boot.esp32p4: SPI Speed      : 80MHz[0m
+[0;32mI (43) boot.esp32p4: SPI Mode       : DIO[0m
+[0;32mI (48) boot.esp32p4: SPI Flash Size : 16MB[0m
+[0;33mW (53) boot.esp32p4: CPU has been reset by WDT.[0m
+[0;32mI (58) boot: Enabling RNG early entropy source...[0m
+[0;32mI (63) boot: Partition Table:[0m
+[0;32mI (67) boot: ## Label            Usage          Type ST Offset   Length[0m
+[0;32mI (74) boot:  0 nvs              WiFi data        01 02 00009000 00006000[0m
+[0;32mI (82) boot:  1 phy_init         RF data          01 01 0000f000 00001000[0m
+[0;32mI (89) boot:  2 factory          factory app      00 00 00010000 00300000[0m
+[0;32mI (97) boot:  3 coredump         Unknown data     01 03 00310000 00010000[0m
+[0;32mI (105) boot: End of partition table[0m
+[0;32mI (108) esp_image: segment 0: paddr=00010020 vaddr=400e0020 size=ce040h (843840) map[0m
+[0;32mI (258) esp_image: segment 1: paddr=000de068 vaddr=30100000 size=0005ch (    92) load[0m
+[0;32mI (260) esp_image: segment 2: paddr=000de0cc vaddr=4ff00000 size=01f4ch (  8012) load[0m
+[0;32mI (267) esp_image: segment 3: paddr=000e0020 vaddr=40000020 size=d5a14h (875028) map[0m
+[0;32mI (419) esp_image: segment 4: paddr=001b5a3c vaddr=4ff01f4c size=139c8h ( 80328) load[0m
+[0;32mI (436) esp_image: segment 5: paddr=001c940c vaddr=4ff15980 size=02c40h ( 11328) load[0m
+[0;32mI (444) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (444) boot: Disabling RNG early entropy source...[0m
+[0;32mI (457) hex_psram: vendor id    : 0x0d (AP)[0m
+[0;32mI (457) hex_psram: Latency      : 0x01 (Fixed)[0m
+[0;32mI (458) hex_psram: DriveStr.    : 0x00 (25 Ohm)[0m
+[0;32mI (461) hex_psram: dev id       : 0x03 (generation 4)[0m
+[0;32mI (467) hex_psram: density      : 0x07 (256 Mbit)[0m
+[0;32mI (472) hex_psram: good-die     : 0x06 (Pass)[0m
+[0;32mI (477) hex_psram: SRF          : 0x02 (Slow Refresh)[0m
+[0;32mI (483) hex_psram: BurstType    : 0x00 ( Wrap)[0m
+[0;32mI (488) hex_psram: BurstLen     : 0x03 (2048 Byte)[0m
+[0;32mI (493) hex_psram: BitMode      : 0x01 (X16 Mode)[0m
+[0;32mI (499) hex_psram: Readlatency  : 0x04 (14 cycles@Fixed)[0m
+[0;32mI (505) hex_psram: DriveStrength: 0x00 (1/1)[0m
+[0;32mI (510) MSPI DQS: tuning success, best phase id is 2[0m
+[0;32mI (688) MSPI DQS: tuning success, best delayline id is 11[0m
+[0;32mI (688) esp_psram: Found 32MB PSRAM device[0m
+[0;32mI (689) esp_psram: Speed: 200MHz[0m
+[0;32mI (692) hex_psram: psram CS IO is dedicated[0m
+[0;32mI (696) cpu_start: Multicore app[0m
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0x10 (CHIP_LP_WDT_RESET),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x18e4
+load:0x4ff2abd0,len:0xd74
+load:0x4ff2cbd0,len:0x322c
+entry 0x4ff2abda
+[0;32mI (26) boot: ESP-IDF v5.3.2-dirty 2nd stage bootloader[0m
+[0;32mI (27) boot: compile time May  6 2026 23:05:10[0m
+[0;32mI (27) boot: Multicore bootloader[0m
+[0;32mI (31) boot: chip revision: v1.3[0m
+[0;32mI (34) boot: efuse block revision: v0.3[0m
+[0;32mI (38) boot.esp32p4: SPI Speed      : 80MHz[0m
+[0;32mI (43) boot.esp32p4: SPI Mode       : DIO[0m
+[0;32mI (48) boot.esp32p4: SPI Flash Size : 16MB[0m
+[0;33mW (53) boot.esp32p4: CPU has been reset by WDT.[0m
+[0;32mI (58) boot: Enabling RNG early entropy source...[0m
+[0;32mI (63) boot: Partition Table:[0m
+[0;32mI (67) boot: ## Label            Usage          Type ST Offset   Length[0m
+[0;32mI (74) boot:  0 nvs              WiFi data        01 02 00009000 00006000[0m
+[0;32mI (82) boot:  1 phy_init         RF data          01 01 0000f000 00001000[0m
+[0;32mI (89) boot:  2 factory          factory app      00 00 00010000 00300000[0m
+[0;32mI (97) boot:  3 coredump         Unknown data     01 03 00310000 00010000[0m
+[0;32mI (105) boot: End of partition table[0m
+[0;32mI (108) esp_image: segment 0: paddr=00010020 vaddr=400e0020 size=ce040h (843840) map[0m
+[0;32mI (258) esp_image: segment 1: paddr=000de068 vaddr=30100000 size=0005ch (    92) load[0m
+[0;32mI (260) esp_image: segment 2: paddr=000de0cc vaddr=4ff00000 size=01f4ch (  8012) load[0m
+[0;32mI (267) esp_image: segment 3: paddr=000e0020 vaddr=40000020 size=d5a14h (875028) map[0m
+[0;32mI (419) esp_image: segment 4: paddr=001b5a3c vaddr=4ff01f4c size=139c8h ( 80328) load[0m
+[0;32mI (436) esp_image: segment 5: paddr=001c940c vaddr=4ff15980 size=02c40h ( 11328) load[0m
+[0;32mI (444) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (444) boot: Disabling RNG early entropy source...[0m
+[0;32mI (457) hex_psram: vendor id    : 0x0d (AP)[0m
+[0;32mI (457) hex_psram: Latency      : 0x01 (Fixed)[0m
+[0;32mI (458) hex_psram: DriveStr.    : 0x00 (25 Ohm)[0m
+[0;32mI (461) hex_psram: dev id       : 0x03 (generation 4)[0m
+[0;32mI (467) hex_psram: density      : 0x07 (256 Mbit)[0m
+[0;32mI (472) hex_psram: good-die     : 0x06 (Pass)[0m
+[0;32mI (477) hex_psram: SRF          : 0x02 (Slow Refresh)[0m
+[0;32mI (483) hex_psram: BurstType    : 0x00 ( Wrap)[0m
+[0;32mI (488) hex_psram: BurstLen     : 0x03 (2048 Byte)[0m
+[0;32mI (493) hex_psram: BitMode      : 0x01 (X16 Mode)[0m
+[0;32mI (499) hex_psram: Readlatency  : 0x04 (14 cycles@Fixed)[0m
+[0;32mI (505) hex_psram: DriveStrength: 0x00 (1/1)[0m
+[0;32mI (510) MSPI DQS: tuning success, best phase id is 2[0m
+[0;32mI (688) MSPI DQS: tuning success, best delayline id is 11[0m
+[0;32mI (689) esp_psram: Found 32MB PSRAM device[0m
+[0;32mI (689) esp_psram: Speed: 200MHz[0m
+[0;32mI (692) hex_psram: psram CS IO is dedicated[0m
+[0;32mI (697) cpu_start: Multicore app[0m
+

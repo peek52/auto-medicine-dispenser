@@ -8,6 +8,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -377,22 +378,31 @@ static const char TECH_PAGE[] =
 "  catch(err){st.textContent='ขัดข้อง';st.style.color='#ff8a80';}});"
 "loadQuiet();"
 
-/* Monitor panel (native — replaces the old /sensors iframe) */
+/* Monitor panel (native — replaces the old /sensors iframe).
+   Big-number display logic:
+   - valid + in pill-count range → show filtered_mm (smoothed)
+   - have a raw read (>=0) but invalid (0 = too close, >2000 = no target,
+     between firmware bound checks) → still show the raw value as "ดิบ NNNmm"
+     so the user can verify the sensor is alive
+   - raw_mm < 0 → real read failure, show "-- mm" */
 "async function monRender(){if(!tabActive('monitor'))return;"
 "  let chans=[];try{const r=await fetch('/sensors.json',{cache:'no-store'});if(r.ok){const j=await r.json();chans=j.channels||[];}}catch(e){return;}"
 "  const g=document.getElementById('mon-grid');let h='';"
 "  for(const s of chans){"
 "    const max=s.max_pills||1;const pct=s.valid&&s.pill_count>=0?Math.min(100,Math.round(s.pill_count/max*100)):0;"
+"    const hasRaw=(typeof s.raw_mm==='number')&&s.raw_mm>=0;"
 "    let state,clr;if(!s.present){state='ไม่พบเซ็นเซอร์';clr='#ff8a80';}"
-"      else if(!s.valid){state='ไม่มีข้อมูล';clr='#ffd166';}"
-"      else if(s.is_empty){state='ว่าง';clr='#ff8a80';}"
-"      else if(pct<25){state='ใกล้หมด';clr='#ffd166';}"
-"      else{state='พร้อม';clr='#9ae8d0';}"
+"      else if(s.valid){if(s.is_empty){state='ว่าง';clr='#ff8a80';}else if(pct<25){state='ใกล้หมด';clr='#ffd166';}else{state='พร้อม';clr='#9ae8d0';}}"
+"      else if(hasRaw){state='อ่านดิบ';clr='#dbe9ff';}"
+"      else{state='ไม่มีข้อมูล';clr='#ffd166';}"
+"    let big;if(s.valid){big=s.filtered_mm+' <small style=\"font-size:14px;color:#a7bdd7\">mm</small>';}"
+"      else if(hasRaw){big='<span style=\"color:#a7bdd7\">'+s.raw_mm+' <small style=\"font-size:14px\">mm (ดิบ)</small></span>';}"
+"      else{big='-- mm';}"
 "    h+=\"<div class='card'><div class='card-hdr' style='display:flex;justify-content:space-between;align-items:center'><b>ช่อง \"+(s.idx)+\"</b><span style='color:\"+clr+\";font-size:12px;font-weight:700'>\"+state+\"</span></div>\""
-"     +\"<div style='font-size:28px;font-weight:800;margin-top:6px'>\"+(s.valid?s.filtered_mm+' <small style=\\\"font-size:14px;color:#a7bdd7\\\">mm</small>':'-- mm')+\"</div>\""
+"     +\"<div style='font-size:28px;font-weight:800;margin-top:6px'>\"+big+\"</div>\""
 "     +\"<div style='height:6px;background:#1a2a44;border-radius:3px;margin-top:8px;overflow:hidden'><div style='height:100%;width:\"+pct+\"%;background:\"+clr+\"'></div></div>\""
 "     +\"<div style='font-size:13px;color:#a7bdd7;margin-top:6px'>\"+(s.pill_count>=0?s.pill_count:'-')+\" / \"+(s.max_pills||0)+\" เม็ด</div>\""
-"     +\"<div style='font-size:11px;color:#5a6b80;margin-top:4px'>raw=\"+(s.raw_mm||'-')+\"mm &middot; full=\"+(s.full_dist_mm||'-')+\"mm\"+\"</div>\""
+"     +\"<div style='font-size:11px;color:#5a6b80;margin-top:4px'>raw=\"+(hasRaw?s.raw_mm:'-')+\"mm &middot; filtered=\"+(s.valid?s.filtered_mm:'-')+\"mm &middot; full=\"+(s.full_dist_mm||'-')+\"mm</div>\""
 "     +\"</div>\";}"
 "  g.innerHTML=h;}"
 "setInterval(monRender,2000);"
@@ -639,6 +649,53 @@ static void reboot_task(void *arg)
     vTaskDelay(pdMS_TO_TICKS(500));
     ESP_LOGW(TAG, "Reboot requested from /tech dashboard");
     esp_restart();
+}
+
+static void factory_reset_task(void *arg)
+{
+    vTaskDelay(pdMS_TO_TICKS(1000));   /* let HTTP response flush */
+    ESP_LOGW(TAG, "FACTORY RESET — erasing NVS + rebooting");
+    nvs_flash_erase();
+    vTaskDelay(pdMS_TO_TICKS(200));
+    esp_restart();
+}
+
+/* POST /api/factory-reset?confirm=YES
+ *
+ * Wipes the NVS partition (clears WiFi creds, schedules, stock counts,
+ * VL53 calibration cache, sound settings, etc.) and reboots into a
+ * fresh factory state. Requires confirm=YES query param to prevent
+ * accidental wipes from typo'd URLs or browser prefetch. */
+esp_err_t factory_reset_handler(httpd_req_t *req)
+{
+    esp_err_t auth = web_require_tech_api_auth(req);
+    if (auth != ESP_OK) return auth;
+
+    char qbuf[64] = "";
+    size_t qlen = httpd_req_get_url_query_len(req);
+    bool confirmed = false;
+    if (qlen > 0 && qlen < sizeof(qbuf)) {
+        if (httpd_req_get_url_query_str(req, qbuf, sizeof(qbuf)) == ESP_OK) {
+            char val[16] = "";
+            if (httpd_query_key_value(qbuf, "confirm", val, sizeof(val)) == ESP_OK) {
+                if (strcmp(val, "YES") == 0) confirmed = true;
+            }
+        }
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    if (!confirmed) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req,
+            "{\"ok\":false,\"msg\":\"missing confirm=YES query param\"}");
+        ESP_LOGW(TAG, "Factory reset DENIED — missing confirm=YES");
+        return ESP_OK;
+    }
+    httpd_resp_sendstr(req,
+        "{\"ok\":true,\"msg\":\"NVS wiped — rebooting in 1s\"}");
+    xTaskCreate(factory_reset_task, "fact_rst", 3072, NULL, 5, NULL);
+    return ESP_OK;
 }
 
 esp_err_t tech_reboot_handler(httpd_req_t *req)

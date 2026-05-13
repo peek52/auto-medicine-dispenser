@@ -9,6 +9,18 @@ extern "C" {
 
 #define PILL_SENSOR_COUNT 6
 
+/* High-level fill state derived from VL53 distance. User explicitly
+ * requested in 2026-05-11 that the sensor stop converting distance to
+ * a pill count number — just bucket into 4 fill levels. Distance
+ * thresholds (mm) for an empty tube approaches ~255 mm; full ~30 mm. */
+typedef enum {
+    PILL_FILL_UNKNOWN = 0,  /* sensor missing or read failed */
+    PILL_FILL_EMPTY,        /* dist > 230 mm  — no pills */
+    PILL_FILL_LOW,          /* dist 150..230  — มียา (few left) */
+    PILL_FILL_MEDIUM,       /* dist 60..150   — ปานกลาง */
+    PILL_FILL_FULL,         /* dist < 60      — เต็มหลอด */
+} pill_fill_state_t;
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  pill_sensor_status_t — สถานะและค่าที่อ่านได้จาก VL53L0X แต่ละตลับ
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,7 +30,8 @@ typedef struct {
     bool    valid;            // ค่าที่อ่านได้ valid ไหม
     int     raw_mm;           // ระยะดิบจาก sensor (mm)
     int     filtered_mm;      // ระยะหลัง EMA filter (mm)
-    int     pill_count;       // จำนวนยาที่เหลือ (คำนวณจากระยะ)
+    int     pill_count;       // (legacy — kept for internal recalc; not user-facing)
+    pill_fill_state_t fill;   // High-level fill state (preferred for UI/NETPIE)
     bool    is_empty;         // ยาหมด (ระยะ >= empty threshold)
     bool    is_full;          // ยาเต็ม (ระยะ <= full threshold + 1 pill)
     // Per-channel config (adjustable via web)
@@ -32,6 +45,10 @@ typedef struct {
 void pill_sensor_status_init_defaults(void);
 void pill_sensor_status_mark_present(int idx, bool present);
 void pill_sensor_status_set_reading(int idx, int raw_mm, int filtered_mm, bool valid);
+/* Mark current cached value invalid but preserve the last raw_mm reading
+ * so the diagnostic display can still show "what we saw last" while the
+ * sensor is in a transient fail state. */
+void pill_sensor_status_invalidate(int idx);
 void pill_sensor_status_set_config(int idx, int full_dist_mm, int pill_height_mm, int max_pills);
 void pill_sensor_status_set_offset(int idx, int count_offset);
 const pill_sensor_status_t *pill_sensor_status_get_all(void);

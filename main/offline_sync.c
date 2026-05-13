@@ -8,6 +8,7 @@
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -21,11 +22,20 @@ static const char *TAG = "offline_sync";
 static const TickType_t OFFLINE_RETRY_INTERVAL = pdMS_TO_TICKS(5000);
 
 #define OFFLINE_SYNC_NAMESPACE "offline_q"
-#define OFFLINE_MAX_SHADOW_ITEMS 24
-#define OFFLINE_MAX_EVENT_ITEMS  24
+// Both queues must fit in a single NVS blob (~4 KB max each). Previous
+// sizes (24 items × 1025 bytes = 24 600 bytes for the event queue)
+// busted the limit and made every save fail with NVS_VALUE_TOO_LONG —
+// the offline queue effectively wasn't persistent across reboots even
+// though the in-RAM ring was working. Shrunk for tonight; per-key
+// storage in a future refactor will lift the cap cleanly.
+//
+//   shadow item =                            192 bytes × 20 = 3 840
+//   event  item = 1 + 384 + 128 + 128 = 641 bytes ×  6 = 3 846
+#define OFFLINE_MAX_SHADOW_ITEMS 20
+#define OFFLINE_MAX_EVENT_ITEMS   6
 #define OFFLINE_SHADOW_PAYLOAD_LEN 192
-#define OFFLINE_EVENT_TEXT_LEN   512
-#define OFFLINE_EVENT_FIELD_LEN  256
+#define OFFLINE_EVENT_TEXT_LEN   384
+#define OFFLINE_EVENT_FIELD_LEN  128
 
 typedef struct {
     char payload[OFFLINE_SHADOW_PAYLOAD_LEN];
@@ -185,6 +195,9 @@ static bool offline_sync_sanitize_event_queue_locked(void)
     return changed;
 }
 
+// Caller MUST hold offline_sync_lock(). All set_blob+set_u32 calls
+// stage on the same handle and commit atomically — partial commits
+// would corrupt the queue (e.g., shadow_n=5 but shadow_q only holds 3).
 static void offline_sync_save_queues_locked(void)
 {
     nvs_handle_t h;
@@ -193,10 +206,14 @@ static void offline_sync_save_queues_locked(void)
         return;
     }
 
-    (void)nvs_set_blob(h, "shadow_q", s_shadow_queue, sizeof(s_shadow_queue));
-    (void)nvs_set_u32(h, "shadow_n", (uint32_t)s_shadow_count);
-    (void)nvs_set_blob(h, "event_q", s_event_queue, sizeof(s_event_queue));
-    (void)nvs_set_u32(h, "event_n", (uint32_t)s_event_count);
+    esp_err_t e1 = nvs_set_blob(h, "shadow_q", s_shadow_queue, sizeof(s_shadow_queue));
+    esp_err_t e2 = nvs_set_u32(h, "shadow_n", (uint32_t)s_shadow_count);
+    esp_err_t e3 = nvs_set_blob(h, "event_q", s_event_queue, sizeof(s_event_queue));
+    esp_err_t e4 = nvs_set_u32(h, "event_n", (uint32_t)s_event_count);
+    if (e1 != ESP_OK || e2 != ESP_OK || e3 != ESP_OK || e4 != ESP_OK) {
+        ESP_LOGW(TAG, "Offline queue NVS set failed (e1=%d e2=%d e3=%d e4=%d)",
+                 e1, e2, e3, e4);
+    }
     if (nvs_commit(h) != ESP_OK) {
         ESP_LOGW(TAG, "Failed to commit offline queues to NVS");
     }
@@ -349,10 +366,29 @@ static bool send_telegram_text_sync(const char *msg)
     return (err == ESP_OK && status == 200);
 }
 
+// Set true once the GSheet endpoint has returned a hard-config error
+// (405 Method Not Allowed = deployment likely deleted/redeployed without
+// POST permission, 404 = URL changed). After that we stop hammering the
+// server every 5 s — events stay queued in NVS so a future reboot with
+// a fixed endpoint URL still replays them. Reset on successful send.
+static bool s_gsheet_endpoint_dead = false;
+static int64_t s_gsheet_dead_log_us = 0;
+
 static bool send_google_sheets_sync(const char *event, const char *meds, const char *detail)
 {
     const char *gs_url = cloud_secrets_get_google_script_url();
     if (!gs_url || !gs_url[0]) return false;
+
+    if (s_gsheet_endpoint_dead) {
+        // Log a single reminder every 10 min instead of flooding every 5 s.
+        int64_t now = esp_timer_get_time();
+        if (now - s_gsheet_dead_log_us > 600LL * 1000000LL) {
+            s_gsheet_dead_log_us = now;
+            ESP_LOGW(TAG, "GSheet endpoint marked dead this session — "
+                          "fix the Apps Script deployment URL + reboot to replay queued events");
+        }
+        return false;
+    }
 
     esp_http_client_config_t config = {
         .url = gs_url,
@@ -396,7 +432,25 @@ static bool send_google_sheets_sync(const char *event, const char *meds, const c
     if (err == ESP_OK && gsheet_status_ok(status)) {
         ESP_LOGI(TAG, "GSheet send accepted. Status=%d", status);
         gsheet_mark_recent(event, meds, detail);
+        // Endpoint is alive — clear any prior dead flag so future
+        // retries resume normally.
+        s_gsheet_endpoint_dead = false;
         return true;
+    }
+
+    // 404/405 = endpoint mis-configured (URL gone, deployment doesn't
+    // accept POST). No amount of retrying will fix this; mark the
+    // endpoint dead so we stop spamming the log + network.
+    if (err == ESP_OK && (status == 404 || status == 405)) {
+        if (!s_gsheet_endpoint_dead) {
+            ESP_LOGE(TAG, "GSheet endpoint returned %d — marking dead for this session. "
+                          "Verify the Apps Script URL + re-deploy as Web App accepting POST, "
+                          "then reboot to flush %u queued events.",
+                     status, (unsigned)s_event_count);
+            s_gsheet_endpoint_dead = true;
+            s_gsheet_dead_log_us = esp_timer_get_time();
+        }
+        return false;
     }
 
     ESP_LOGW(TAG, "GSheet send still pending. Status=%d err=%s", status, esp_err_to_name(err));
@@ -486,11 +540,21 @@ static void offline_flush_task(void *arg)
                     progressed = true;
                     vTaskDelay(pdMS_TO_TICKS(150));
                 } else {
-                    ESP_LOGW(TAG, "Pending event sync paused: endpoint not ready (type=%u)",
-                             (unsigned)event_item.type);
+                    static int64_t s_event_paused_log_us = 0;
+                    int64_t now = esp_timer_get_time();
+                    if (now - s_event_paused_log_us > 60LL * 1000000LL) {
+                        s_event_paused_log_us = now;
+                        ESP_LOGW(TAG, "Pending event sync paused: endpoint not ready (type=%u)",
+                                 (unsigned)event_item.type);
+                    }
                 }
             } else {
-                ESP_LOGW(TAG, "Pending event sync paused: Wi-Fi not ready");
+                static int64_t s_wifi_paused_log_us = 0;
+                int64_t now = esp_timer_get_time();
+                if (now - s_wifi_paused_log_us > 60LL * 1000000LL) {
+                    s_wifi_paused_log_us = now;
+                    ESP_LOGW(TAG, "Pending event sync paused: Wi-Fi not ready");
+                }
             }
         }
 
@@ -509,11 +573,20 @@ static void offline_flush_task(void *arg)
 static void offline_watch_task(void *arg)
 {
     (void)arg;
+    int64_t last_log_us = 0;
     while (1) {
         vTaskDelay(OFFLINE_RETRY_INTERVAL);
         if (!offline_sync_has_pending_work()) continue;
         if (wifi_sta_connected() || netpie_is_connected()) {
-            ESP_LOGI(TAG, "Background retry: pending offline work detected");
+            // Rate-limit the "pending offline work" reminder to once
+            // per minute so a stuck endpoint doesn't spam the log
+            // every 5 s. Flush still runs every cycle — the rate-limit
+            // is only on the log line.
+            int64_t now = esp_timer_get_time();
+            if (now - last_log_us > 60LL * 1000000LL) {
+                last_log_us = now;
+                ESP_LOGI(TAG, "Background retry: pending offline work detected");
+            }
             offline_sync_flush_async();
         }
     }

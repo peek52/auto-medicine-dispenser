@@ -1,0 +1,6 @@
+=== STATS 23:57 -> 02:23 (2.5h) ===
+total bytes: 38769
+reboots: 2
+PANICs: 2
+All boots: [('3', 'PANIC'), ('4', 'PANIC')]
+init complete events: 2

@@ -1,0 +1,125 @@
+[0;32mI (250) esp_image: segment 1: paddr=000dc448 vaddr=30100000 size=0005ch (    92) load[0m
+[0;32mI (252) esp_image: segment 2: paddr=000dc4ac vaddr=4ff00000 size=03b6ch ( 15212) load[0m
+[0;32mI (260) esp_image: segment 3: paddr=000e0020 vaddr=40000020 size=d2fe8h (864232) map[0m
+[0;32mI (409) esp_image: segment 4: paddr=001b3010 vaddr=4ff03b6c size=11c18h ( 72728) load[0m
+[0;32mI (425) esp_image: segment 5: paddr=001c4c30 vaddr=4ff15800 size=02b40h ( 11072) load[0m
+[0;32mI (433) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (433) boot: Disabling RNG early entropy source...[0m
+[0;32mI (446) hex_psram: vendor id    : 0x0d (AP)[0m
+[0;32mI (446) hex_psram: Latency      : 0x01 (Fixed)[0m
+[0;32mI (447) hex_psram: DriveStr.    : 0x00 (25 Ohm)[0m
+[0;32mI (450) hex_psram: dev id       : 0x03 (generation 4)[0m
+[0;32mI (456) hex_psram: density      : 0x07 (256 Mbit)[0m
+[0;32mI (461) hex_psram: good-die     : 0x06 (Pass)[0m
+[0;32mI (466) hex_psram: SRF          : 0x02 (Slow Refresh)[0m
+[0;32mI (472) hex_psram: BurstType    : 0x00 ( Wrap)[0m
+[0;32mI (477) hex_psram: BurstLen     : 0x03 (2048 Byte)[0m
+[0;32mI (482) hex_psram: BitMode      : 0x01 (X16 Mode)[0m
+[0;32mI (488) hex_psram: Readlatency  : 0x04 (14 cycles@Fixed)[0m
+[0;32mI (494) hex_psram: DriveStrength: 0x00 (1/1)[0m
+[0;32mI (499) MSPI DQS: tuning success, best phase id is 2[0m
+[0;32mI (677) MSPI DQS: tuning success, best delayline id is 11[0m
+[0;32mI (677) esp_psram: Found 32MB PSRAM device[0m
+[0;32mI (678) esp_psram: Speed: 200MHz[0m
+[0;32mI (681) hex_psram: psram CS IO is dedicated[0m
+[0;32mI (685) cpu_start: Multicore app[0m
+[0;32mI (1595) esp_psram: SPI SRAM memory test OK[0m
+[0;33mW (1603) clk: esp_perip_clk_init() has not been implemented yet[0m
+[0;32mI (1610) cpu_start: Pro cpu start user code[0m
+[0;32mI (1610) cpu_start: cpu freq: 360000000 Hz[0m
+[0;32mI (1611) app_init: Application information:[0m
+[0;32mI (1613) app_init: Project name:     unified_cam[0m
+[0;32mI (1619) app_init: App version:      system-stable-2026-05-04-2-g826[0m
+[0;32mI (1626) app_init: Compile time:     May  6 2026 16:59:03[0m
+[0;32mI (1632) app_init: ELF file SHA256:  aac5f18f2...[0m
+[0;32mI (1637) app_init: ESP-IDF:          v5.3.2-dirty[0m
+[0;32mI (1643) efuse_init: Min chip rev:     v0.1[0m
+[0;32mI (1648) efuse_init: Max chip rev:     v1.99 [0m
+[0;32mI (1653) efuse_init: Chip rev:         v1.3[0m
+[0;32mI (1658) heap_init: Initializing. RAM available for dynamic allocation:[0m
+[0;32mI (1665) heap_init: At 4FF2A910 len 000106B0 (65 KiB): RAM[0m
+[0;32mI (1671) heap_init: At 4FF3AFC0 len 00004BF0 (18 KiB): RAM[0m
+[0;32mI (1677) heap_init: At 4FF4C680 len 00053980 (334 KiB): RAM[0m
+[0;32mI (1683) heap_init: At 5010808C len 00007F74 (31 KiB): RTCRAM[0m
+[0;32mI (1690) heap_init: At 3010005C len 00001FA4 (7 KiB): TCM[0m
+[0;32mI (1696) esp_psram: Adding pool of 32768K of PSRAM memory to heap allocator[0m
+[0;32mI (1704) spi_flash: detected chip: generic[0m
+[0;32mI (1708) spi_flash: flash io: dio[0m
+[0;32mI (1712) host_init: ESP Hosted : Host chip_ip[18][0m
+[0;32mI (1746) H_API: ESP-Hosted starting. Hosted_Tasks: prio:23, stack: 5120 RPC_task_stack: 5120[0m
+sdio_mempool_create free:33648916 min-free:33648916 lfb-def:33030144 lfb-8bit:33030144
+
+[0;32mI (1752) gpio: GPIO[18]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1761) gpio: GPIO[19]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1771) gpio: GPIO[14]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1780) gpio: GPIO[15]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1789) gpio: GPIO[16]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1799) gpio: GPIO[17]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (1808) H_API: ** add_esp_wifi_remote_channels **[0m
+[0;32mI (1814) transport: Add ESP-Hosted channel IF[1]: S[0] Tx[0x4000e8b8] Rx[0x4001bba2][0m
+[0;32mI (1822) transport: Add ESP-Hosted channel IF[2]: S[0] Tx[0x4000e7fe] Rx[0x4001bba2][0m
+[0;32mI (1831) main_task: Started on CPU0[0m
+[0;32mI (1841) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations[0m
+[0;32mI (1841) main_task: Calling app_main()[0m
+[0;32mI (1851) unified_cam: Starting Unified Cam & Modules (ESP32-P4 Nano)[0m
+[0;33mW (1851) unified_cam: Boot #1, reset reason: POWERON (1)[0m
+[0;32mI (1881) cloud_secrets: Cloud secrets loaded from NVS (telegram=set, sheets=set)[0m
+[0;32mI (1891) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1891) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1911) gpio: GPIO[7]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1911) gpio: GPIO[8]| InputEn: 0| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1921) gpio: GPIO[7]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1921) gpio: GPIO[8]| InputEn: 1| OutputEn: 1| OpenDrain: 1| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (1931) i2c_mgr: I2C_NUM_0 ready — SDA=7 SCL=8 @ 50000 Hz[0m
+[0;32mI (1941) unified_cam: Skipping bus scan (per-device pings only)[0m
+[0;33mW (1951) unified_cam: I2C scan begin (full bus)...[0m
+[0;33mW (1971) unified_cam: I2C ACK: 0x36 0x40 0x56 0x68 0x70 [0m
+[0;33mW (1971) unified_cam: I2C scan end. Camera should be 0x36; TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38[0m
+[0;32mI (3971) gpio: GPIO[21]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4141) unified_cam: FT6336U responded on initial ping[0m
+[0;32mI (4141) tca9548a: TCA9548A init OK at 0x70[0m
+[0;32mI (4141) pca9685: Servo configuration loaded from NVS[0m
+[0;32mI (4141) pca9685: PCA9685 initialized (prescale=121, ~50Hz)[0m
+[0;32mI (4151) unified_cam: PCF8574 initialized â€” all pins set to INPUT (0xFF)[0m
+[0;32mI (4151) gpio: GPIO[21]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 [0m
+[0;32mI (4161) FT6336U: Resetting touch controller[0m
+[0;33mW (4321) FT6336U: Touch chip-id 0x00 not recognised on attempt 1 — retrying[0m
+[0;33mW (4521) FT6336U: Touch chip-id 0x00 not recognised on attempt 2 — retrying[0m
+[0;33mW (4721) FT6336U: Touch chip-id 0x00 not recognised on attempt 3 — retrying[0m
+[0;33mW (4921) FT6336U: Touch chip-id check failed but I2C address ACKs (ping attempt 1) — enabling touch in fallback mode[0m
+[0;32mI (4921) vl53_multi: Bootstrapping VL53L0X sensors via TCA9548A[0m
+[0;32mI (4921) gpio: GPIO[20]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (4931) gpio: GPIO[22]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (4941) gpio: GPIO[23]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (4951) gpio: GPIO[47]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (4961) gpio: GPIO[48]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (4971) gpio: GPIO[53]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (6271) vl53_multi: Ch0: ready, first=0 mm[0m
+[0;32mI (7131) vl53_multi: Ch1: ready, first=0 mm[0m
+[0;32mI (7911) vl53_multi: Ch2: ready, first=0 mm[0m
+[0;32mI (9331) vl53_multi: Ch3: ready, first=0 mm[0m
+[0;33mW (9771) vl53_multi: Ch4 init fail: set_timing_budget[0m
+[0;33mW (9771) vl53_multi: Ch4: init_device failed on attempt 1[0m
+[0;32mI (9771) vl53_multi: Ch4: hard-reset retry 2/3 via XSHUT[0m
+[0;33mW (10201) vl53_multi: Ch4 init fail: SPAD info[0m
+[0;33mW (10201) vl53_multi: Ch4: init_device failed on attempt 2[0m
+[0;32mI (10201) vl53_multi: Ch4: hard-reset retry 3/3 via XSHUT[0m
+[0;33mW (10961) vl53_multi: Ch4 init fail: ref_cal 0x40[0m
+[0;33mW (10961) vl53_multi: Ch4: init_device failed on attempt 3[0m
+[0;33mW (10961) vl53_multi: Ch4: init failed after 3 attempts[0m
+[0;32mI (11721) vl53_multi: Ch5: ready, first=0 mm[0m
+[0;32mI (11771) vl53_multi: Starting VL53L0X poll task[0m
+[0;32mI (11771) display_clk: Init ST7796S 480x320 - Interactive UI Layout[0m
+[0;32mI (11771) gpio: GPIO[24]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11781) gpio: GPIO[25]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11841) gpio: GPIO[26]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 [0m
+[0;32mI (11841) display_clk: SPI2 OK 40MHz[0m
+[0;32mI (11841) display_clk: Display SPI ready[0m
+[0;32mI (12311) display_clk: Display controller initialized[0m
+[0;32mI (12311) display_clk: Display initialized[0m
+[0;32mI (12311) unified_cam: SD card init disabled[0m
+[0;32mI (13051) display_clk: Clock task started[0m
+[0;32mI (13051) unified_cam: app_main: init complete, entering keepalive loop[0m
+[LIVENESS] canary armed (TWDT auto-reboot if stuck)
+[0;32mI (14811)               
+--- total bytes: 9388 ---

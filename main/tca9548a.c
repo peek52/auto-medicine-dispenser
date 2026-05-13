@@ -57,6 +57,12 @@ esp_err_t tca9548a_disable_all(void)
     return i2c_manager_write(ADDR_TCA9548A, &val, 1);
 }
 
+esp_err_t tca9548a_disable_all_locked(void)
+{
+    uint8_t val = 0x00;
+    return i2c_manager_write_locked(ADDR_TCA9548A, &val, 1);
+}
+
 bool tca9548a_is_present(void)
 {
     return (i2c_manager_ping(ADDR_TCA9548A) == ESP_OK);

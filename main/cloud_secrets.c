@@ -121,8 +121,13 @@ const char *cloud_secrets_get_telegram_chat_id(void)
 
 const char *cloud_secrets_get_google_script_url(void)
 {
-    cloud_secrets_init();
-    return s_google_script_url;
+    /* Google Sheets integration removed 2026-05-12 — always return an
+     * empty string so any leftover callers (offline_sync replay queue,
+     * old user NVS data) short-circuit and don't make doomed HTTP
+     * requests. The NVS slot still exists for migration of past data
+     * but is intentionally not exposed anymore. */
+    (void)s_google_script_url;
+    return "";
 }
 
 bool cloud_secrets_has_telegram(void)
@@ -133,8 +138,8 @@ bool cloud_secrets_has_telegram(void)
 
 bool cloud_secrets_has_google_script(void)
 {
-    cloud_secrets_init();
-    return s_google_script_url[0] != '\0';
+    /* Always false — see cloud_secrets_get_google_script_url() above. */
+    return false;
 }
 
 bool cloud_secrets_store(const char *tg_token, const char *tg_chat_id, const char *gs_url)

@@ -1,0 +1,344 @@
+#include "jpeg_encoder.h"
+#include "driver/jpeg_encode.h"
+#include "esp_cache.h"
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include <string.h>
+
+static const char *TAG = "jpeg_enc";
+
+static jpeg_encoder_handle_t s_jpeg_handle = NULL;
+static int s_width = 0;
+static int s_height = 0;
+
+#define JPEG_BUFS 3
+static uint8_t *s_jpeg_buf[JPEG_BUFS] = {NULL, NULL, NULL};
+static size_t s_jpeg_buf_size = 0;
+static size_t s_jpeg_len[JPEG_BUFS] = {0, 0, 0};
+static volatile int s_write_idx = 0;
+static volatile int s_read_idx = -1;
+static volatile int s_active_read_idx = -1;
+// Default tuned for "smooth stream" over the ESP-Hosted SDIO link. At
+// quality > ~50 the link runs out of headroom and frames tear (visible
+// as a horizontal split in the rendered image). The Tech dashboard's
+// slider caps user input at 60 for the same reason.
+static int s_jpeg_quality = 30;
+
+static SemaphoreHandle_t s_swap_mutex = NULL;
+static SemaphoreHandle_t s_frame_ready = NULL;
+static SemaphoreHandle_t s_read_mutex = NULL;
+
+/* Rotation buffer — holds the 90° CCW-rotated YUV422 frame between camera
+ * capture and JPEG encode. Camera is mounted sideways on the dispenser, so
+ * every captured frame is landscape; after rotation it becomes the upright
+ * portrait the user sees in Telegram /photo and on /tech web stream.
+ * Allocated once in PSRAM at init (same size as one full frame). */
+static uint8_t *s_rot_buf = NULL;
+static size_t   s_rot_buf_size = 0;
+
+/* Rotate YUYV-packed YUV422 by 90° CCW.
+ *   dst(dx, dy)  =  src(sx = dy, sy = src_h - 1 - dx)
+ * Output dimensions are width=src_h, height=src_w (swapped).
+ * Chroma is subsampled by simply reusing the U/V from each source pair —
+ * acceptable because we run at 50% colour-bandwidth tolerance for snapshot
+ * use; visible artifacts are limited to fine high-contrast colour edges. */
+static void rotate_yuv422_90ccw(const uint8_t *src, uint8_t *dst,
+                                int src_w, int src_h)
+{
+    const int dst_w  = src_h;
+    const int dst_h  = src_w;
+    const int sstride = src_w * 2;
+    const int dstride = dst_w * 2;
+
+    for (int dy = 0; dy < dst_h; ++dy) {
+        const int sx = dy;          /* source x for this dst row */
+        for (int dx_pair = 0; dx_pair < dst_w; dx_pair += 2) {
+            const int sy0 = src_h - 1 - dx_pair;
+            const int sy1 = src_h - 2 - dx_pair;
+
+            const uint8_t y0 = src[sy0 * sstride + sx * 2];
+            const uint8_t y1 = src[sy1 * sstride + sx * 2];
+
+            /* Pull U/V from the YUYV pair containing the upper source pixel.
+             * (sx & ~1) gives the even x-coordinate that starts the pair. */
+            const int pair0 = sy0 * sstride + (sx & ~1) * 2;
+            const uint8_t u = src[pair0 + 1];
+            const uint8_t v = src[pair0 + 3];
+
+            uint8_t *p = dst + dy * dstride + dx_pair * 2;
+            p[0] = y0;
+            p[1] = u;
+            p[2] = y1;
+            p[3] = v;
+        }
+    }
+}
+
+static int clamp_jpeg_quality(int quality) {
+    if (quality < 20) return 20;
+    if (quality > 60) return 60;  // hard cap — see comment on s_jpeg_quality
+    return quality;
+}
+
+/* Tear down everything jpeg_enc_init() allocated. Safe to call when the
+ * module is fully torn down, fully up, or in any partial state — every
+ * resource is checked before release and pointers are nulled after. */
+static void jpeg_enc_deinit_internal(void) {
+    if (s_jpeg_handle) {
+        jpeg_del_encoder_engine(s_jpeg_handle);
+        s_jpeg_handle = NULL;
+    }
+    for (int i = 0; i < JPEG_BUFS; i++) {
+        if (s_jpeg_buf[i]) {
+            heap_caps_free(s_jpeg_buf[i]);
+            s_jpeg_buf[i] = NULL;
+        }
+        s_jpeg_len[i] = 0;
+    }
+    s_jpeg_buf_size = 0;
+    if (s_rot_buf) {
+        heap_caps_free(s_rot_buf);
+        s_rot_buf = NULL;
+    }
+    s_rot_buf_size = 0;
+    if (s_swap_mutex)  { vSemaphoreDelete(s_swap_mutex);  s_swap_mutex  = NULL; }
+    if (s_read_mutex)  { vSemaphoreDelete(s_read_mutex);  s_read_mutex  = NULL; }
+    if (s_frame_ready) { vSemaphoreDelete(s_frame_ready); s_frame_ready = NULL; }
+    s_write_idx = 0;
+    s_read_idx = -1;
+    s_active_read_idx = -1;
+}
+
+esp_err_t jpeg_enc_init(int width, int height) {
+    /* DIAG-LEAK: PSRAM free at entry — compare across recovery cycles to
+     * verify the leak fix. Remove once verified. */
+    ESP_LOGW(TAG, "DIAG-LEAK entry  PSRAM free=%u largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+
+    /* Truly idempotent: every resource the rest of this module relies on
+     * must still be valid. If anything is half-torn-down (e.g. recovery
+     * freed a buffer but never re-ran init at this resolution), drop
+     * through and rebuild. Earlier guard only checked s_jpeg_handle,
+     * which let stale-buffer / null-semaphore states slip past and crash
+     * encode_frame / get_frame later. */
+    if (s_jpeg_handle && s_width == width && s_height == height &&
+        s_jpeg_buf[0] && s_jpeg_buf[1] && s_jpeg_buf[2] && s_rot_buf &&
+        s_swap_mutex && s_read_mutex && s_frame_ready) {
+        ESP_LOGI(TAG, "JPEG encoder already initialised %dx%d — reuse",
+                 width, height);
+        return ESP_OK;
+    }
+
+    /* Anything else (different resolution, partial init, post-failure
+     * remnants) means we must release whatever's still around before
+     * re-allocating. Without this, every re-init at a new size leaked
+     * the engine handle + 3× output buffer + rotation buffer + 3
+     * semaphores. */
+    jpeg_enc_deinit_internal();
+
+    /* DIAG-LEAK: PSRAM free after deinit. Should bounce back close to
+     * the post-boot baseline; if it doesn't, deinit is missing a free. */
+    ESP_LOGW(TAG, "DIAG-LEAK deinit PSRAM free=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+
+    s_width = width;
+    s_height = height;
+
+    jpeg_encode_engine_cfg_t eng_cfg = {
+        .intr_priority = 0,
+        .timeout_ms = 3000,  // was 100 — too small, caused DMA2D assert crash
+    };
+    esp_err_t ret = jpeg_new_encoder_engine(&eng_cfg, &s_jpeg_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create JPEG encoder engine");
+        jpeg_enc_deinit_internal();
+        return ret;
+    }
+
+    s_jpeg_buf_size = (size_t)width * (size_t)height * 2;
+    jpeg_encode_memory_alloc_cfg_t mem_cfg = {
+        .buffer_direction = JPEG_ENC_ALLOC_OUTPUT_BUFFER,
+    };
+
+    for (int i = 0; i < JPEG_BUFS; i++) {
+        size_t allocated = 0;
+        s_jpeg_buf[i] = (uint8_t *)jpeg_alloc_encoder_mem(s_jpeg_buf_size, &mem_cfg, &allocated);
+        if (!s_jpeg_buf[i]) {
+            ESP_LOGE(TAG, "Failed to allocate JPEG output buffer %d", i);
+            jpeg_enc_deinit_internal();
+            return ESP_ERR_NO_MEM;
+        }
+        if (i == 0) s_jpeg_buf_size = allocated;
+    }
+
+    s_swap_mutex  = xSemaphoreCreateMutex();
+    s_read_mutex  = xSemaphoreCreateMutex();
+    s_frame_ready = xSemaphoreCreateBinary();
+    if (!s_swap_mutex || !s_read_mutex || !s_frame_ready) {
+        ESP_LOGE(TAG, "Failed to create JPEG sync primitives");
+        jpeg_enc_deinit_internal();
+        return ESP_ERR_NO_MEM;
+    }
+
+    /* Allocate rotation scratch buffer in PSRAM. Same size as one source
+     * frame — rotated 90° CCW the pixel count is identical, only the
+     * stride changes. Cache-line-aligned so the JPEG hardware DMA can
+     * read it directly after esp_cache_msync(). */
+    s_rot_buf_size = (size_t)width * (size_t)height * 2;
+    s_rot_buf = (uint8_t *)heap_caps_aligned_calloc(64, 1, s_rot_buf_size,
+                                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_rot_buf) {
+        ESP_LOGE(TAG, "Failed to allocate rotation buffer (%u bytes)",
+                 (unsigned)s_rot_buf_size);
+        jpeg_enc_deinit_internal();
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "JPEG HW encoder initialized: %dx%d, out_buf=%u bytes x2 + rot_buf=%u",
+             width, height, (unsigned)s_jpeg_buf_size, (unsigned)s_rot_buf_size);
+
+    /* DIAG-LEAK: PSRAM free at successful exit. Across N recovery
+     * cycles this number must not drift downward — if it does, there's
+     * still a leak somewhere (camera frame buffers, ISP, etc). */
+    ESP_LOGW(TAG, "DIAG-LEAK exit   PSRAM free=%u largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+    return ESP_OK;
+}
+
+esp_err_t jpeg_enc_encode_frame(const uint8_t *yuv422_data, size_t yuv422_len) {
+    if (!s_jpeg_handle || !yuv422_data) return ESP_ERR_INVALID_STATE;
+    /* Belt-and-braces: the sync primitives must exist before we touch the
+     * triple-buffer state. They should always be set when s_jpeg_handle
+     * is, but a partially torn-down state is possible if init failed
+     * mid-way and a caller raced ahead. */
+    if (!s_swap_mutex) return ESP_ERR_INVALID_STATE;
+
+    int widx = -1;
+    xSemaphoreTake(s_swap_mutex, portMAX_DELAY);
+    // Find a buffer that is NEITHER currently being transmitted NOR the newest ready frame
+    for (int i = 0; i < JPEG_BUFS; i++) {
+        int idx = (s_write_idx + i) % JPEG_BUFS;
+        if (idx != s_active_read_idx && idx != s_read_idx) {
+            widx = idx;
+            break;
+        }
+    }
+    // Fallback if somehow none are perfectly free (shouldn't happen with BUFS=3)
+    if (widx == -1) {
+        for (int i = 0; i < JPEG_BUFS; i++) {
+           int idx = (s_write_idx + i) % JPEG_BUFS;
+           if (idx != s_active_read_idx) { widx = idx; break; }
+        }
+    }
+    
+    if (widx != -1) {
+        s_write_idx = (widx + 1) % JPEG_BUFS;
+    }
+    xSemaphoreGive(s_swap_mutex);
+
+    if (widx == -1) {
+        // Should not happen if JPEG_BUFS >= 2, but just in case
+        return ESP_ERR_NO_MEM;
+    }
+
+    /* Rotate raw YUV422 90° CCW into scratch buffer, then encode the
+     * rotated buffer with swapped dimensions. Required because Telegram
+     * strips EXIF orientation tags during upload, so software pixel
+     * rotation is the only way to deliver an upright image. */
+    if (s_rot_buf && yuv422_len <= s_rot_buf_size) {
+        rotate_yuv422_90ccw(yuv422_data, s_rot_buf, s_width, s_height);
+        /* Flush rotation buffer from CPU cache so JPEG hardware DMA sees
+         * the rotated bytes (PSRAM-backed buffer). */
+        esp_cache_msync(s_rot_buf, s_rot_buf_size, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+    }
+
+    jpeg_encode_cfg_t enc_cfg = {
+        .width         = s_height,   /* swapped: rotated W = original H */
+        .height        = s_width,    /* swapped: rotated H = original W */
+        .src_type      = JPEG_ENCODE_IN_FORMAT_YUV422,
+        .sub_sample    = JPEG_DOWN_SAMPLING_YUV422,
+        .image_quality = s_jpeg_quality,
+    };
+
+    const uint8_t *src_for_encode = (s_rot_buf && yuv422_len <= s_rot_buf_size)
+                                       ? s_rot_buf : yuv422_data;
+
+    uint32_t out_size = 0;
+    esp_err_t ret = jpeg_encoder_process(s_jpeg_handle, &enc_cfg,
+                                         src_for_encode, yuv422_len,
+                                         s_jpeg_buf[widx], s_jpeg_buf_size, &out_size);
+    if (ret != ESP_OK) return ret;
+
+    s_jpeg_len[widx] = out_size;
+
+    xSemaphoreTake(s_swap_mutex, portMAX_DELAY);
+    s_read_idx  = widx;
+    s_write_idx = (widx + 1) % JPEG_BUFS;
+    xSemaphoreGive(s_swap_mutex);
+
+    xSemaphoreGive(s_frame_ready);
+    return ESP_OK;
+}
+
+esp_err_t jpeg_enc_get_frame(uint8_t **out_buf, size_t *out_len, uint32_t timeout_ms) {
+    /* Reject if init never ran or was torn down mid-flight. Without
+     * this guard xSemaphoreTake(NULL, ...) crashes the calling task. */
+    if (!s_frame_ready || !s_swap_mutex || !s_read_mutex) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (xSemaphoreTake(s_frame_ready, pdMS_TO_TICKS(timeout_ms)) != pdTRUE)
+        return ESP_ERR_TIMEOUT;
+
+    xSemaphoreTake(s_read_mutex, portMAX_DELAY);
+    xSemaphoreTake(s_swap_mutex, portMAX_DELAY);
+    int ridx = s_read_idx;
+    xSemaphoreGive(s_swap_mutex);
+
+    if (ridx < 0) {
+        xSemaphoreGive(s_read_mutex);
+        return ESP_ERR_NOT_FOUND;
+    }
+    s_active_read_idx = ridx;
+    *out_buf = s_jpeg_buf[ridx];
+    *out_len = s_jpeg_len[ridx];
+    return ESP_OK;
+}
+
+void jpeg_enc_release_frame(void) {
+    s_active_read_idx = -1;
+    if (s_read_mutex) xSemaphoreGive(s_read_mutex);
+}
+
+esp_err_t jpeg_enc_set_quality(int quality) {
+    s_jpeg_quality = clamp_jpeg_quality(quality);
+    ESP_LOGI(TAG, "JPEG quality set to %d", s_jpeg_quality);
+    return ESP_OK;
+}
+
+int jpeg_enc_get_quality(void) {
+    return s_jpeg_quality;
+}
+
+/* Active streaming-client counter. The camera task checks this before
+ * encoding so we don't burn CPU + heap when no one is watching. */
+static volatile int s_stream_clients = 0;
+
+void jpeg_enc_client_added(void) {
+    if (s_swap_mutex) xSemaphoreTake(s_swap_mutex, portMAX_DELAY);
+    s_stream_clients++;
+    if (s_swap_mutex) xSemaphoreGive(s_swap_mutex);
+}
+
+void jpeg_enc_client_removed(void) {
+    if (s_swap_mutex) xSemaphoreTake(s_swap_mutex, portMAX_DELAY);
+    if (s_stream_clients > 0) s_stream_clients--;
+    if (s_swap_mutex) xSemaphoreGive(s_swap_mutex);
+}
+
+bool jpeg_enc_has_clients(void) {
+    return s_stream_clients > 0;
+}

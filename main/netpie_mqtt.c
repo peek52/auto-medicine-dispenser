@@ -19,9 +19,32 @@ static const char *SHADOW_CACHE_KEY = "shadow_blob";
 
 static esp_mqtt_client_handle_t s_client = NULL;
 static bool s_connected = false;
+// Working shadow — only mutated under shadow_lock(). Readers that need
+// a multi-field consistent snapshot must use netpie_shadow_copy() OR
+// dereference netpie_get_shadow() which returns the published double
+// buffer below.
 static netpie_shadow_t s_shadow = {0};
+// Published snapshot — atomically swapped at the end of parse_shadow.
+// Readers see a stable struct as long as they keep their pointer.
+static netpie_shadow_t s_shadow_pub_a = {0};
+static netpie_shadow_t s_shadow_pub_b = {0};
+static netpie_shadow_t * volatile s_shadow_pub = &s_shadow_pub_a;
 static SemaphoreHandle_t s_mutex = NULL;
-static uint32_t s_last_rx_ticks = 0;
+// Atomic on RISC-V (32-bit aligned). Read with portMUX-free volatile
+// access — readers only need a coarse "seconds since RX" check.
+static volatile uint32_t s_last_rx_ticks = 0;
+
+// Publish the current s_shadow to the inactive snapshot buffer and
+// flip the pointer. Caller MUST hold shadow_lock(). This is the only
+// place s_shadow_pub_{a,b} are written, so no reader/writer races on
+// the buffers themselves — readers always see a complete snapshot.
+static void shadow_publish_locked(void)
+{
+    netpie_shadow_t *next = (s_shadow_pub == &s_shadow_pub_a)
+                              ? &s_shadow_pub_b : &s_shadow_pub_a;
+    *next = s_shadow;
+    s_shadow_pub = next;  // 32-bit aligned pointer = atomic swap
+}
 
 static const char *s_slot_keys[7] = {
     "t_morn_pre", "t_morn_post",
@@ -49,7 +72,14 @@ static bool shadow_lock(void)
 
 static void shadow_unlock(void)
 {
-    if (s_mutex) xSemaphoreGive(s_mutex);
+    // Publish a fresh snapshot every time we release the lock so any
+    // caller of netpie_get_shadow() sees a fully-formed shadow even if
+    // the next parse_shadow starts immediately. ~500 bytes memcpy is
+    // cheap relative to the tens-of-ms a parse takes anyway.
+    if (s_mutex) {
+        shadow_publish_locked();
+        xSemaphoreGive(s_mutex);
+    }
 }
 
 static uint8_t normalize_med_slots_mask(uint8_t slots_mask)
@@ -101,6 +131,7 @@ static bool shadow_cache_load_locked(void)
 
     s_shadow = cached;
     s_shadow.loaded = true;
+    shadow_publish_locked();
     return true;
 }
 
@@ -138,9 +169,31 @@ static char *build_shadow_payload_string(const char *key, const char *value)
     return payload;
 }
 
+/* Publish-inhibit counter — when > 0, publish_shadow_payload drops the
+ * outgoing MQTT message but local shadow + NVS still get updated.
+ * Used by the meds-detail UI to batch +/- / slot / rename edits and
+ * commit only once the user presses Save or Back, instead of flooding
+ * NETPIE on every tap. Counter is nest-safe via push/pop. */
+static volatile int s_publish_inhibit_count = 0;
+
+void netpie_publish_inhibit_push(void)
+{
+    s_publish_inhibit_count++;
+}
+
+void netpie_publish_inhibit_pop(void)
+{
+    if (s_publish_inhibit_count > 0) s_publish_inhibit_count--;
+}
+
 static void publish_shadow_payload(char *payload)
 {
     if (!payload) return;
+    if (s_publish_inhibit_count > 0) {
+        /* Edit-in-progress; caller will explicitly republish on commit. */
+        free(payload);
+        return;
+    }
     if (s_client && s_connected) {
         esp_mqtt_client_publish(s_client, NETPIE_TOPIC_SET, payload, 0, 0, 0);
         ESP_LOGI(TAG, "Shadow updated: %s", payload);
@@ -149,6 +202,28 @@ static void publish_shadow_payload(char *payload)
         offline_sync_queue_shadow_payload(payload);
     }
     free(payload);
+}
+
+void netpie_shadow_commit_med_diff(int med_id, const netpie_med_t *backup)
+{
+    if (!backup || med_id < 1 || med_id > DISPENSER_MED_COUNT) return;
+    const netpie_med_t *cur = &netpie_get_shadow()->med[med_id - 1];
+
+    if (strcmp(cur->name, backup->name) != 0) {
+        char key[24];
+        snprintf(key, sizeof(key), "med%d_name", med_id);
+        publish_shadow_payload(build_shadow_payload_string(key, cur->name));
+    }
+    if (cur->count != backup->count) {
+        char key[24];
+        snprintf(key, sizeof(key), "med%d_count", med_id);
+        publish_shadow_payload(build_shadow_payload_int(key, cur->count));
+    }
+    if (cur->slots != backup->slots) {
+        char key[24];
+        snprintf(key, sizeof(key), "med%d_slots", med_id);
+        publish_shadow_payload(build_shadow_payload_int(key, cur->slots));
+    }
 }
 
 static bool json_get_str(const char *json, const char *key, char *buf_out, size_t buf_len)
@@ -243,6 +318,7 @@ static void parse_shadow(const char *json)
     s_shadow.loaded = true;
     s_last_rx_ticks = xTaskGetTickCount();
     shadow_cache_save_locked();
+    // shadow_unlock() publishes the snapshot atomically.
     shadow_unlock();
 }
 
@@ -350,6 +426,57 @@ void netpie_shadow_update_count(int med_id, int new_count)
     publish_shadow_payload(build_shadow_payload_int(key, new_count));
 }
 
+void netpie_shadow_update_distances(const int dist_mm[6])
+{
+    if (!dist_mm) return;
+    // Build one JSON message with all 6 fields. Skip NVS — distance is
+    // ephemeral telemetry, the next reboot reads fresh anyway.
+    char payload[256];
+    int off = snprintf(payload, sizeof(payload), "{\"data\":{");
+    for (int i = 0; i < 6 && off < (int)sizeof(payload); ++i) {
+        if (dist_mm[i] < 0) {
+            off += snprintf(payload + off, sizeof(payload) - off,
+                            "%s\"med%d_dist\":null",
+                            i ? "," : "", i + 1);
+        } else {
+            off += snprintf(payload + off, sizeof(payload) - off,
+                            "%s\"med%d_dist\":%d",
+                            i ? "," : "", i + 1, dist_mm[i]);
+        }
+    }
+    snprintf(payload + off, sizeof(payload) - off, "}}");
+
+    if (s_client && s_connected) {
+        esp_mqtt_client_publish(s_client, NETPIE_TOPIC_SET, payload, 0, 0, 0);
+    }
+    // If offline, drop the message — distance telemetry isn't worth
+    // queueing in the offline_sync NVS buffer; reading resumes when
+    // MQTT comes back online.
+}
+
+void netpie_shadow_update_pills(const int pills[6])
+{
+    if (!pills) return;
+    char payload[256];
+    int off = snprintf(payload, sizeof(payload), "{\"data\":{");
+    for (int i = 0; i < 6 && off < (int)sizeof(payload); ++i) {
+        if (pills[i] < 0) {
+            off += snprintf(payload + off, sizeof(payload) - off,
+                            "%s\"med%d_pills\":null",
+                            i ? "," : "", i + 1);
+        } else {
+            off += snprintf(payload + off, sizeof(payload) - off,
+                            "%s\"med%d_pills\":%d",
+                            i ? "," : "", i + 1, pills[i]);
+        }
+    }
+    snprintf(payload + off, sizeof(payload) - off, "}}");
+
+    if (s_client && s_connected) {
+        esp_mqtt_client_publish(s_client, NETPIE_TOPIC_SET, payload, 0, 0, 0);
+    }
+}
+
 void netpie_shadow_update_med_name(int med_id, const char *name)
 {
     if (!name || med_id < 1 || med_id > DISPENSER_MED_COUNT) return;
@@ -447,7 +574,13 @@ bool netpie_shadow_copy(netpie_shadow_t *out_shadow)
 
 const netpie_shadow_t *netpie_get_shadow(void)
 {
-    return &s_shadow;
+    // Returns the most recently published snapshot. The pointer is
+    // stable for the caller's read sequence even if a parse_shadow
+    // arrives mid-read — the parse will publish to the OTHER buffer
+    // and flip the pointer atomically after the caller is done.
+    // Use netpie_shadow_copy() for callers that must serialize with
+    // a parse in flight.
+    return s_shadow_pub;
 }
 
 bool netpie_is_connected(void)

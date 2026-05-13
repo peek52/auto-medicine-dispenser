@@ -75,37 +75,65 @@ esp_err_t pcf8574_set_all_input(void)
     return ret;
 }
 
+// Set true while a servo ramp is in flight. During the ramp the
+// servo PWM update coupling EMI into the PCF8574 supply makes the
+// IR module's OUT line wobble (visible as the indicator LED blinking
+// even when the IR beam is unbroken). Reads return 0xFF (no-pill)
+// during this window so the dispense loop's debounce counter doesn't
+// latch onto noise spikes. Real pill drops are detected during the
+// stable dwell phase after ramp completes.
+static volatile bool s_block_during_servo_ramp = false;
+
+void pcf8574_block_during_servo_ramp(bool blocked)
+{
+    s_block_during_servo_ramp = blocked;
+}
+
+bool pcf8574_is_servo_ramping(void)
+{
+    return s_block_during_servo_ramp;
+}
+
 esp_err_t pcf8574_read(uint8_t *val_out)
 {
     if (!val_out) return ESP_ERR_INVALID_ARG;
+    /* Previously: while s_block_during_servo_ramp was true (whole servo
+     * ramp ~1.8 s), pcf8574_read forced 0xFF "no pill" to suppress EMI
+     * spikes from PWM edges. BUG: the pill actually drops mid-ramp
+     * (cup rotates ~45° → pill slides out → falls through the IR beam),
+     * so the firmware was forcing 0xFF during the exact window when the
+     * IR LED was lighting up on a real pill. User saw IR LED flash but
+     * scheduler logged "❌ MISSED!".
+     *
+     * Real EMI spikes from servo PWM are <1 ms transients. The dispense
+     * loop already requires 3 consecutive LOW samples (~30 ms at 100 Hz
+     * polling) before declaring a detection, which rejects spikes but
+     * catches real 50-100 ms pill drops. We don't need the blanket block
+     * on top of debounce — keep the flag for callers that explicitly
+     * want it via pcf8574_is_servo_ramping() (e.g., touch chip's
+     * fallback path), but don't force the IR value here. */
     if (pcf_should_skip_call()) {
-        *val_out = 0xFF;
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* PCF8574 read protocol:
-     *  1. Write 0xFF to put all pins into quasi-bidirectional input mode.
-     *  2. Pure I2C read (no register byte) — PCF8574 returns pin states.
+    /* PCF8574 quasi-bidirectional pins stay in input-high mode after the
+     * boot-time pcf8574_set_all_input() write — the firmware never drives
+     * them as outputs, so we don't need to re-send 0xFF before every read.
+     * Cuts I2C traffic in half during the dispense IR poll (was 200/sec
+     * → now 100/sec) and removes the mutex-release window between
+     * write+read where touch/RTC ops could slip in and add jitter to the
+     * IR sample timing.
      *
-     * Do NOT use i2c_manager_read_reg() because it sends a register byte first.
-     * PCF8574 has no registers; any byte sent to it is treated as output data.
-     * Sending 0x00 would drive all outputs LOW and read back 0x00 forever.
-     */
-
-    // Step 1: set all pins to input high
-    uint8_t cmd = 0xFF;
-    esp_err_t ret = i2c_manager_write(ADDR_PCF8574, &cmd, 1);
-    if (ret != ESP_OK) {
-        pcf_note_result(ret, "write 0xFF");
-        *val_out = 0xFF;
-        return ret;
-    }
-
-    // Step 2: pure read — returns actual pin state
-    ret = i2c_manager_read(ADDR_PCF8574, val_out, 1);
+     * Pure read only. Do NOT use i2c_manager_read_reg() — it sends a
+     * register byte first, and PCF8574 treats any byte sent to it as
+     * output data (would drive pins LOW and read back 0x00). */
+    esp_err_t ret = i2c_manager_read(ADDR_PCF8574, val_out, 1);
     if (ret != ESP_OK) {
         pcf_note_result(ret, "read");
-        *val_out = 0xFF;
+        /* Don't overwrite *val_out here. Caller checks the return code
+         * and is expected to leave its IR state untouched on error
+         * (no false consec_low reset, no false 0xFF "no pill" sample).
+         * If caller ignores the error, the previous value remains. */
         return ret;
     }
     pcf_note_result(ESP_OK, "read");
