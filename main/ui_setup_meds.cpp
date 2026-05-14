@@ -2,6 +2,7 @@
 #include "netpie_mqtt.h"
 #include "dispenser_scheduler.h"
 #include "dfplayer.h"
+#include "ds3231.h"
 #include "ui_meds_thai_labels.h"
 #include "ui_return_thai_labels.h"
 #include "ui_utf8_text.h"
@@ -9,24 +10,36 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "pill_sensor_status.h"
 
 static uint32_t s_blink_tick   = 0;
 static bool     s_blink_phase  = false;
 static bool     s_validation_popup = false;
+/* Which fields the user forgot when they pressed Save. The render
+ * path reads these to compose a bilingual checklist popup. */
+static bool     s_validation_missing_name  = false;
+static bool     s_validation_missing_slots = false;
+static bool     s_validation_missing_count = false;
+/* Save-confirm popup — shown when user presses Back with a complete
+ * 3-field entry, asking whether to keep (save) or discard the edits. */
+static bool     s_save_confirm_popup = false;
+/* Refill-or-clear popup — shown when display auto-navigated here after
+ * a scheduled dispense failed (empty cartridge or IR saw no pill).
+ * Two buttons: เติมยา → close popup, user adjusts count via +; ล้างข้อมูล
+ * → wipe name + slots + count and go back to standby. Set by
+ * display_clock.cpp when it consumes g_dispense_missed_nav_idx. */
+static bool     s_refill_or_clear_popup = false;
+static bool     s_refill_or_clear_drawn = false;
+/* True once the refill-or-clear popup has fired for this entry. Stays
+ * true until the user actually refills (count > 0) or explicitly taps
+ * Clear. Back is blocked while this is true with count still 0 so the
+ * user can't sneak out leaving an "I said I would refill" promise
+ * unfulfilled — the popup re-fires forcing a deliberate choice. */
+static bool     s_refill_pending        = false;
 static netpie_med_t s_med_backup = {0};
 static bool     s_med_snapshot_saved = false;
 
-extern volatile int ui_manual_disp_status;
-
-// Suppress VL53 sensor → shadow auto-sync only while the user is on the
-// detail page (the +/- count screen) or typing the name. The meds list
-// page itself shows live counts so we allow sync there.
-extern "C" bool ui_meds_edit_in_progress(void)
-{
-    return current_page == PAGE_SETUP_MEDS_DETAIL ||
-           current_page == PAGE_KEYBOARD;
-}
+extern volatile int  ui_manual_disp_status;
+extern volatile bool g_ui_dispensing_popup_painted;
 
 /* Called by dispenser_scheduler when an IR-confirmed-empty event sets
  * count=0 (or when the dispense flow otherwise produces an authoritative
@@ -43,6 +56,16 @@ extern "C" void ui_setup_meds_resync_backup_count(int med_idx, int new_count)
     if (s_med_snapshot_saved && selected_med_idx == med_idx) {
         s_med_backup.count = new_count;
     }
+}
+
+/* Called by display_clock.cpp after auto-navigating to a med's detail
+ * page following a failed scheduled dispense. Arms the refill-or-clear
+ * popup so the first frame on the detail page shows the dialog. */
+extern "C" void ui_setup_meds_arm_refill_or_clear(void)
+{
+    s_refill_or_clear_popup = true;
+    s_refill_or_clear_drawn = false;
+    s_refill_pending        = true;   /* must be resolved before leave */
 }
 
 // â”€â”€ File-scope modal timers (file-local only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -385,9 +408,10 @@ void ui_setup_meds_render(void)
         force_redraw = false;
     }
 
-    // Always run the partial-redraw count diff so the live VL53 sync shows
-    // up on this page without needing a page change. Runs on every periodic
-    // tick (PAGE_SETUP_MEDS is in page_needs_live_tick), so latency is the
+    // Always run the partial-redraw count diff so live count changes
+    // (e.g. NETPIE shadow updates from another client) show up on this
+    // page without needing a page change. Runs on every periodic tick
+    // (PAGE_SETUP_MEDS is in page_needs_live_tick), so latency is the
     // 1 Hz render rate.
     static int s_prev_med_count[6] = { -999, -999, -999, -999, -999, -999 };
     const netpie_shadow_t *sh = netpie_get_shadow();
@@ -447,6 +471,33 @@ void ui_setup_meds_detail_render(void)
     static netpie_shadow_t tp_prev_sh = {0};
     static int prev_disp_status = 0;
 
+    /* FAST PATH: status just went 0→1 (user pressed Save/CONFIRM and
+     * dispenser_manual_dispense flipped the flag).  Skip the heavy
+     * full-page redraw and paint ONLY the "กำลังจ่ายยา" popup so
+     * the user sees feedback within milliseconds.
+     *
+     * Frame size unified to (40,60,400,200) so this overwrites the
+     * return-confirm dialog (same bounds) without leftover edges.
+     * Previous (80,100,320,120) was smaller → return-confirm border
+     * remained visible after transition (bug #2 in 2026-05-14 audit).
+     *
+     * Gate: don't take the fast path if validation or save-confirm
+     * is also up — they take precedence and would be erased by us. */
+    if (ui_manual_disp_status == 1 && prev_disp_status != 1 &&
+        !s_validation_popup && !s_save_confirm_popup) {
+        prev_disp_status = 1;
+        fill_round_rect_frame(40, 60, 400, 200, 14, THEME_PANEL, THEME_BORDER);
+        if (g_ui_language == UI_LANG_TH) {
+            draw_meds_label((LCD_W - kThDispensing.width) / 2, 148, &kThDispensing);
+        } else {
+            draw_string_centered(LCD_W / 2, 165, "Dispensing...",
+                                 THEME_TXT_MAIN, THEME_PANEL, &FreeSans18pt7b);
+        }
+        g_ui_dispensing_popup_painted = true;
+        force_redraw = false;          /* don't double-paint this frame */
+        return;
+    }
+
     // Escalate timeout evaluator to bypass generic render clamping, but GATE it via parity sync to prevent legacy timestamp bypass
     if (ui_manual_disp_status == prev_disp_status) {
         if (ui_manual_disp_status == 2) {
@@ -463,6 +514,13 @@ void ui_setup_meds_detail_render(void)
     }
 
     if (force_redraw) {
+        /* Reset prev_disp_status on every full-page redraw entry so a
+         * stale value from a previous session of this page can't
+         * suppress the 0→1 fast-path next time the user opens it.
+         * (Bug from 2026-05-14 audit: prev_disp_status is file-scope
+         * static and persisted across page leaves.) */
+        prev_disp_status = 0;
+
         // Save snapshot of current med data ONLY on first entry (not on every force_redraw)
         if (!s_med_snapshot_saved) {
             const netpie_shadow_t *sh_snap = netpie_get_shadow();
@@ -672,12 +730,19 @@ void ui_setup_meds_detail_render(void)
         if (is_new_status || (force_redraw && ui_manual_disp_status > 0)) {
             prev_disp_status = ui_manual_disp_status;
 
+            /* All dispense-status popups unified to (40,60,400,200)
+             * bounds — same as return-confirm so transitions overwrite
+             * cleanly. */
             if (ui_manual_disp_status == 1) {
-                fill_round_rect_frame(80, 100, 320, 120, 12, THEME_PANEL, THEME_BORDER);
+                fill_round_rect_frame(40, 60, 400, 200, 14, THEME_PANEL, THEME_BORDER);
                 if (g_ui_language == UI_LANG_TH) draw_meds_label((LCD_W - kThDispensing.width) / 2, 148, &kThDispensing);
                 else draw_string_centered(LCD_W/2, 165, "Dispensing...", THEME_TXT_MAIN, THEME_PANEL, &FreeSans18pt7b);
+                /* Signal to manual_dispense_task that the popup is now
+                 * fully on screen — task will release its pre-servo wait
+                 * and start driving the cup. */
+                g_ui_dispensing_popup_painted = true;
             } else if (ui_manual_disp_status == 2) {
-                fill_round_rect_frame(80, 100, 320, 120, 12, THEME_OK, THEME_BORDER);
+                fill_round_rect_frame(40, 60, 400, 200, 14, THEME_OK, THEME_BORDER);
                 if (g_ui_language == UI_LANG_TH) {
                     draw_meds_label((LCD_W - kThDispenseOk1.width) / 2, 132, &kThDispenseOk1);
                     draw_meds_label((LCD_W - kThDispenseOk2.width) / 2, 175, &kThDispenseOk2);
@@ -687,7 +752,7 @@ void ui_setup_meds_detail_render(void)
                 }
                 if (is_new_status) s_disp_done_tick = xTaskGetTickCount();
             } else if (ui_manual_disp_status == 3) {
-                fill_round_rect_frame(80, 100, 320, 120, 12, THEME_BAD, THEME_BORDER);
+                fill_round_rect_frame(40, 60, 400, 200, 14, THEME_BAD, THEME_BORDER);
                 if (g_ui_language == UI_LANG_TH) {
                     draw_meds_label((LCD_W - kThDispenseFail1.width) / 2, 132, &kThDispenseFail1);
                     draw_meds_label((LCD_W - kThDispenseFail2.width) / 2, 175, &kThDispenseFail2);
@@ -697,7 +762,11 @@ void ui_setup_meds_detail_render(void)
                 }
                 if (is_new_status) s_disp_fail_tick = xTaskGetTickCount();
             } else if (ui_manual_disp_status == 0) {
-                force_redraw = true; // Dismiss popup by full wipe
+                /* Dismiss — wipe the unified popup area only (not
+                 * full screen). Force_redraw still set so the page
+                 * underneath gets redrawn cleanly on this frame. */
+                fill_round_rect(40, 60, 400, 200, 14, THEME_BG);
+                force_redraw = true;
             }
         }
     }
@@ -709,7 +778,171 @@ void ui_setup_meds_detail_render(void)
     // each slot/count/name change above; no animation is needed.
     (void)s_blink_phase; (void)s_blink_tick;
 
-    // ── Validation popup overlay (REMOVED per user request) ──
+    /* ── Refill-or-clear popup: armed when display auto-navigated here
+     *    after a scheduled dispense failed. Two buttons:
+     *      เติมยา       → close popup, user adjusts count via existing UI
+     *      ล้างข้อมูล   → wipe name + slots + count, return to standby
+     *    Highest priority on the detail page — paints over normal UI.
+     *    Bounds (40,50,400,220) match validation/save-confirm so
+     *    transitions don't leave leftover edges. */
+    if (s_refill_or_clear_popup) {
+        if (!s_refill_or_clear_drawn || force_redraw) {
+            fill_round_rect_frame(40, 50, 400, 220, 14, THEME_BAD, 0xFFFF);
+            bool th = (g_ui_language == UI_LANG_TH);
+            char head[64];
+            if (th) {
+                snprintf(head, sizeof(head), "ตลับที่ %d ไม่มียาออก", selected_med_idx + 1);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 80, head,
+                                               0xFFFF, THEME_BAD, 28);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 125,
+                    "ต้องการเติมยาเพิ่ม?", 0xFFFF, THEME_BAD, 24);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 160,
+                    "ถ้าไม่ จะล้างข้อมูลทั้งหมด", 0xFFFF, THEME_BAD, 20);
+            } else {
+                snprintf(head, sizeof(head), "Cartridge %d Empty", selected_med_idx + 1);
+                draw_string_centered(LCD_W / 2, 95, head,
+                                     0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+                draw_string_centered(LCD_W / 2, 135, "Refill this cartridge?",
+                                     0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                draw_string_centered(LCD_W / 2, 165, "No = clear all module data",
+                                     0xFFFF, THEME_BAD, &FreeSans12pt7b);
+            }
+            /* Two buttons: CLEAR (left, gray) + REFILL (right, green) */
+            fill_round_rect( 60, 200, 160, 44, 10, THEME_INACTIVE);
+            fill_round_rect(260, 200, 160, 44, 10, THEME_OK);
+            if (th) {
+                draw_utf8_centered_line_scaled(140, 210, "ล้างข้อมูล",
+                                               0xFFFF, THEME_INACTIVE, 22);
+                draw_utf8_centered_line_scaled(340, 210, "เติมยา",
+                                               0xFFFF, THEME_OK, 24);
+            } else {
+                draw_string_centered(140, 228, "Clear All", 0xFFFF,
+                                     THEME_INACTIVE, &FreeSans12pt7b);
+                draw_string_centered(340, 228, "Refill",    0xFFFF,
+                                     THEME_OK, &FreeSans12pt7b);
+            }
+            s_refill_or_clear_drawn = true;
+        }
+        return;
+    }
+
+    /* ── Save-confirm popup: user pressed Back with all 3 fields
+     *    filled. Asks "save changes or discard?" with two buttons.
+     *    Bounds unified to (40,50,400,220) to match validation popup
+     *    so transitions between them don't leave leftover edges. */
+    static bool s_save_confirm_drawn = false;
+    static bool s_save_confirm_audio_played = false;
+    if (s_save_confirm_popup) {
+        if (!s_save_confirm_drawn || force_redraw) {
+            fill_round_rect_frame(40, 50, 400, 220, 14, THEME_PANEL, THEME_BORDER);
+            bool th = (g_ui_language == UI_LANG_TH);
+            if (th) {
+                draw_utf8_centered_line_scaled(LCD_W / 2, 85,
+                    "บันทึกการเปลี่ยนแปลง?", 0xFFFF, THEME_PANEL, 26);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 130,
+                    "กดบันทึก = เก็บข้อมูล", 0xFFFF, THEME_PANEL, 20);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 160,
+                    "กดทิ้ง = ย้อนกลับโดยไม่บันทึก", 0xFFFF, THEME_PANEL, 20);
+            } else {
+                draw_string_centered(LCD_W / 2, 100, "Save Changes?",
+                                     0xFFFF, THEME_PANEL, &FreeSansBold18pt7b);
+                draw_string_centered(LCD_W / 2, 140, "Save = keep new data",
+                                     0xFFFF, THEME_PANEL, &FreeSans12pt7b);
+                draw_string_centered(LCD_W / 2, 165, "Discard = revert changes",
+                                     0xFFFF, THEME_PANEL, &FreeSans12pt7b);
+            }
+            /* Two buttons: DISCARD (left, red) + SAVE (right, green) */
+            fill_round_rect(60, 200, 160, 44, 10, THEME_BAD);
+            fill_round_rect(260, 200, 160, 44, 10, THEME_OK);
+            if (th) {
+                draw_utf8_centered_line_scaled(140, 210, "ทิ้ง",  0xFFFF, THEME_BAD, 24);
+                draw_utf8_centered_line_scaled(340, 210, "บันทึก", 0xFFFF, THEME_OK,  24);
+            } else {
+                draw_string_centered(140, 228, "Discard", 0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                draw_string_centered(340, 228, "Save",    0xFFFF, THEME_OK,  &FreeSans12pt7b);
+            }
+            s_save_confirm_drawn = true;
+            /* Voice prompt: "บันทึกการเปลี่ยนแปลง?" — TH 110 / EN 111.
+             * One-shot per popup appearance, re-armed on dismiss. */
+            if (!s_save_confirm_audio_played) {
+                dfplayer_play_track((g_ui_language == UI_LANG_TH) ? 110 : 111);
+                s_save_confirm_audio_played = true;
+            }
+        }
+        return;
+    } else {
+        s_save_confirm_drawn = false;
+        s_save_confirm_audio_played = false;
+    }
+
+    /* ── Validation popup: user pressed Save with missing fields. Lists
+     * which fields are missing (Thai or English). Tap anywhere to dismiss.
+     *
+     * Thai text uses draw_utf8_centered_line_scaled (the only UTF-8-aware
+     * draw in the codebase). FreeSans fonts don't have Thai glyphs, so
+     * draw_string_gfx with Thai source would render blanks. */
+    static bool s_validation_drawn_flag = false;
+    if (s_validation_popup) {
+        if (!s_validation_drawn_flag || force_redraw) {
+            fill_round_rect_frame(40, 50, 400, 220, 14, THEME_WARN, 0xFFFF);
+            bool th = (g_ui_language == UI_LANG_TH);
+
+            /* Header */
+            if (th) {
+                draw_utf8_centered_line_scaled(LCD_W / 2, 75,
+                    "กรอกข้อมูลไม่ครบ", 0xFFFF, THEME_WARN, 30);
+            } else {
+                draw_string_centered(LCD_W / 2, 90, "Missing Information",
+                                     0xFFFF, THEME_WARN, &FreeSansBold18pt7b);
+            }
+
+            /* Per-field lines */
+            int y = th ? 125 : 130;
+            const int line_h = th ? 36 : 28;
+            if (s_validation_missing_name) {
+                if (th) {
+                    draw_utf8_centered_line_scaled(LCD_W / 2, y,
+                        "• กรุณาตั้งชื่อยา", 0xFFFF, THEME_WARN, 24);
+                } else {
+                    draw_string_centered(LCD_W / 2, y, "- Please set the medicine name",
+                                         0xFFFF, THEME_WARN, &FreeSans12pt7b);
+                }
+                y += line_h;
+            }
+            if (s_validation_missing_slots) {
+                if (th) {
+                    draw_utf8_centered_line_scaled(LCD_W / 2, y,
+                        "• กรุณาเลือกมื้อจ่ายยา", 0xFFFF, THEME_WARN, 24);
+                } else {
+                    draw_string_centered(LCD_W / 2, y, "- Please select dose times",
+                                         0xFFFF, THEME_WARN, &FreeSans12pt7b);
+                }
+                y += line_h;
+            }
+            if (s_validation_missing_count) {
+                if (th) {
+                    draw_utf8_centered_line_scaled(LCD_W / 2, y,
+                        "• กรุณาใส่จำนวนยาในตลับ", 0xFFFF, THEME_WARN, 24);
+                } else {
+                    draw_string_centered(LCD_W / 2, y, "- Please enter pill count",
+                                         0xFFFF, THEME_WARN, &FreeSans12pt7b);
+                }
+                y += line_h;
+            }
+
+            /* Footer */
+            if (th) {
+                draw_utf8_centered_line_scaled(LCD_W / 2, 245,
+                    "แตะที่หน้าจอเพื่อปิด", 0xFFFF, THEME_WARN, 18);
+            } else {
+                draw_string_centered(LCD_W / 2, 250, "Tap to dismiss",
+                                     0xFFFF, THEME_WARN, &FreeSans9pt7b);
+            }
+            s_validation_drawn_flag = true;
+        }
+    } else {
+        s_validation_drawn_flag = false;
+    }
 }
 /* Defensive cleanup — called from the page-transition watcher in
  * display_clock when the user leaves the meds-detail page via a path
@@ -718,9 +951,33 @@ void ui_setup_meds_detail_render(void)
  * if no edit session is active. */
 extern "C" void ui_setup_meds_end_edit_session_if_any(void)
 {
+    /* User exited via a path other than Save/Back (scheduled dose
+     * Confirm popup yanked them away, watchdog, etc.). Mirror the
+     * Back-button rule: if current state is complete, keep it; if
+     * partial, wipe to fully empty. Never leave a module in a
+     * half-finished partial state. */
+    /* Drop the refill-or-clear popup latch — if it's still up we want
+     * a clean slate next time the user (or auto-nav) reaches detail,
+     * not a stale dialog from a previous failed dispense. */
+    s_refill_or_clear_popup = false;
+    s_refill_or_clear_drawn = false;
+    s_refill_pending        = false;
+
     if (!s_med_snapshot_saved) return;
+    const netpie_shadow_t *sh_cur = netpie_get_shadow();
+    int idx = selected_med_idx;
+    if (idx >= 0 && idx < DISPENSER_MED_COUNT) {
+        bool has_name  = (sh_cur->med[idx].name[0] != '\0');
+        bool has_slots = (sh_cur->med[idx].slots != 0);
+        bool has_count = (sh_cur->med[idx].count > 0);
+        bool complete = has_name && has_slots && has_count;
+        if (!complete) {
+            if (has_name)  netpie_shadow_update_med_name(idx + 1, "");
+            if (has_count) netpie_shadow_update_count(idx + 1, 0);
+            if (has_slots) netpie_shadow_update_med_slots(idx + 1, 0);
+        }
+    }
     netpie_publish_inhibit_pop();
-    netpie_shadow_commit_med_diff(selected_med_idx + 1, &s_med_backup);
     s_med_snapshot_saved = false;
 }
 
@@ -737,44 +994,285 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
         return; // Ignore touches while dispensing
     }
 
+    /* Refill-or-clear popup: armed via auto-nav after a failed
+     * scheduled dispense. Two buttons, no escape — user must choose
+     * either to refill (close popup, adjust count via existing UI)
+     * or clear all (wipe name + slots + count, back to standby).
+     * Spec 2026-05-14: "ห้ามมีโมดูลไหนที่ข้อมูลไม่ครบ" — leaving any
+     * other way must wipe to fully empty. */
+    if (s_refill_or_clear_popup) {
+        bool in_left  = (tx_n >= 60  && tx_n <= 220 && ty_n >= 200 && ty_n <= 244);
+        bool in_right = (tx_n >= 260 && tx_n <= 420 && ty_n >= 200 && ty_n <= 244);
+        if (in_left) {
+            /* CLEAR ALL — wipe name + slots + count, drop edit
+             * session, return to standby. Update the backup snapshot
+             * to the empty state so the page-leave watcher doesn't
+             * second-guess us. */
+            netpie_shadow_update_med_name(med_idx + 1, "");
+            netpie_shadow_update_med_slots(med_idx + 1, 0);
+            netpie_shadow_update_count(med_idx + 1, 0);
+            /* Only pop if the matching push at line ~535 actually
+             * happened — otherwise an unpushed pop drains the inhibit
+             * counter prematurely and the NEXT real edit session won't
+             * suppress publishes. */
+            if (s_med_snapshot_saved) {
+                netpie_publish_inhibit_pop();
+                s_med_backup.name[0] = '\0';
+                s_med_backup.slots   = 0;
+                s_med_backup.count   = 0;
+            }
+            s_med_snapshot_saved = false;
+            s_refill_or_clear_popup = false;
+            s_refill_or_clear_drawn = false;
+            s_refill_pending        = false;  /* explicitly chose Clear */
+            dfplayer_play_track(12);   /* cancel sound */
+            pending_page = PAGE_STANDBY;
+            force_redraw = true;
+            return;
+        }
+        if (in_right) {
+            /* REFILL — just close the popup. User continues on the
+             * detail page and adjusts the pill count via the + button,
+             * then presses Save / Back as normal. s_refill_pending
+             * stays true until count actually goes > 0 (or the user
+             * later picks Clear). */
+            s_refill_or_clear_popup = false;
+            s_refill_or_clear_drawn = false;
+            dfplayer_play_track(28);   /* confirm sound */
+            force_redraw = true;
+            return;
+        }
+        /* Tap outside the buttons — ignore. Force a deliberate choice. */
+        return;
+    }
+
+    /* Validation popup is shown — any tap dismisses it, no other
+     * action processed this frame. Lets the user fix the missing
+     * field on the next tap rather than accidentally triggering
+     * something else through the popup. */
+    if (s_validation_popup) {
+        s_validation_popup = false;
+        s_validation_missing_name  = false;
+        s_validation_missing_slots = false;
+        s_validation_missing_count = false;
+        force_redraw = true;
+        return;
+    }
+
+    /* Save-confirm popup: handle the two buttons (left=Discard,
+     * right=Save). Any tap outside the buttons is ignored — user
+     * must make a deliberate choice. */
+    if (s_save_confirm_popup) {
+        bool in_left  = (tx_n >= 60  && tx_n <= 220 && ty_n >= 200 && ty_n <= 244);
+        bool in_right = (tx_n >= 260 && tx_n <= 420 && ty_n >= 200 && ty_n <= 244);
+        if (in_left) {
+            /* DISCARD — revert + leave. */
+            const netpie_shadow_t *sh_cur = netpie_get_shadow();
+            if (strcmp(sh_cur->med[med_idx].name, s_med_backup.name) != 0)
+                netpie_shadow_update_med_name(med_idx + 1, s_med_backup.name);
+            if (sh_cur->med[med_idx].count != s_med_backup.count)
+                netpie_shadow_update_count(med_idx + 1, s_med_backup.count);
+            if (sh_cur->med[med_idx].slots != s_med_backup.slots)
+                netpie_shadow_update_med_slots(med_idx + 1, s_med_backup.slots);
+            netpie_publish_inhibit_pop();
+            dfplayer_play_track(12);   /* cancel sound */
+            s_save_confirm_popup = false;
+            s_med_snapshot_saved = false;
+            pending_page = PAGE_SETUP_MEDS;
+            force_redraw = true;
+            return;
+        }
+        if (in_right) {
+            /* SAVE — same path as the explicit Save button. Commit +
+             * photo + Telegram + leave. */
+            const netpie_shadow_t *sh_check = netpie_get_shadow();
+            netpie_publish_inhibit_pop();
+            netpie_shadow_commit_med_diff(med_idx + 1, &s_med_backup);
+            dfplayer_play_track(14);
+            s_save_confirm_popup = false;
+            s_med_snapshot_saved = false;
+
+            char med_name[64];
+            snprintf(med_name, sizeof(med_name), "%s", sh_check->med[med_idx].name);
+            char time_str[16] = "--:--";
+            ds3231_get_time_str(time_str, sizeof(time_str));
+            char slot_names[160];
+            dispenser_format_slots_to_names(sh_check->med[med_idx].slots,
+                                            slot_names, sizeof(slot_names));
+            char msg[512];
+            if (g_ui_language == UI_LANG_TH) {
+                snprintf(msg, sizeof(msg),
+                         "📋 บันทึกข้อมูลยา\nเวลา: %s\nโมดูล: %d (%s)\n"
+                         "จำนวนยา: %d เม็ด\nมื้อจ่าย: %s",
+                         time_str, med_idx + 1, med_name,
+                         sh_check->med[med_idx].count,
+                         slot_names);
+            } else {
+                snprintf(msg, sizeof(msg),
+                         "📋 Medication setup saved\nTime: %s\nModule: %d (%s)\n"
+                         "Count: %d pills\nSlots: %s",
+                         time_str, med_idx + 1, med_name,
+                         sh_check->med[med_idx].count,
+                         slot_names);
+            }
+            extern void dispenser_telegram_photo_msg(const char *msg);
+            dispenser_telegram_photo_msg(msg);
+
+            pending_page = PAGE_SETUP_MEDS;
+            force_redraw = true;
+            return;
+        }
+        /* Tap outside the buttons — ignore. */
+        return;
+    }
+
     if (show_return_confirm) {
         // ... handled below
     } else if (tx_n >= 0 && tx_n <= 130 && ty_n >= 0 && ty_n <= 52) {
-        /* Back: behaves the same as Save now — commit any pending
-         * edits to NETPIE (one MQTT message per changed field), then
-         * leave. No revert. User-requested 2026-05-12: edits are
-         * batched during the visit and only one publish goes out at
-         * exit; if nothing changed, zero publishes. */
+        /* Refill-or-clear unresolved? If the user landed here via the
+         * post-dispense auto-nav, tapped "เติมยา" (Refill) but never
+         * actually added any pills, Back must NOT silently wipe — re-show
+         * the popup so they make a deliberate choice (refill or clear).
+         * Spec 2026-05-14: ห้ามหลุดออกจากหน้านี้แบบเงียบ ๆ ด้วยข้อมูลไม่ครบ. */
+        if (s_refill_pending) {
+            const netpie_shadow_t *sh_now = netpie_get_shadow();
+            if (sh_now->med[med_idx].count == 0) {
+                s_refill_or_clear_popup = true;
+                s_refill_or_clear_drawn = false;
+                dfplayer_play_track(g_snd_button);
+                force_redraw = true;
+                return;
+            }
+            /* Count is non-zero now → user did refill. Clear the latch
+             * and fall through to normal Back handling. */
+            s_refill_pending = false;
+        }
+        /* Back behavior (user spec 2026-05-14):
+         *   - No changes since entry         → silent leave (no popup).
+         *   - Complete (all 3 fields filled) → save-confirm popup.
+         *   - Partial / empty                → WIPE TO FULLY EMPTY.
+         *
+         * The wipe enforces the "ห้ามมีโมดูลไหนที่ข้อมูลไม่ครบ" rule:
+         * a module is either fully configured or fully blank — never
+         * partial. So if user enters a module with stale data, clears
+         * the name, and presses Back, the module ends up empty
+         * (instead of reverting to the stale state). */
+        const netpie_shadow_t *sh_cur = netpie_get_shadow();
+        bool has_name  = (sh_cur->med[med_idx].name[0] != '\0');
+        bool has_slots = (sh_cur->med[med_idx].slots != 0);
+        bool has_count = (sh_cur->med[med_idx].count > 0);
+
+        bool no_changes = (strcmp(sh_cur->med[med_idx].name, s_med_backup.name) == 0)
+                       && (sh_cur->med[med_idx].count == s_med_backup.count)
+                       && (sh_cur->med[med_idx].slots == s_med_backup.slots);
+
+        if (no_changes) {
+            /* Nothing changed — just leave, don't bother asking. */
+            netpie_publish_inhibit_pop();
+            dfplayer_play_track(g_snd_button);
+            s_validation_popup = false;
+            s_validation_missing_name  = false;
+            s_validation_missing_slots = false;
+            s_validation_missing_count = false;
+            s_med_snapshot_saved = false;
+            pending_page = PAGE_SETUP_MEDS;
+            force_redraw = true;
+            return;
+        }
+
+        if (has_name && has_slots && has_count) {
+            /* Complete entry — ask before discarding. */
+            s_save_confirm_popup = true;
+            dfplayer_play_track(g_snd_button);
+            force_redraw = true;
+            return;
+        }
+
+        /* Partial or empty entry — wipe everything to a clean blank
+         * state so the module never holds stale partial data. */
         netpie_publish_inhibit_pop();
-        netpie_shadow_commit_med_diff(med_idx + 1, &s_med_backup);
+        if (sh_cur->med[med_idx].name[0] != '\0')
+            netpie_shadow_update_med_name(med_idx + 1, "");
+        if (sh_cur->med[med_idx].count != 0)
+            netpie_shadow_update_count(med_idx + 1, 0);
+        if (sh_cur->med[med_idx].slots != 0)
+            netpie_shadow_update_med_slots(med_idx + 1, 0);
+
         dfplayer_play_track(g_snd_button);
         s_validation_popup = false;
+        s_validation_missing_name  = false;
+        s_validation_missing_slots = false;
+        s_validation_missing_count = false;
         s_med_snapshot_saved = false; // Reset for next entry
         pending_page = PAGE_SETUP_MEDS;
         force_redraw = true;
         return;
     } else if (ty_n >= 14 && ty_n <= 52 && tx_n >= 330 && tx_n <= 470) {
-        // SAVE button: name is the only hard requirement. Count=0 and
-        // slots=0 are both allowed:
-        //  - count=0 → VL53 sensor will fill in the real value once the
-        //    user leaves this page (ui_meds_edit_in_progress releases).
-        //  - slots=0 → user explicitly unchecked every meal slot to cancel
-        //    automatic dispensing for this med (still keeps the entry so
-        //    they can re-enable later without re-typing the name).
+        /* SAVE button — strict validation per user spec 2026-05-14.
+         * ALL THREE of (name / slots / count) must be filled, otherwise
+         * a bilingual popup tells the user exactly what's missing and
+         * the save is aborted (user stays on the page). When everything
+         * is filled, the save commits + the camera grabs a confirmation
+         * photo + Telegram fires. */
         const netpie_shadow_t *sh_check = netpie_get_shadow();
-        bool has_name = (sh_check->med[med_idx].name[0] != '\0');
-        if (!has_name) {
-            // No name → wipe the row entirely so the list shows it as blank.
-            netpie_shadow_update_count(med_idx + 1, 0);
-            netpie_shadow_update_med_slots(med_idx + 1, 0);
+        bool has_name  = (sh_check->med[med_idx].name[0] != '\0');
+        bool has_slots = (sh_check->med[med_idx].slots != 0);
+        bool has_count = (sh_check->med[med_idx].count > 0);
+
+        if (!(has_name && has_slots && has_count)) {
+            /* Missing at least one field — fire the validation popup
+             * and abort the save. Popup renders on the next frame
+             * via s_validation_popup flag (see render path). */
+            s_validation_missing_name  = !has_name;
+            s_validation_missing_slots = !has_slots;
+            s_validation_missing_count = !has_count;
+            s_validation_popup = true;
+            /* No audio on validation fail — the visual popup IS the
+             * warning. Track 12 = Cancel voice which sounded like the
+             * save was rejected, confusing the user. */
+            force_redraw = true;
+            return;
         }
-        /* Release publish inhibit and push any actual changes vs the
-         * snapshot. Zero MQTT traffic if nothing was edited. */
+
+        /* Validated OK — commit, log, photo, leave. */
         netpie_publish_inhibit_pop();
         netpie_shadow_commit_med_diff(med_idx + 1, &s_med_backup);
         dfplayer_play_track(14);
         s_validation_popup = false;
         s_med_snapshot_saved = false; // Reset for next entry
+        s_refill_pending = false;     // Save committed fulfills the promise
+
+        /* Camera + Telegram on Save (replaces the old +/-/idle photo
+         * trigger). Snapshot captures the user's final state — name,
+         * slot mask, count — so the caregiver sees what was set up. */
+        {
+            char med_name[64];
+            snprintf(med_name, sizeof(med_name), "%s", sh_check->med[med_idx].name);
+            char time_str[16] = "--:--";
+            ds3231_get_time_str(time_str, sizeof(time_str));
+            char slot_names[160];
+            dispenser_format_slots_to_names(sh_check->med[med_idx].slots,
+                                            slot_names, sizeof(slot_names));
+            char msg[512];
+            if (g_ui_language == UI_LANG_TH) {
+                snprintf(msg, sizeof(msg),
+                         "📋 บันทึกข้อมูลยา\nเวลา: %s\nโมดูล: %d (%s)\n"
+                         "จำนวนยา: %d เม็ด\nมื้อจ่าย: %s",
+                         time_str, med_idx + 1, med_name,
+                         sh_check->med[med_idx].count,
+                         slot_names);
+            } else {
+                snprintf(msg, sizeof(msg),
+                         "📋 Medication setup saved\nTime: %s\nModule: %d (%s)\n"
+                         "Count: %d pills\nSlots: %s",
+                         time_str, med_idx + 1, med_name,
+                         sh_check->med[med_idx].count,
+                         slot_names);
+            }
+            extern void dispenser_telegram_photo_msg(const char *msg);
+            dispenser_telegram_photo_msg(msg);
+        }
+
         pending_page = PAGE_SETUP_MEDS;
         force_redraw = true;
         return;
@@ -783,15 +1281,15 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
     if (show_return_confirm) {
         if (ty_n >= 60 && ty_n <= 310 && tx_n >= 20 && tx_n <= 460) {
             if (ty_n >= 140 && ty_n <= 190) { // Quantity modifiers
-                if (tx_n >= RET_MINUS_X && tx_n <= RET_MINUS_X + RET_MINUS_W) { 
+                if (tx_n >= RET_MINUS_X && tx_n <= RET_MINUS_X + RET_MINUS_W) {
                     if (current_stock <= 0) return_qty = 100;
-                    else if (return_qty == 100) return_qty = current_stock;
-                    else if (return_qty > 0) return_qty--;
-                } else if (tx_n >= RET_PLUS_X && tx_n <= RET_PLUS_X + RET_PLUS_W) { 
+                    else if (return_qty == 100) return_qty = current_stock; /* always > 0 here */
+                    else if (return_qty > 1) return_qty--;            /* min 1 — never let it hit 0 */
+                } else if (tx_n >= RET_PLUS_X && tx_n <= RET_PLUS_X + RET_PLUS_W) {
                     if (current_stock <= 0) return_qty = 100;
                     else if (return_qty == 100) return_qty = current_stock;
                     else if (return_qty < current_stock) return_qty++;
-                } else if (tx_n >= RET_ALL_X && tx_n <= RET_ALL_X + RET_ALL_W) { 
+                } else if (tx_n >= RET_ALL_X && tx_n <= RET_ALL_X + RET_ALL_W) {
                     dfplayer_play_track(29); // Track 29 for 'ALL' (was 30, physically shifted by FAT)
                     return_qty = 100; // Eject All Flag
                 }
@@ -801,10 +1299,16 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
                     show_return_confirm = false;
                     force_redraw = true; // explicitly wipe screen
                 } else if (tx_n >= 260 && tx_n <= 420) { // CONFIRM
+                    /* Defensive clamp — return_qty should never be 0
+                     * (the minus button clamps to 1 above) but if
+                     * something else has left it zero, fix it now so
+                     * we don't silently swallow the user's CONFIRM tap
+                     * and leave them staring at a frozen screen. */
+                    if (return_qty <= 0) return_qty = 1;
                     dfplayer_play_track(28); // Confirm sound (track 28)
                     if (return_qty == 100) {
                         dispenser_manual_dispense(med_idx, 100);
-                    } else if (return_qty > 0) {
+                    } else {
                         dispenser_manual_dispense(med_idx, return_qty);
                     }
                     show_return_confirm = false;
@@ -824,15 +1328,14 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
             if (tx_n >= 252 && tx_n <= 302) { // [-] stock
                 if (current_stock > 0) {
                     netpie_shadow_update_count(med_idx + 1, current_stock - 1);
-                    dispenser_audit_stock_adjust(med_idx, current_stock, current_stock - 1);
                 }
             } else if (tx_n >= 382 && tx_n <= 432) { // [+] stock
                 int max_pills = DISPENSER_MAX_PILLS;
-                const pill_sensor_status_t *sns = pill_sensor_status_get(med_idx);
-                if (sns && sns->max_pills > 0) max_pills = sns->max_pills;
                 if (current_stock < max_pills) {
                     netpie_shadow_update_count(med_idx + 1, current_stock + 1);
-                    dispenser_audit_stock_adjust(med_idx, current_stock, current_stock + 1);
+                    /* User actually refilled — the "I'll refill" promise
+                     * is fulfilled, drop the Back-block latch. */
+                    if (current_stock + 1 > 0) s_refill_pending = false;
                 }
             } else if (tx_n >= 10 && tx_n <= 250) { // Name input
                 dfplayer_play_track(30); // Track 30 for Name Input (was 31)

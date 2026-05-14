@@ -1,14 +1,38 @@
 #include "pca9685.h"
 #include "i2c_manager.h"
-#include "pcf8574.h"
 #include "config.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <math.h>
+#include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 #include "nvs.h"
 #include "nvs_flash.h"
 
 static const char *TAG = "pca9685";
+
+/* Servo-busy flag. Volatile bool so the touch poll task sees writes
+ * from the dispense path without locking. */
+static volatile bool s_servo_busy = false;
+void pca9685_servo_busy_set(bool busy) { s_servo_busy = busy; }
+bool pca9685_servo_busy_get(void) { return s_servo_busy; }
+
+/* Per-channel ramp lock. Stops a second async ramp from spawning before
+ * the previous one on the same channel has finished — otherwise two
+ * pca_ramp tasks race against each other writing PWM to the same
+ * channel, producing jitter and confusing the dispenser's
+ * "cur_angle == target" completion poll. */
+static SemaphoreHandle_t s_ramp_lock[PCA9685_NUM_CHANNELS] = {0};
+static SemaphoreHandle_t ramp_lock_get(uint8_t channel) {
+    if (channel >= PCA9685_NUM_CHANNELS) return NULL;
+    if (!s_ramp_lock[channel]) {
+        s_ramp_lock[channel] = xSemaphoreCreateMutex();
+    }
+    return s_ramp_lock[channel];
+}
 
 // PCA9685 registers
 #define PCA9685_MODE1       0x00
@@ -181,8 +205,15 @@ esp_err_t pca9685_set_angle(uint8_t channel, int angle)
     // pulse_us → off count (period = 20000 us = 4096 counts)
     uint16_t off = (uint16_t)((pulse_us * 4096) / 20000);
 
-    g_servo[channel].cur_angle = angle;
-    return pca9685_set_pwm(channel, 0, off);
+    /* Write FIRST — only commit cur_angle if the PWM update actually
+     * landed. Otherwise the dispenser's "cur_angle == target" completion
+     * poll would return success on a failed I2C burst, sending the
+     * scheduler past a partial ramp before the servo physically moved. */
+    esp_err_t r = pca9685_set_pwm(channel, 0, off);
+    if (r == ESP_OK) {
+        g_servo[channel].cur_angle = angle;
+    }
+    return r;
 }
 
 // Ramped move: step the servo gradually toward target instead of
@@ -190,19 +221,20 @@ esp_err_t pca9685_set_angle(uint8_t channel, int angle)
 // shared 5 V) and softens mechanical jolt that was causing IR sensor
 // false-trigger and display SPI glitch during dispense.
 //
-// Tuning: 2°/step × 40 ms = ~1800 ms for a 90° throw. History:
+// Tuning: 1°/step × 30 ms = ~2700 ms for a 90° throw.
+// History:
 //   5°/20 ms → 2°/30 ms (2026-05-11, "softer")
 //   2°/30 ms → 1°/30 ms (2026-05-11, "ช้าปานกลาง")
 //   1°/30 ms → 2°/40 ms (2026-05-11, "smoother w/o EMI buildup")
-// Why not 1°/step: smaller per-step = more total PWM transitions =
-// more accumulated supply-rail sag on the shared PCF8574/IR rail.
-// At 1°/30 ms (90 transitions over 2.7 s) the rail never fully
-// recovers between bursts and the IR comparator latches phantom
-// LOW pulses. 2°/40 ms keeps the per-step jump small enough for
-// smooth motion while halving the transient count, so IR stays
-// clean.
-#define PCA9685_RAMP_STEP_DEG   2
-#define PCA9685_RAMP_STEP_MS    40
+//   2°/40 ms → 2°/60 ms (2026-05-13, gentler on 5 V rail)
+//   2°/60 ms → 1°/20 ms (2026-05-13, IR removed, fast + smooth)
+//   1°/20 ms → 1°/30 ms (2026-05-13, "เร็วไป + servo อื่นเพี้ยน" —
+//     20 ms updates were two-per-PWM-frame in some cases, racing the
+//     internal latch and inducing micro-glitches on neighbouring
+//     channels. 30 ms = one update per 50 Hz PWM frame, also gives
+//     more time for the 5 V rail to recover between steps.)
+#define PCA9685_RAMP_STEP_DEG   1
+#define PCA9685_RAMP_STEP_MS    30
 
 static esp_err_t pca9685_set_angle_ramped(uint8_t channel, int target_angle)
 {
@@ -239,14 +271,10 @@ static esp_err_t pca9685_set_angle_ramped(uint8_t channel, int target_angle)
     int step = PCA9685_RAMP_STEP_DEG;
     if (step < 1) step = 1;
 
-    // Block IR sensor reads for the duration of the ramp. Servo PWM
-    // edges couple EMI into the PCF8574 supply which back-feeds the IR
-    // module OUT line, making the comparator output (and its indicator
-    // LED) wobble. The dispense loop's debounce can latch onto these
-    // spikes as phantom pill drops. We can't suppress the noise at the
-    // source from firmware, but we can ignore reads taken during the
-    // window where they're known to be unreliable.
-    pcf8574_block_during_servo_ramp(true);
+    // Signal "servo busy" for the duration of the ramp so the touch
+    // driver can skip its I2C poll during the PWM-noise window. (Touch
+    // IC shares the bus and sees coupled noise during ramps.)
+    pca9685_servo_busy_set(true);
 
     while (cur != target_angle) {
         int next = cur + dir * step;
@@ -256,7 +284,7 @@ static esp_err_t pca9685_set_angle_ramped(uint8_t channel, int target_angle)
         }
         esp_err_t err = pca9685_set_angle(channel, next);
         if (err != ESP_OK) {
-            pcf8574_block_during_servo_ramp(false);
+            pca9685_servo_busy_set(false);
             return err;
         }
         cur = next;
@@ -264,11 +292,10 @@ static esp_err_t pca9685_set_angle_ramped(uint8_t channel, int target_angle)
             vTaskDelay(pdMS_TO_TICKS(PCA9685_RAMP_STEP_MS));
         }
     }
-    // Small settle so the servo's last PWM transient finishes before
-    // we re-enable IR sampling. Without this the very next pcf8574_read
-    // sees the tail of the ramp's EMI burst.
+    // Small settle for the last PWM transient to die out before we let
+    // the touch driver poll again.
     vTaskDelay(pdMS_TO_TICKS(40));
-    pcf8574_block_during_servo_ramp(false);
+    pca9685_servo_busy_set(false);
     return ESP_OK;
 }
 
@@ -280,6 +307,56 @@ esp_err_t pca9685_go_home(uint8_t channel)
 esp_err_t pca9685_go_work(uint8_t channel)
 {
     return pca9685_set_angle_ramped(channel, g_servo[channel].work_angle);
+}
+
+/* Async ramp worker. Drives one ramp then self-deletes. */
+typedef struct {
+    uint8_t channel;
+    int     target_angle;
+} pca_async_arg_t;
+
+static void pca9685_ramp_task(void *arg)
+{
+    pca_async_arg_t *a = (pca_async_arg_t *)arg;
+    SemaphoreHandle_t lock = ramp_lock_get(a->channel);
+    /* Wait for any in-flight ramp on this channel to finish — without
+     * this, sequential go_work_async + go_home_async would spawn two
+     * ramp tasks racing to write PWM on the same channel. 10 s
+     * deadline is the worst-case for a 180° ramp at 1°/30 ms. */
+    if (lock) xSemaphoreTake(lock, pdMS_TO_TICKS(10000));
+    (void)pca9685_set_angle_ramped(a->channel, a->target_angle);
+    if (lock) xSemaphoreGive(lock);
+    free(a);
+    vTaskDelete(NULL);
+}
+
+static esp_err_t pca9685_go_angle_async(uint8_t channel, int target)
+{
+    if (channel >= PCA9685_NUM_CHANNELS) return ESP_ERR_INVALID_ARG;
+    pca_async_arg_t *a = (pca_async_arg_t *)malloc(sizeof(*a));
+    if (!a) return ESP_ERR_NO_MEM;
+    a->channel = channel;
+    a->target_angle = target;
+    /* Priority 5 = above idle but below the dispense scheduler (typically
+     * 6+). Slightly higher than touch (4) so the ramp finishes promptly. */
+    BaseType_t ok = xTaskCreate(pca9685_ramp_task, "pca_ramp", 3072, a, 5, NULL);
+    if (ok != pdPASS) {
+        free(a);
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+esp_err_t pca9685_go_home_async(uint8_t channel)
+{
+    if (channel >= PCA9685_NUM_CHANNELS) return ESP_ERR_INVALID_ARG;
+    return pca9685_go_angle_async(channel, g_servo[channel].home_angle);
+}
+
+esp_err_t pca9685_go_work_async(uint8_t channel)
+{
+    if (channel >= PCA9685_NUM_CHANNELS) return ESP_ERR_INVALID_ARG;
+    return pca9685_go_angle_async(channel, g_servo[channel].work_angle);
 }
 
 void pca9685_set_positions(uint8_t channel, int home, int work)

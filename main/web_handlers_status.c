@@ -5,7 +5,7 @@
 
 #include "web_handlers_status.h"
 #include "i2c_manager.h"
-#include "pcf8574.h"
+#include "ir_input.h"
 #include "ds3231.h"
 #include "ft6336u.h"
 #include "wifi_sta.h"
@@ -14,8 +14,6 @@
 #include "cloud_secrets.h"
 #include "telegram_bot.h"
 #include "dfplayer.h"
-#include "pill_sensor_status.h"
-#include "vl53l0x_multi.h"
 #include "config.h"
 #include "esp_attr.h"
 #include "esp_log.h"
@@ -360,7 +358,7 @@ static esp_err_t entry_send_login_page(httpd_req_t *req, bool show_error)
         "</div>"
         "</form>"
         "<div class='guide'>"
-        "<div class='guide-card'><h3><span class='lang-en'>Customer Code</span><span class='lang-th'>รหัสผู้ใช้</span></h3><p><span class='lang-en'>Opens the protected customer page for Telegram, Google Sheets, and customer-facing settings.</span><span class='lang-th'>เข้าไปหน้าที่ลูกค้าใช้สำหรับตั้งค่า Telegram, Google Sheets และข้อมูลใช้งานทั่วไป</span></p></div>"
+        "<div class='guide-card'><h3><span class='lang-en'>Customer Code</span><span class='lang-th'>รหัสผู้ใช้</span></h3><p><span class='lang-en'>Opens the protected customer page for Telegram Bot setup and notification routing.</span><span class='lang-th'>เข้าไปหน้าที่ลูกค้าใช้สำหรับตั้งค่า Telegram Bot และการแจ้งเตือน</span></p></div>"
         "<div class='guide-card'><h3><span class='lang-en'>Technician Code</span><span class='lang-th'>รหัสช่าง</span></h3><p><span class='lang-en'>Opens the maintenance dashboard for diagnostics, module checks, camera tools, and backend controls.</span><span class='lang-th'>เข้าไปหน้าช่างสำหรับตรวจระบบ โมดูล กล้อง และฟังก์ชันหลังบ้าน</span></p></div>"
         "</div>"
         "<div class='hint lang-en'>Opening the device IP will always land on this page first unless you already have a valid login session.</div>"
@@ -536,16 +534,8 @@ esp_err_t status_json_handler(httpd_req_t *req) {
     esp_err_t auth = web_require_maintenance_auth(req);
     if (auth != ESP_OK) return auth;
     /* ตรวจสอบ I2C devices */
-    bool pcf = (i2c_manager_ping(ADDR_PCF8574) == ESP_OK);
     bool pca = (i2c_manager_ping(ADDR_PCA9685) == ESP_OK);
     bool rtc = (i2c_manager_ping(ADDR_DS3231)  == ESP_OK);
-
-    /* อ่านค่า IR sensors */
-    uint8_t ir_byte = 0xFF;
-    if (pcf) {
-        pcf8574_set_all_input();
-        pcf8574_read(&ir_byte);
-    }
 
     /* อ่านเวลา RTC */
     char t_str[32] = "--:--:--";
@@ -619,21 +609,25 @@ esp_err_t status_json_handler(httpd_req_t *req) {
     dispenser_get_quiet_hours(&qh_s, &qh_e);
     cJSON_AddNumberToObject(root, "quiet_start_min", (double)qh_s);
     cJSON_AddNumberToObject(root, "quiet_end_min",   (double)qh_e);
-    cJSON_AddBoolToObject(root, "pcf_present", pcf);
     cJSON_AddBoolToObject(root, "pca_present", pca);
     cJSON_AddBoolToObject(root, "rtc_present", rtc);
     cJSON_AddBoolToObject(root, "eeprom_present", false);
     cJSON_AddBoolToObject(root, "ctp_present", ctp);
-    cJSON_AddBoolToObject(root, "ir_read_ok", pcf);
+
+    /* IR sensor status — one bit per module.
+     *   ir_byte = full 8-bit raw (bits 6/7 reserved → HIGH).
+     *   ir_p0..ir_p5 = 1 if beam blocked (pin LOW), 0 if clear. */
+    uint8_t ir_raw = ir_read_mask();
     char ir_hex[5];
-    snprintf(ir_hex, sizeof(ir_hex), "%02X", ir_byte);
+    snprintf(ir_hex, sizeof(ir_hex), "%02X", ir_raw);
     cJSON_AddStringToObject(root, "ir_byte", ir_hex);
-    cJSON_AddNumberToObject(root, "ir_p0", (ir_byte >> 0) & 1);
-    cJSON_AddNumberToObject(root, "ir_p1", (ir_byte >> 1) & 1);
-    cJSON_AddNumberToObject(root, "ir_p2", (ir_byte >> 2) & 1);
-    cJSON_AddNumberToObject(root, "ir_p3", (ir_byte >> 3) & 1);
-    cJSON_AddNumberToObject(root, "ir_p4", (ir_byte >> 4) & 1);
-    cJSON_AddNumberToObject(root, "ir_p5", (ir_byte >> 5) & 1);
+    cJSON_AddNumberToObject(root, "ir_p0", (ir_raw >> 0) & 1 ? 0 : 1);
+    cJSON_AddNumberToObject(root, "ir_p1", (ir_raw >> 1) & 1 ? 0 : 1);
+    cJSON_AddNumberToObject(root, "ir_p2", (ir_raw >> 2) & 1 ? 0 : 1);
+    cJSON_AddNumberToObject(root, "ir_p3", (ir_raw >> 3) & 1 ? 0 : 1);
+    cJSON_AddNumberToObject(root, "ir_p4", (ir_raw >> 4) & 1 ? 0 : 1);
+    cJSON_AddNumberToObject(root, "ir_p5", (ir_raw >> 5) & 1 ? 0 : 1);
+
     cJSON_AddStringToObject(root, "rtc_time", t_str);
     cJSON_AddBoolToObject(root, "touch_active", touch_active);
     cJSON_AddNumberToObject(root, "touch_x", (int)touch_x);
@@ -818,10 +812,10 @@ esp_err_t cloud_setup_handler(httpd_req_t *req) {
     html_escape(token, token_html, sizeof(token_html));
     html_escape(chat_id, chat_html, sizeof(chat_html));
 
-    char *html = (char *)malloc(7168);
+    char *html = (char *)malloc(10240);
     if (!html) return ESP_ERR_NO_MEM;
 
-    snprintf(html, 7168,
+    snprintf(html, 10240,
         "<!doctype html>"
         "<html lang='en'>"
         "<head>"
@@ -844,6 +838,16 @@ esp_err_t cloud_setup_handler(httpd_req_t *req) {
         "input:focus,textarea:focus{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(109,184,255,.16)}"
         "textarea{min-height:132px;resize:vertical}"
         ".note{margin-top:22px;padding:16px 18px;border-radius:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:var(--muted);font-size:14px;line-height:1.7}"
+        ".guide{margin:24px 0 4px;padding:22px;border-radius:20px;background:linear-gradient(180deg,rgba(109,184,255,.08),rgba(77,215,176,.04));border:1px solid rgba(109,184,255,.18)}"
+        ".guide h2{margin:0 0 6px;font-size:20px;color:#dbe9ff}"
+        ".guide .glead{margin:0 0 18px;color:var(--muted);font-size:14px;line-height:1.65}"
+        ".steps{list-style:none;padding:0;margin:0;counter-reset:step}"
+        ".steps li{position:relative;padding:10px 0 10px 50px;color:#e4efff;font-size:14.5px;line-height:1.7;border-bottom:1px solid rgba(255,255,255,.06)}"
+        ".steps li:last-child{border-bottom:none}"
+        ".steps li::before{counter-increment:step;content:counter(step);position:absolute;left:0;top:10px;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#042032;font-weight:800;font-size:14px}"
+        ".steps b{color:#fff}"
+        ".steps code{padding:2px 8px;border-radius:6px;background:#06101e;border:1px solid rgba(255,255,255,.1);color:#9ae8d0;font-family:Consolas,Monaco,monospace;font-size:13px}"
+        ".steps .tip{display:block;margin-top:4px;color:var(--muted);font-size:12.5px}"
         ".actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}"
         ".btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border-radius:14px;border:none;font-size:15px;font-weight:700;text-decoration:none;cursor:pointer}"
         ".btn-primary{background:linear-gradient(135deg,var(--accent),#2fc4d5);color:#042032;box-shadow:0 10px 24px rgba(77,215,176,.22)}"
@@ -856,7 +860,23 @@ esp_err_t cloud_setup_handler(httpd_req_t *req) {
         "<section class='card'>"
         "<div class='eyebrow'>ตั้งค่า Telegram</div>"
         "<h1>Telegram Bot</h1>"
-        "<p class='lead'>หน้านี้ใช้ตั้งค่า Telegram Bot เท่านั้น &middot; ประวัติการจ่ายยาเก็บในเครื่อง (ใช้ /log ดูใน Telegram) &middot; ตั้งค่า WiFi / ช่าง / รหัสผ่าน อยู่ในหน้า /tech</p>"
+        "<p class='lead'>หน้านี้ใช้ตั้งค่า Telegram Bot สำหรับส่งการแจ้งเตือนและภาพถ่ายไปยังผู้ดูแล &middot; ประวัติการจ่ายยาเก็บในเครื่อง (ใช้คำสั่ง /log ใน Telegram เพื่อดู)</p>"
+
+        "<section class='guide'>"
+        "<h2>วิธีสร้าง Telegram Bot</h2>"
+        "<p class='glead'>ถ้ายังไม่มี Bot ทำตามขั้นตอนนี้ครั้งเดียวก่อนกรอกข้อมูลด้านล่าง</p>"
+        "<ol class='steps'>"
+        "<li><b>เปิดแอป Telegram</b> ในมือถือหรือคอมพิวเตอร์ &middot; ค้นหาบัญชี <code>@BotFather</code> แล้วกด <b>Start</b></li>"
+        "<li>ส่งข้อความ <code>/newbot</code> ไปที่ BotFather</li>"
+        "<li>พิมพ์ <b>ชื่อ Bot</b> ที่อยากใช้ (เช่น <code>ยาคุณยาย</code>) แล้วส่ง</li>"
+        "<li>พิมพ์ <b>username</b> ของ Bot &middot; ต้องลงท้ายด้วย <code>bot</code> และห้ามซ้ำกับคนอื่น (เช่น <code>grandma_pill_bot</code>)<span class='tip'>ถ้าซ้ำ BotFather จะให้พิมพ์ใหม่</span></li>"
+        "<li>BotFather จะส่ง <b>Token</b> รหัสยาว ๆ มาให้ &middot; <b>คัดลอกทั้งบรรทัด</b> (รูปแบบ <code>123456:ABC-DEF...</code>) แล้วเอามาวางช่อง <b>Telegram Bot Token</b> ด้านล่าง</li>"
+        "<li>กลับไปที่ Telegram &middot; <b>ค้นหา Bot ของคุณ</b> ตาม username ที่เพิ่งตั้ง &middot; กด <b>Start</b> และส่งข้อความใด ๆ ไปหา Bot</li>"
+        "<li><b>หา Chat ID</b>: เปิดเว็บนี้ในเบราว์เซอร์ <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> โดยแทน <code>&lt;TOKEN&gt;</code> ด้วย Token ของคุณ &middot; มองหา <code>\"chat\":{\"id\":...}</code> &middot; เอาตัวเลขที่เห็นมาวางช่อง <b>Telegram Chat ID</b><span class='tip'>ถ้าอยากให้ส่งเข้ากลุ่ม: เพิ่ม Bot เข้ากลุ่ม → ส่งข้อความในกลุ่ม → chat_id จะเป็นเลขลบ เริ่มต้นด้วย -100...</span></li>"
+        "<li>กด <b>บันทึก Telegram Settings</b> ด้านล่าง แล้วลอง <b>ทดสอบส่งข้อความ</b> &middot; ถ้าได้รับใน Telegram = พร้อมใช้งาน</li>"
+        "</ol>"
+        "</section>"
+
         "<form method='POST' action='/cloud/save'>"
         "<div class='field'>"
         "<label for='tg_token'>Telegram Bot Token"
@@ -1129,10 +1149,25 @@ esp_err_t wifi_scan_handler(httpd_req_t *req) {
     char *j = malloc(2048);
     if (!j) return ESP_FAIL;
     strcpy(j, "[");
-    for (int i=0; i<count; i++) {
+    for (int i = 0; i < count; i++) {
+        /* JSON-escape the SSID. Raw `"` / `\` / control bytes break the
+         * dashboard's JSON.parse — observed: SSID with apostrophes
+         * silently dropped the scan list. UTF-8 multi-byte bytes pass
+         * through; the parsing JS handles them natively. */
+        char esc[80];
+        size_t eo = 0;
+        const uint8_t *raw = aps[i].ssid;
+        for (size_t k = 0; k < 32 && raw[k] && eo + 6 < sizeof(esc); ++k) {
+            unsigned char c = raw[k];
+            if (c == '"' || c == '\\') { esc[eo++] = '\\'; esc[eo++] = (char)c; }
+            else if (c < 0x20)         { eo += snprintf(esc + eo, sizeof(esc) - eo, "\\u%04x", c); }
+            else                       { esc[eo++] = (char)c; }
+        }
+        esc[eo] = '\0';
+
         char item[128];
-        snprintf(item, sizeof(item), "{\"ssid\":\"%s\",\"rssi\":%d}%s", 
-            aps[i].ssid, aps[i].rssi, (i==count-1)?"":",");
+        snprintf(item, sizeof(item), "{\"ssid\":\"%s\",\"rssi\":%d}%s",
+            esc, aps[i].rssi, (i == count - 1) ? "" : ",");
         strncat(j, item, 2048 - strlen(j) - 1);
     }
     strncat(j, "]", 2048 - strlen(j) - 1);
@@ -1329,564 +1364,6 @@ esp_err_t sound_play_handler(httpd_req_t *req)
     return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
 }
 
-esp_err_t sensors_json_handler(httpd_req_t *req)
-{
-    esp_err_t auth = web_require_maintenance_api_auth(req);
-    if (auth != ESP_OK) return auth;
-
-    /* Optional ?refresh=1 (or ?fresh=1) triggers an on-demand VL53 read
-     * before returning. Without this, the page shows the last cached
-     * values — fine for the diagnostic tab, but the live /vl53 page
-     * needs fresh numbers. The check_now call blocks up to ~6 s while
-     * the task polls all 6 channels through the TCA mux. Concurrent
-     * polls are throttled by the request semaphore inside vl53_task. */
-    char query[64];
-    if (httpd_req_get_url_query_len(req) > 0 &&
-        httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
-        char val[8];
-        bool want_refresh = false;
-        if (httpd_query_key_value(query, "refresh", val, sizeof(val)) == ESP_OK ||
-            httpd_query_key_value(query, "fresh",   val, sizeof(val)) == ESP_OK) {
-            if (val[0] == '1' || val[0] == 't' || val[0] == 'y') want_refresh = true;
-        }
-        if (want_refresh) {
-            (void)vl53l0x_multi_check_now(6000);
-        }
-    }
-
-    const pill_sensor_status_t *s = pill_sensor_status_get_all();
-    char json[2048];
-    size_t off = 0;
-    off += snprintf(json + off, sizeof(json) - off, "{\"enabled\":%s,\"channels\":[",
-#if ENABLE_VL53_PILL_SENSORS
-                    "true"
-#else
-                    "false"
-#endif
-    );
-    for (int i = 0; i < PILL_SENSOR_COUNT && off < sizeof(json); i++) {
-        off += snprintf(json + off, sizeof(json) - off,
-                        "%s{\"ch\":%d,\"idx\":%d,\"addr\":%u,\"present\":%s,\"valid\":%s,"
-                        "\"raw_mm\":%d,\"filtered_mm\":%d,\"pill_count\":%d,"
-                        "\"is_empty\":%s,\"is_full\":%s,"
-                        "\"full_dist_mm\":%d,\"pill_height_mm\":%d,\"max_pills\":%d,"
-                        "\"count_offset\":%d}",
-                        i ? "," : "", i, i + 1, (unsigned)s[i].address,
-                        s[i].present ? "true" : "false",
-                        s[i].valid ? "true" : "false",
-                        s[i].raw_mm, s[i].filtered_mm, s[i].pill_count,
-                        s[i].is_empty ? "true" : "false",
-                        s[i].is_full ? "true" : "false",
-                        s[i].full_dist_mm, s[i].pill_height_mm, s[i].max_pills,
-                        s[i].count_offset);
-    }
-    snprintf(json + off, sizeof(json) - off, "]}");
-
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
-}
-
-esp_err_t vl53_live_handler(httpd_req_t *req)
-{
-    /* Self-contained HTML page that polls /sensors.json?refresh=1
-     * every 3 s. Each refresh triggers an on-demand VL53 read so the
-     * values shown are current to within 3-6 s. No login required —
-     * the page is read-only diagnostic. */
-    static const char html[] =
-        "<!doctype html><html lang=th><head>"
-        "<meta charset=utf-8>"
-        "<meta name=viewport content='width=device-width,initial-scale=1'>"
-        "<title>VL53 Live</title>"
-        "<style>"
-        "body{margin:0;font-family:'Segoe UI',Tahoma,sans-serif;"
-        "background:radial-gradient(circle at top,#16345a,#0b1629 38%,#050b14);color:#f4f8ff;min-height:100vh;padding:24px}"
-        "h1{margin:0 0 8px;font-size:24px}"
-        ".sub{color:#9ab;margin-bottom:18px;font-size:14px}"
-        "table{width:100%;max-width:760px;border-collapse:collapse;background:rgba(15,28,48,.85);"
-        "border:1px solid #234;border-radius:14px;overflow:hidden}"
-        "th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #1e3a5a}"
-        "th{background:#1a3354;font-weight:600;font-size:13px;color:#9be}"
-        "tr:last-child td{border-bottom:none}"
-        ".st{font-weight:600;font-size:13px}"
-        ".st-full{color:#4ade80}"
-        ".st-med{color:#86efac}"
-        ".st-low{color:#fbbf24}"
-        ".st-empty{color:#f87171}"
-        ".st-na{color:#64748b}"
-        ".mm{color:#a8b8d0;font-family:monospace}"
-        ".stale{opacity:.5}"
-        "#status{margin-top:14px;font-size:12px;color:#7a8aa0}"
-        "</style>"
-        "</head><body>"
-        "<h1>📏 VL53L0X — ระยะวัดยา (Live)</h1>"
-        "<div class=sub>รีเฟรชอัตโนมัติทุก 3 วินาที &middot; แต่ละ refresh ปลุก VL53 อ่านค่าใหม่</div>"
-        "<table id=tbl>"
-        "<thead><tr><th>โมดูล</th><th>สถานะ</th><th>ระยะดิบ</th><th>ระยะกรอง</th><th>เม็ดยา</th></tr></thead>"
-        "<tbody id=rows>"
-        "<tr><td colspan=5 class=st-na>กำลังโหลด...</td></tr>"
-        "</tbody>"
-        "</table>"
-        "<div id=status></div>"
-        "<script>"
-        "const STATE={0:['ไม่ทราบ','st-na'],1:['ยาหมด','st-empty'],"
-        "2:['ยาน้อย','st-low'],3:['มียา','st-med'],4:['ยาเต็ม','st-full']};"
-        "function classify(ch){"
-          "if(!ch.present)return ['ไม่ต่อ','st-na'];"
-          "if(!ch.valid)return ['อ่านไม่ได้','st-na'];"
-          "const d=ch.filtered_mm;"
-          "if(d<0)return ['ไม่ทราบ','st-na'];"
-          "if(d>=230)return STATE[1];"
-          "if(d>=150)return STATE[2];"
-          "if(d>=60)return STATE[3];"
-          "return STATE[4];"
-        "}"
-        "async function refresh(){"
-          "try{"
-            "const t0=Date.now();"
-            "const r=await fetch('/sensors.json?refresh=1');"
-            "const j=await r.json();"
-            "const dt=Date.now()-t0;"
-            "let html='';"
-            "for(const ch of j.channels){"
-              "const [lbl,cls]=classify(ch);"
-              "const stale=ch.valid?'':' stale';"
-              "html+=`<tr class='${stale}'><td>โมดูล ${ch.idx}</td>"
-                "<td class='st ${cls}'>${lbl}</td>"
-                "<td class=mm>${ch.raw_mm} mm</td>"
-                "<td class=mm>${ch.filtered_mm} mm</td>"
-                "<td>${ch.pill_count<0?'-':ch.pill_count}</td></tr>`;"
-            "}"
-            "document.getElementById('rows').innerHTML=html;"
-            "document.getElementById('status').textContent="
-              "'อัปเดตล่าสุด '+new Date().toLocaleTimeString('th-TH')+' (อ่านใช้เวลา '+dt+' ms)';"
-          "}catch(e){"
-            "document.getElementById('status').textContent='Error: '+e.message;"
-          "}"
-        "}"
-        "refresh();setInterval(refresh,3000);"
-        "</script>"
-        "</body></html>";
-    httpd_resp_set_type(req, "text/html; charset=UTF-8");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-    return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
-}
-
-esp_err_t sensors_config_handler(httpd_req_t *req)
-{
-    esp_err_t auth = web_require_tech_api_auth(req);
-    if (auth != ESP_OK) return auth;
-
-    char body[192] = {0};
-    int len = httpd_req_recv(req, body, sizeof(body) - 1);
-    if (len < 0) return ESP_FAIL;
-    body[len] = '\0';
-
-    char ch_s[8] = {0};
-    char full_s[16] = {0};
-    char height_s[16] = {0};
-    char max_s[16] = {0};
-    extract_form_value(body, "ch", ch_s, sizeof(ch_s));
-    extract_form_value(body, "full_dist_mm", full_s, sizeof(full_s));
-    extract_form_value(body, "pill_height_mm", height_s, sizeof(height_s));
-    extract_form_value(body, "max_pills", max_s, sizeof(max_s));
-
-    int ch = atoi(ch_s);
-    int full = atoi(full_s);
-    int height = atoi(height_s);
-    int max_pills = atoi(max_s);
-    // Sanity-check ranges so a typo doesn't permanently corrupt cal NVS:
-    //  full   1..500 mm   (cartridge length sanely bounded)
-    //  height 1..50 mm    (a 50 mm "pill" is a hard sanity limit)
-    //  max    1..200      (200 pills × 50 mm = 10 m, well past full range)
-    //  full + max*height should not exceed VL53 max range (8190 mm).
-    if (ch < 0 || ch >= PILL_SENSOR_COUNT ||
-        full <= 0   || full > 500   ||
-        height <= 0 || height > 50  ||
-        max_pills <= 0 || max_pills > 200 ||
-        (full + max_pills * height) > 8190) {
-        httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_set_type(req, "application/json");
-        return httpd_resp_send(req, "{\"ok\":false,\"error\":\"invalid_sensor_config\"}", HTTPD_RESP_USE_STRLEN);
-    }
-
-    vl53l0x_set_channel_config(ch, full, height, max_pills);
-    httpd_resp_set_type(req, "application/json");
-    return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
-}
-
-/* POST /sensors/cal_capture — capture the current sensor reading as either
- * the "full" distance (cartridge loaded) or the "empty" distance (cartridge
- * empty). When mode=empty, pill_height_mm is derived from the gap between
- * the empty reading and the saved full distance, divided by max_pills.
- *
- * body: ch=N&mode=full   → full_dist_mm = current filtered_mm
- *       ch=N&mode=empty  → pill_height_mm = (current - full_dist) / max_pills
- */
-esp_err_t sensors_capture_handler(httpd_req_t *req)
-{
-    esp_err_t auth = web_require_tech_api_auth(req);
-    if (auth != ESP_OK) return auth;
-
-    char body[96] = {0};
-    int len = httpd_req_recv(req, body, sizeof(body) - 1);
-    if (len < 0) return ESP_FAIL;
-    body[len] = '\0';
-
-    char ch_s[8] = {0};
-    char mode[16] = {0};
-    extract_form_value(body, "ch", ch_s, sizeof(ch_s));
-    extract_form_value(body, "mode", mode, sizeof(mode));
-    int ch = atoi(ch_s);
-
-    if (ch < 0 || ch >= PILL_SENSOR_COUNT) {
-        httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_set_type(req, "application/json");
-        return httpd_resp_send(req, "{\"ok\":false,\"error\":\"invalid_ch\"}", HTTPD_RESP_USE_STRLEN);
-    }
-
-    const pill_sensor_status_t *all = pill_sensor_status_get_all();
-    const pill_sensor_status_t *s = &all[ch];
-    if (!s->present || !s->valid || s->filtered_mm <= 0) {
-        httpd_resp_set_status(req, "409 Conflict");
-        httpd_resp_set_type(req, "application/json");
-        return httpd_resp_send(req, "{\"ok\":false,\"error\":\"no_live_reading\"}", HTTPD_RESP_USE_STRLEN);
-    }
-
-    int captured = s->filtered_mm;
-    int full_dist = s->full_dist_mm;
-    int pill_h    = s->pill_height_mm;
-    int max_pills = s->max_pills > 0 ? s->max_pills : 30;
-    char resp[160];
-
-    if (strcmp(mode, "full") == 0) {
-        full_dist = captured;
-        if (pill_h <= 0) pill_h = 1;
-        vl53l0x_set_channel_config(ch, full_dist, pill_h, max_pills);
-        snprintf(resp, sizeof(resp),
-                 "{\"ok\":true,\"mode\":\"full\",\"captured_mm\":%d,"
-                 "\"full_dist_mm\":%d,\"pill_height_mm\":%d,\"max_pills\":%d}",
-                 captured, full_dist, pill_h, max_pills);
-    } else if (strcmp(mode, "empty") == 0) {
-        if (full_dist <= 0 || captured <= full_dist || max_pills <= 0) {
-            httpd_resp_set_status(req, "409 Conflict");
-            httpd_resp_set_type(req, "application/json");
-            return httpd_resp_send(req,
-                "{\"ok\":false,\"error\":\"need_full_first_or_invalid_geometry\"}",
-                HTTPD_RESP_USE_STRLEN);
-        }
-        int derived = (captured - full_dist) / max_pills;
-        if (derived <= 0) derived = 1;
-        pill_h = derived;
-        vl53l0x_set_channel_config(ch, full_dist, pill_h, max_pills);
-        snprintf(resp, sizeof(resp),
-                 "{\"ok\":true,\"mode\":\"empty\",\"captured_mm\":%d,"
-                 "\"full_dist_mm\":%d,\"pill_height_mm\":%d,\"max_pills\":%d}",
-                 captured, full_dist, pill_h, max_pills);
-    } else {
-        httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_set_type(req, "application/json");
-        return httpd_resp_send(req, "{\"ok\":false,\"error\":\"mode_must_be_full_or_empty\"}",
-                               HTTPD_RESP_USE_STRLEN);
-    }
-
-    httpd_resp_set_type(req, "application/json");
-    return httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
-}
-
-/* ─────────────────────────────────────────────────────────────────────
- * Auto per-pill calibration session.
- *
- * Flow (per channel):
- *  1. Operator fills the cartridge fully and types max_pills.
- *  2. POST /sensors/cal_guide?ch=N&action=auto&max_pills=13
- *       → captures full distance now, then spawns a background task
- *         that dispenses pills one at a time (max_pills total) and
- *         records the filtered_mm reading after each dispense.
- *       → when the run finishes, the task averages the captured
- *         (count, dist) pairs at fixed pill_height=15mm, derives
- *         full_dist_mm and persists via vl53l0x_set_channel_config.
- *         count_offset is reset to 0.
- *  3. GET /sensors/cal_guide?ch=N → live phase + steps for the UI.
- *  4. POST .../action=reset cancels a running session at any time.
- *
- * Pill height is fixed at VL53_PILL_HEIGHT_MM (15 mm) — the cartridge
- * geometry is standardized, so guided cal only learns the full-state
- * distance.
- * ───────────────────────────────────────────────────────────────────── */
-#define CAL_GUIDE_MAX_STEPS 100
-
-typedef enum {
-    CAL_PHASE_IDLE = 0,
-    CAL_PHASE_RUNNING,
-    CAL_PHASE_DONE,
-    CAL_PHASE_ERROR,
-} cal_guide_phase_t;
-
-typedef struct {
-    bool              active;          // task is alive and progressing
-    bool              cancel_req;      // set by /reset, polled by task
-    cal_guide_phase_t phase;
-    int               max_pills;
-    int               steps_count;
-    int16_t           step_count[CAL_GUIDE_MAX_STEPS];
-    int16_t           step_dist[CAL_GUIDE_MAX_STEPS];
-    int               result_full_dist;
-    int               result_height;
-    char              error_msg[32];
-} cal_guide_session_t;
-
-// Park in PSRAM — 6 sessions × ~450 B was crowding internal BSS, leaving
-// too little DMA-capable internal RAM for ESP-Hosted's SDIO mempool at boot.
-static EXT_RAM_BSS_ATTR cal_guide_session_t s_cal_guide[PILL_SENSOR_COUNT];
-
-static void cal_guide_reset(int ch)
-{
-    // Caller must have already stopped any background task on this ch.
-    memset(&s_cal_guide[ch], 0, sizeof(s_cal_guide[ch]));
-}
-
-static int cal_guide_capture_distance(int ch)
-{
-    // Wait briefly for sensor to give a stable reading after dispense.
-    // pill_sensor_status_recalc happens inside vl53 task on each poll,
-    // so a 700 ms wait covers ~7 EMA cycles.
-    vTaskDelay(pdMS_TO_TICKS(700));
-    const pill_sensor_status_t *all = pill_sensor_status_get_all();
-    if (!all[ch].valid || all[ch].filtered_mm <= 0) return -1;
-    return all[ch].filtered_mm;
-}
-
-static esp_err_t cal_guide_send(httpd_req_t *req, const char *json)
-{
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
-}
-
-static const char *cal_phase_str(cal_guide_phase_t p)
-{
-    switch (p) {
-        case CAL_PHASE_RUNNING: return "running";
-        case CAL_PHASE_DONE:    return "done";
-        case CAL_PHASE_ERROR:   return "error";
-        case CAL_PHASE_IDLE:    /* fall through */
-        default:                return "idle";
-    }
-}
-
-static esp_err_t cal_guide_send_state(httpd_req_t *req, int ch)
-{
-    cal_guide_session_t *s = &s_cal_guide[ch];
-    char *out = (char *)malloc(2048);
-    if (!out) return httpd_resp_send_500(req);
-    int off = snprintf(out, 2048,
-        "{\"ok\":true,\"ch\":%d,\"active\":%s,\"phase\":\"%s\","
-        "\"max_pills\":%d,\"full_dist_mm\":%d,\"pill_height_mm\":%d,"
-        "\"error\":\"%s\",\"steps\":[",
-        ch, s->active ? "true" : "false", cal_phase_str(s->phase),
-        s->max_pills, s->result_full_dist, s->result_height,
-        s->error_msg);
-    for (int i = 0; i < s->steps_count && off < 2000; ++i) {
-        off += snprintf(out + off, 2048 - off, "%s{\"count\":%d,\"dist\":%d}",
-                        i ? "," : "", s->step_count[i], s->step_dist[i]);
-    }
-    snprintf(out + off, 2048 - off, "]}");
-    esp_err_t r = cal_guide_send(req, out);
-    free(out);
-    return r;
-}
-
-/* ── Auto-cal background task: dispense N pills one at a time, record
- *    distance after each, then average → full_dist_mm at fixed 15mm
- *    height and persist via vl53l0x_set_channel_config. ── */
-static void cal_guide_auto_task(void *arg)
-{
-    int ch = (int)(intptr_t)arg;
-    cal_guide_session_t *s = &s_cal_guide[ch];
-    extern volatile int ui_manual_disp_status;
-    extern void dispenser_manual_dispense(int med_idx, int qty);
-    extern bool dispenser_emergency_active(void);
-
-    // Step 0: capture "full" distance with cartridge fully loaded.
-    int full_dist = cal_guide_capture_distance(ch);
-    if (full_dist <= 0) {
-        s->phase = CAL_PHASE_ERROR;
-        snprintf(s->error_msg, sizeof(s->error_msg), "no_live_reading");
-        s->active = false;
-        vTaskDelete(NULL);
-        return;
-    }
-    s->step_count[0] = (int16_t)s->max_pills;
-    s->step_dist[0]  = (int16_t)full_dist;
-    s->steps_count = 1;
-
-    int target = s->max_pills;
-    if (target > CAL_GUIDE_MAX_STEPS - 1) target = CAL_GUIDE_MAX_STEPS - 1;
-
-    for (int i = 0; i < target; ++i) {
-        if (s->cancel_req) {
-            snprintf(s->error_msg, sizeof(s->error_msg), "cancelled");
-            s->phase = CAL_PHASE_ERROR;
-            s->active = false;
-            vTaskDelete(NULL);
-            return;
-        }
-        if (dispenser_emergency_active()) {
-            snprintf(s->error_msg, sizeof(s->error_msg), "estop_active");
-            s->phase = CAL_PHASE_ERROR;
-            s->active = false;
-            vTaskDelete(NULL);
-            return;
-        }
-
-        // Fire a single manual dispense and wait for completion.
-        ui_manual_disp_status = 0;
-        dispenser_manual_dispense(ch, 1);
-        TickType_t start = xTaskGetTickCount();
-        while ((xTaskGetTickCount() - start) * portTICK_PERIOD_MS < 30000) {
-            if (s->cancel_req) break;
-            int st = ui_manual_disp_status;
-            if (st == 2 || st == 3) break;
-            vTaskDelay(pdMS_TO_TICKS(150));
-        }
-        ui_manual_disp_status = 0;  // free the slot for next iteration
-
-        if (s->cancel_req) {
-            snprintf(s->error_msg, sizeof(s->error_msg), "cancelled");
-            s->phase = CAL_PHASE_ERROR;
-            s->active = false;
-            vTaskDelete(NULL);
-            return;
-        }
-
-        int dist = cal_guide_capture_distance(ch);
-        if (dist > 0 && s->steps_count < CAL_GUIDE_MAX_STEPS) {
-            s->step_count[s->steps_count] = (int16_t)(s->max_pills - (i + 1));
-            s->step_dist[s->steps_count]  = (int16_t)dist;
-            s->steps_count++;
-        }
-    }
-
-    // Compute full_dist at fixed 15mm height across captured points.
-    if (s->steps_count >= 2) {
-        const int height = VL53_PILL_HEIGHT_MM;
-        long sum_full = 0;
-        for (int i = 0; i < s->steps_count; ++i) {
-            long removed = s->max_pills - s->step_count[i];
-            sum_full += (long)s->step_dist[i] - removed * height;
-        }
-        int fd = (int)((sum_full + (s->steps_count / 2)) / s->steps_count);
-        if (fd < 1) fd = 1;
-        if (fd > 500) fd = 500;
-        extern void vl53l0x_set_channel_config(int ch, int full_dist_mm, int pill_height_mm, int max_pills);
-        extern void vl53l0x_set_channel_offset(int ch, int count_offset);
-        vl53l0x_set_channel_config(ch, fd, height, s->max_pills);
-        vl53l0x_set_channel_offset(ch, 0);
-        s->result_full_dist = fd;
-        s->result_height    = height;
-        s->phase = CAL_PHASE_DONE;
-    } else {
-        snprintf(s->error_msg, sizeof(s->error_msg), "not_enough_steps");
-        s->phase = CAL_PHASE_ERROR;
-    }
-    s->active = false;
-    vTaskDelete(NULL);
-}
-
-esp_err_t sensors_calguide_handler(httpd_req_t *req)
-{
-    esp_err_t auth = web_require_tech_api_auth(req);
-    if (auth != ESP_OK) return auth;
-
-    char query[80] = {0};
-    char ch_s[8] = {0}, action[16] = {0}, max_s[8] = {0};
-    if (httpd_req_get_url_query_len(req) > 0 &&
-        httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
-        httpd_query_key_value(query, "ch", ch_s, sizeof(ch_s));
-        httpd_query_key_value(query, "action", action, sizeof(action));
-        httpd_query_key_value(query, "max_pills", max_s, sizeof(max_s));
-    }
-    int ch = atoi(ch_s);
-    if (ch < 0 || ch >= PILL_SENSOR_COUNT) {
-        return cal_guide_send(req, "{\"ok\":false,\"error\":\"invalid_ch\"}");
-    }
-
-    cal_guide_session_t *s = &s_cal_guide[ch];
-
-    // GET = state query
-    if (req->method == HTTP_GET || action[0] == '\0') {
-        return cal_guide_send_state(req, ch);
-    }
-
-    if (strcmp(action, "reset") == 0) {
-        // If a task is still running, signal cancel and wait briefly so
-        // it can exit before we wipe the session struct it's writing to.
-        if (s->active) {
-            s->cancel_req = true;
-            for (int i = 0; i < 50 && s->active; ++i) {
-                vTaskDelay(pdMS_TO_TICKS(100));
-            }
-        }
-        cal_guide_reset(ch);
-        return cal_guide_send_state(req, ch);
-    }
-
-    if (strcmp(action, "auto") == 0) {
-        if (s->active) {
-            return cal_guide_send(req, "{\"ok\":false,\"error\":\"already_running\"}");
-        }
-        int max_pills = atoi(max_s);
-        if (max_pills <= 0 || max_pills > CAL_GUIDE_MAX_STEPS - 1) {
-            return cal_guide_send(req, "{\"ok\":false,\"error\":\"invalid_max_pills\"}");
-        }
-        cal_guide_reset(ch);
-        s->active     = true;
-        s->cancel_req = false;
-        s->phase      = CAL_PHASE_RUNNING;
-        s->max_pills  = max_pills;
-        BaseType_t ok = xTaskCreate(cal_guide_auto_task, "cal_auto", 4096,
-                                    (void *)(intptr_t)ch, 4, NULL);
-        if (ok != pdPASS) {
-            cal_guide_reset(ch);
-            return cal_guide_send(req, "{\"ok\":false,\"error\":\"task_create_failed\"}");
-        }
-        return cal_guide_send_state(req, ch);
-    }
-
-    return cal_guide_send(req, "{\"ok\":false,\"error\":\"unknown_action\"}");
-}
-
-esp_err_t sensors_offset_handler(httpd_req_t *req)
-{
-    esp_err_t auth = web_require_tech_api_auth(req);
-    if (auth != ESP_OK) return auth;
-
-    char body[64] = {0};
-    int len = httpd_req_recv(req, body, sizeof(body) - 1);
-    if (len < 0) return ESP_FAIL;
-    body[len] = '\0';
-
-    char ch_s[8] = {0};
-    char off_s[8] = {0};
-    extract_form_value(body, "ch", ch_s, sizeof(ch_s));
-    extract_form_value(body, "offset", off_s, sizeof(off_s));
-    int ch = atoi(ch_s);
-    int off = atoi(off_s);
-    if (ch < 0 || ch >= PILL_SENSOR_COUNT || off < -50 || off > 50) {
-        httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_set_type(req, "application/json");
-        return httpd_resp_send(req, "{\"ok\":false,\"error\":\"invalid_offset\"}", HTTPD_RESP_USE_STRLEN);
-    }
-
-    extern void vl53l0x_set_channel_offset(int ch, int count_offset);
-    vl53l0x_set_channel_offset(ch, off);
-
-    char json[80];
-    snprintf(json, sizeof(json), "{\"ok\":true,\"ch\":%d,\"offset\":%d}", ch, off);
-    httpd_resp_set_type(req, "application/json");
-    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
-}
 
 esp_err_t audit_json_handler(httpd_req_t *req)
 {
@@ -1916,16 +1393,42 @@ esp_err_t audit_json_handler(httpd_req_t *req)
 
     const netpie_shadow_t *sh = netpie_get_shadow();
     off += snprintf(out + off, OUT_CAP - off, "{\"ok\":true,\"count\":%u,\"entries\":[", (unsigned)n);
-    for (size_t i = 0; i < n && off < OUT_CAP - 200; ++i) {
+    /* Headroom: per-entry skeleton ~80 bytes + worst-case name (32 chars
+     * raw × 6 expansion for `\"` / `\\` / `\uXXXX` of control bytes)
+     * = ~256 bytes. Leave 300 to also fit the closing "]}". */
+    for (size_t i = 0; i < n && off + 300 < OUT_CAP; ++i) {
         const dispenser_audit_entry_t *e = &entries[i];
-        const char *name = (sh && e->med_idx >= 0 && e->med_idx < DISPENSER_MED_COUNT &&
+        const char *raw = (sh && e->med_idx >= 0 && e->med_idx < DISPENSER_MED_COUNT &&
                             sh->med[e->med_idx].name[0]) ? sh->med[e->med_idx].name : "";
-        off += snprintf(out + off, OUT_CAP - off,
+        /* Escape name into JSON-safe form. \"/\\/\b/\f/\n/\r/\t and
+         * \u00XX for other control bytes. Non-ASCII bytes (UTF-8 Thai)
+         * pass through unchanged — JSON allows raw UTF-8 in strings. */
+        char esc[200];
+        size_t eo = 0;
+        for (size_t k = 0; raw[k] && eo + 6 < sizeof(esc); ++k) {
+            unsigned char c = (unsigned char)raw[k];
+            if (c == '"' || c == '\\') { esc[eo++] = '\\'; esc[eo++] = (char)c; }
+            else if (c == '\b') { esc[eo++] = '\\'; esc[eo++] = 'b'; }
+            else if (c == '\f') { esc[eo++] = '\\'; esc[eo++] = 'f'; }
+            else if (c == '\n') { esc[eo++] = '\\'; esc[eo++] = 'n'; }
+            else if (c == '\r') { esc[eo++] = '\\'; esc[eo++] = 'r'; }
+            else if (c == '\t') { esc[eo++] = '\\'; esc[eo++] = 't'; }
+            else if (c < 0x20)  { eo += snprintf(esc + eo, sizeof(esc) - eo, "\\u%04x", c); }
+            else                { esc[eo++] = (char)c; }
+        }
+        esc[eo] = '\0';
+
+        int wrote = snprintf(out + off, OUT_CAP - off,
                         "%s{\"ts\":%lu,\"med\":%d,\"name\":\"%s\",\"from\":%d,\"to\":%d,\"src\":\"%c\"}",
                         i ? "," : "", (unsigned long)e->timestamp,
-                        e->med_idx + 1, name, e->from_count, e->to_count, e->source);
+                        e->med_idx + 1, esc, e->from_count, e->to_count, e->source);
+        /* Truncated this entry? Bail before advancing off — partial entry
+         * would emit malformed JSON that breaks the dashboard parse. */
+        if (wrote < 0 || (size_t)wrote >= OUT_CAP - off) break;
+        off += (size_t)wrote;
     }
-    snprintf(out + off, OUT_CAP - off, "]}");
+    int tail = snprintf(out + off, OUT_CAP - off, "]}");
+    if (tail > 0 && (size_t)tail < OUT_CAP - off) off += tail;
     free(entries);
 
     httpd_resp_set_type(req, "application/json");
@@ -1935,7 +1438,3 @@ esp_err_t audit_json_handler(httpd_req_t *req)
     return ret;
 }
 
-/* sensors_page_handler removed — the legacy English HTML page was
- * superseded by the native "ดูเซ็นเซอร์" tab on /tech that pulls
- * /sensors.json directly. /sensors.json itself stays alive (used by
- * the tab and by external scripts). */

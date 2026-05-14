@@ -22,10 +22,8 @@
 #include "jpeg_encoder.h"
 #include "config.h"
 #include "i2c_manager.h"
-#include "pill_sensor_status.h"  /* PILL_SENSOR_COUNT for VL53 XSHUT quiesce */
 #include "driver/gpio.h"          /* gpio_set_level for XSHUT toggle */
 #include "driver/ledc.h"
-#include "vl53l0x_multi.h"
 #include <string.h>
 
 static const char *TAG = "camera_init";
@@ -118,6 +116,19 @@ static volatile int enc_active_idx = -1;
 
 static SemaphoreHandle_t frame_ready_sem;
 
+/* Public flag — see camera_init.h. Set TRUE around the SCCB attempt loop
+ * so the touch driver (ft6336u_read_touch) and other casual I2C clients
+ * skip their reads instead of racing the camera for g_i2c_mutex. */
+volatile bool g_camera_sccb_in_progress = false;
+
+/* Lazy-init state — defined further down the file (near
+ * camera_ensure_initialized). Forward-declare here so camera_task's
+ * recovery path can synchronise teardown against a concurrent
+ * ensure_init call. */
+static SemaphoreHandle_t s_lazy_init_mux;
+static bool              s_lazy_init_done   = false;
+static esp_err_t         s_lazy_init_result = ESP_FAIL;
+
 static bool IRAM_ATTR camera_get_new_buffer(esp_cam_ctlr_handle_t handle,
                                             esp_cam_ctlr_trans_t *trans,
                                             void *user_data) {
@@ -173,13 +184,6 @@ void camera_auto_reinit_helper(void *arg)
 {
     (void)arg;
     vTaskDelay(pdMS_TO_TICKS(2000));
-    /* Wait out VL53 bootstrap. camera_ensure_initialized()'s SCCB block
-     * pulls every VL53 XSHUT pin LOW for ~150 ms — running concurrently
-     * with vl53_init_all() corrupts whichever channel is mid-init. */
-    int waits = 0;
-    while (vl53l0x_multi_is_bootstrapping() && waits++ < 60) {
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
     ESP_LOGW(TAG, "Auto re-init starting (no user trigger needed)");
     esp_err_t r = camera_ensure_initialized();
     ESP_LOGW(TAG, "Auto re-init -> %s", esp_err_to_name(r));
@@ -200,15 +204,6 @@ static void camera_background_retry_task(void *arg)
     (void)arg;
     for (int i = 0; i < 38; ++i) {
         vTaskDelay(pdMS_TO_TICKS(8000));
-        if (camera_is_initialized()) break;
-        /* Bootstrap of all 6 VL53L0X sensors takes ~15 s after boot and
-         * pulses XSHUT per channel. Camera retry pulls every VL53 XSHUT
-         * LOW for its SCCB burst — running concurrently corrupts every
-         * VL53 init that hasn't completed yet. Wait it out. */
-        int waits = 0;
-        while (vl53l0x_multi_is_bootstrapping() && waits++ < 60) {
-            vTaskDelay(pdMS_TO_TICKS(500));
-        }
         if (camera_is_initialized()) break;
         ESP_LOGW(TAG, "Background camera retry %d/38", i + 1);
         camera_mark_uninitialized();
@@ -303,6 +298,30 @@ static void camera_task(void *arg) {
                 last_recovery_ms = now_ms;
                 consec_timeouts = 0;
 
+                /* Take the lazy-init mutex BEFORE tearing anything down.
+                 * Without this, a concurrent camera_ensure_initialized()
+                 * call (Telegram /photo, web /capture) can see the cached
+                 * "init OK" flag right up to the moment we wipe it, then
+                 * return ESP_OK to its caller while we're freeing the
+                 * controller out from under it — caller gets a black /
+                 * crashed photo. Marking uninit + tearing down all inside
+                 * the mutex makes the slow-path ensure-init in another
+                 * task block here until reinit completes. */
+                if (s_lazy_init_mux) {
+                    xSemaphoreTake(s_lazy_init_mux, portMAX_DELAY);
+                }
+                s_lazy_init_done   = false;
+                s_lazy_init_result = ESP_FAIL;
+
+                /* Free the binary semaphore — camera_init() guards
+                 * recreate so it's safe to leave NULL here. Without this
+                 * delete, each recovery cycle leaked one semaphore
+                 * object plus its scheduler bookkeeping. */
+                if (frame_ready_sem) {
+                    vSemaphoreDelete(frame_ready_sem);
+                    frame_ready_sem = NULL;
+                }
+
                 /* Stop & free the CSI controller. */
                 if (cam_handle) {
                     (void)esp_cam_ctlr_stop(cam_handle);
@@ -346,8 +365,11 @@ static void camera_task(void *arg) {
                 }
                 vTaskDelay(pdMS_TO_TICKS(800));
 
-                /* Mark camera uninitialized so a fresh init runs. */
-                camera_mark_uninitialized();
+                /* Teardown done — release the mutex so the helper task
+                 * we spawn below can take it via camera_ensure_initialized. */
+                if (s_lazy_init_mux) {
+                    xSemaphoreGive(s_lazy_init_mux);
+                }
 
                 ESP_LOGW(TAG, "Capture task exiting — auto re-init "
                               "in 2 s");
@@ -410,7 +432,13 @@ static void camera_task(void *arg) {
 }
 
 esp_err_t camera_init(void) {
-    frame_ready_sem = xSemaphoreCreateBinary();
+    /* Guard against re-create on recovery path — the teardown block in
+     * camera_task deletes this and sets it NULL, so a fresh init creates
+     * one. But on the very first boot path nothing has run, so create
+     * here too. */
+    if (!frame_ready_sem) {
+        frame_ready_sem = xSemaphoreCreateBinary();
+    }
 
     frame_buffer_size = CSI_HRES * CSI_VRES * 2;
     esp_cache_get_alignment(MALLOC_CAP_SPIRAM, &s_cache_line_size);
@@ -516,45 +544,14 @@ esp_err_t camera_init(void) {
     }
 
     //---------------I2C Init------------------//
-    // The shared I2C bus arrives here in ESP_ERR_INVALID_STATE — the
-    // FT6336U fallback-mode poller and PCF8574 boot probes wedge the
-    // IDF v5.3.x master state machine, so the read of OV5647's PID
-    // succeeds (single short combined transaction) but the long
-    // ~250-register write burst that follows fails on every transmit.
-    // i2c_master_bus_reset alone doesn't fix it; the SCCB device
-    // handle keeps the stale state. Full teardown + re-init of the
-    // master bus, then refetch the handle, gives a clean state for
-    // the SCCB device handle that sccb_new_i2c_io will allocate.
+    // The shared I2C bus can arrive here in ESP_ERR_INVALID_STATE if a
+    // prior FT6336U poll wedged the IDF v5.3.x master state machine —
+    // the short OV5647 PID read succeeds but the ~250-register write
+    // burst that follows fails on every transmit. i2c_master_bus_reset
+    // alone doesn't fix it; the SCCB device handle keeps the stale
+    // state. Full teardown + re-init of the master bus gives a clean
+    // state for the SCCB device handle that sccb_new_i2c_io allocates.
     {
-        /* Quiesce all 6 VL53L0X chips before SCCB detect. Symptom seen
-         * in field logs (2026-05-06): when Ch3 init fails on all 3
-         * XSHUT-toggle attempts, the residual chip state on the shared
-         * I2C bus interferes with OV5647 PID readback (every retry of
-         * sccb_i2c_transmit_receive_reg_a16v8 fails). When Ch3 happens
-         * to init OK on first try, camera detect also passes — pure
-         * race. Driving every VL53 XSHUT LOW for 20 ms drops them off
-         * the bus so SCCB has a clean field. We don't restore XSHUT
-         * here; the existing vl53_poll_all retry-probe path will bring
-         * the sensors back online within the next 5 s poll cycle (or
-         * sooner via vl53l0x_request_refresh after dispense events). */
-#if VL53L0X_XSHUT_PRESENT
-        static const gpio_num_t kXshut[PILL_SENSOR_COUNT] = {
-            VL53L0X_XSHUT_M1, VL53L0X_XSHUT_M2, VL53L0X_XSHUT_M3,
-            VL53L0X_XSHUT_M4, VL53L0X_XSHUT_M5, VL53L0X_XSHUT_M6,
-        };
-        for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
-            if (kXshut[i] >= 0) gpio_set_level(kXshut[i], 0);
-        }
-        ESP_LOGI(TAG, "VL53 XSHUT lowered before SCCB (chips offline)");
-        vTaskDelay(pdMS_TO_TICKS(20));
-#else
-        /* XSHUT pins not wired (config) — can't drop VL53s off the bus.
-         * Bus contention during SCCB is still serialized by the
-         * i2c_manager mutex; the worst case is the camera waits a few
-         * ms for an in-flight VL53 transaction. */
-        ESP_LOGI(TAG, "Skipping VL53 XSHUT pulldown (no GPIO wiring)");
-#endif
-
         esp_err_t r = i2c_manager_recover_bus();
         if (r != ESP_OK) {
             ESP_LOGW(TAG, "i2c_manager_recover_bus before SCCB: %s",
@@ -625,8 +622,16 @@ esp_err_t camera_init(void) {
             ESP_LOGW(TAG, "I2C scan ACK: %s", hits_line);
         }
         ESP_LOGW(TAG, "I2C scan end. Camera should be at 0x36; "
-                      "TCA=0x70 PCA=0x40 PCF=0x20 RTC=0x68 Touch=0x38");
+                      "PCA=0x40 RTC=0x68 Touch=0x38");
     }
+
+    /* Signal touch + other shared-bus clients to back off — see
+     * camera_init.h. Without this the FT6336U poll (every 10-15 ms from
+     * clock_task) wins the i2c_manager mutex between camera attempts,
+     * inserting touch reads in the middle of the SCCB burst and tripping
+     * the IDF i2c_master state machine into NACK. Was the visible cause
+     * of "Frame wait timeout" loops on warm restart. */
+    g_camera_sccb_in_progress = true;
 
     /* Retry count bumped 8 → 16. Each SCCB attempt costs ~200 ms (ping
      * + recovery), so 16 worst-case = ~3.2 s vs old 1.6 s — small price
@@ -668,6 +673,12 @@ esp_err_t camera_init(void) {
             i2c_bus_handle = i2c_manager_get_bus_handle();
             if (!i2c_bus_handle) {
                 ESP_LOGE(TAG, "Lost I2C bus handle during camera retry");
+                /* Don't leak the SCCB-busy flag — touch driver checks
+                 * this on every poll and would skip all reads forever
+                 * (visible as "screen suddenly unresponsive" with no
+                 * obvious log line). Was the cause of the user's
+                 * "อยู่ๆ ก็สัมผัสไม่ได้" report 2026-05-15. */
+                g_camera_sccb_in_progress = false;
                 return ESP_FAIL;
             }
             /* Longer settle after retry — sensor needs ≥10 ms to come
@@ -804,25 +815,8 @@ esp_err_t camera_init(void) {
         ret_strm = ESP_FAIL;
     }
 
-    /* Restore VL53 XSHUT all at once (no inter-chip delay). The
-     * staggered version (400 ms × 6) interfered with the OV5647
-     * MIPI-CSI lock window during the 2.4 s stagger period, causing
-     * "Frame wait timeout" continuously. Quick simultaneous restore
-     * (~tens of µs) gets the chips out of the critical window before
-     * MIPI tries to lock its first frame. The brief 6-chip inrush is
-     * within the 5 V 10 A PSU budget verified by the user. */
-#if VL53L0X_XSHUT_PRESENT
-    {
-        static const gpio_num_t kXshut[PILL_SENSOR_COUNT] = {
-            VL53L0X_XSHUT_M1, VL53L0X_XSHUT_M2, VL53L0X_XSHUT_M3,
-            VL53L0X_XSHUT_M4, VL53L0X_XSHUT_M5, VL53L0X_XSHUT_M6,
-        };
-        for (int i = 0; i < PILL_SENSOR_COUNT; ++i) {
-            if (kXshut[i] >= 0) gpio_set_level(kXshut[i], 1);
-        }
-        ESP_LOGI(TAG, "VL53 XSHUT restored after SCCB");
-    }
-#endif
+    /* SCCB burst done — let touch + others resume normal I2C access. */
+    g_camera_sccb_in_progress = false;
 
     if (!cam) {
         ESP_LOGE(TAG, "Failed to detect camera sensor after retries");
@@ -996,12 +990,6 @@ esp_err_t camera_init(void) {
     return ESP_OK;
 }
 
-/* Lazy-init state — protected by a mutex so two concurrent /photo +
- * /capture calls don't both try to init the camera. */
-static SemaphoreHandle_t s_lazy_init_mux = NULL;
-static esp_err_t          s_lazy_init_result = ESP_FAIL;
-static bool               s_lazy_init_done   = false;
-
 bool camera_is_initialized(void)
 {
     return s_lazy_init_done && s_lazy_init_result == ESP_OK;
@@ -1056,23 +1044,8 @@ esp_err_t camera_ensure_initialized(void)
     xSemaphoreTake(s_lazy_init_mux, portMAX_DELAY);
     if (!s_lazy_init_done) {
         ESP_LOGI(TAG, "Lazy camera_init triggered (first /capture or /photo)");
-        /* Quiesce the VL53 poll loop so the SCCB burst has the I2C bus
-         * to itself. Otherwise concurrent VL53 retry probes contend with
-         * the OV5647 PID read and the camera detect NACKs. Calls nest, so
-         * we always resume even if camera_init returns early.
-         *
-         * Race fix: a fixed delay isn't enough because vl53_poll_all()
-         * can take 1+ s when sensors are flaky (each missing channel
-         * does a 70-register init burst). vl53l0x_multi_wait_idle()
-         * blocks until the VL53 task observes the pause flag and parks,
-         * so we know SCCB is the only client of the bus before we
-         * touch it. Without this, ~50% of boots had the camera detect
-         * NACK on every retry because VL53 was mid-cycle. */
-        vl53l0x_multi_pause();
-        vl53l0x_multi_wait_idle(2500);
         vTaskDelay(pdMS_TO_TICKS(150));
         s_lazy_init_result = camera_init();
-        vl53l0x_multi_resume();
         s_lazy_init_done   = true;
         ESP_LOGI(TAG, "Lazy camera_init -> %s",
                  esp_err_to_name(s_lazy_init_result));

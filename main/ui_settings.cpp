@@ -177,6 +177,14 @@ void settings_load_nvs(void)
         if (nvs_get_u8(h, "en_nav", &en) == ESP_OK) {
             g_nav_sound_enabled = (en > 0);
         }
+        /* Restore UI language. Earlier code wrote "lang_ui" but never
+         * read it back, so the device always booted into Thai even after
+         * the user picked English. */
+        uint8_t lang = (uint8_t)g_ui_language;
+        if (nvs_get_u8(h, "lang_ui", &lang) == ESP_OK) {
+            if (lang == UI_LANG_EN) g_ui_language = UI_LANG_EN;
+            else                    g_ui_language = UI_LANG_TH;
+        }
         nvs_get_i16(h, "snd_alarm", &sa);
         nvs_get_i16(h, "snd_dth",   &sdth);
         nvs_get_i16(h, "snd_rth",   &srth);

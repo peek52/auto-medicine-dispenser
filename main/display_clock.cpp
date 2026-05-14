@@ -146,7 +146,7 @@ void fill_rect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color)
     // Serialize fill_rect across all caller tasks. The static buf +
     // last_color cache below is shared state — concurrent tasks
     // would race the cache fill and corrupt each other's rects.
-    if (s_disp_mutex) xSemaphoreTake(s_disp_mutex, portMAX_DELAY);
+    if (s_disp_mutex) xSemaphoreTakeRecursive(s_disp_mutex, portMAX_DELAY);
 
     set_window(x, y, x + w - 1, y + h - 1);
 
@@ -175,7 +175,7 @@ void fill_rect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color)
         pix -= batch;
     }
     cs_hi();
-    if (s_disp_mutex) xSemaphoreGive(s_disp_mutex);
+    if (s_disp_mutex) xSemaphoreGiveRecursive(s_disp_mutex);
 }
 
 extern "C" void ui_draw_rgb_bitmap(int16_t x, int16_t y, int16_t w, int16_t h, const uint16_t* bitmap)
@@ -184,13 +184,20 @@ extern "C" void ui_draw_rgb_bitmap(int16_t x, int16_t y, int16_t w, int16_t h, c
     if (x + w > LCD_W) w = LCD_W - x;
     if (y + h > LCD_H) h = LCD_H - y;
 
+    /* Serialise with fill_rect — both share the SPI device + the
+     * set_window/CS/DC sequence. Without this mutex a fill_rect from
+     * one task can overlap a ui_draw_rgb_bitmap from another (e.g.
+     * dispense overlay vs clock task), interleaving CS/DC toggles and
+     * corrupting the display. */
+    if (s_disp_mutex) xSemaphoreTakeRecursive(s_disp_mutex, portMAX_DELAY);
+
     set_window(x, y, x + w - 1, y + h - 1);
 
     uint32_t pix = (uint32_t)w * h;
     const uint16_t* ptr = bitmap;
-    
+
     // We send in chunks because the SPI DMA buffer has a max_transfer_sz limit.
-    const uint32_t CHUNK_PIX = 16000; 
+    const uint32_t CHUNK_PIX = 16000;
 
     while (pix > 0) {
         uint32_t batch = pix > CHUNK_PIX ? CHUNK_PIX : pix;
@@ -202,6 +209,7 @@ extern "C" void ui_draw_rgb_bitmap(int16_t x, int16_t y, int16_t w, int16_t h, c
         pix -= batch;
     }
     cs_hi();
+    if (s_disp_mutex) xSemaphoreGiveRecursive(s_disp_mutex);
 }
 
 void draw_rect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color)
@@ -298,6 +306,13 @@ int draw_char_gfx(int16_t x, int16_t y, unsigned char c, uint16_t fg, uint16_t b
 
     if (adv > 64) adv = 64;
 
+    /* Serialise the whole char draw — without this, the static row_buf
+     * gets clobbered by a concurrent draw (visible as garbled stripes
+     * across the screen) and the set_window/CS/DC sequence below races
+     * with fill_rect/ui_draw_rgb_bitmap from other tasks. Recursive
+     * mutex — fill_rect inside cell-bg fill (if added) would re-enter. */
+    if (s_disp_mutex) xSemaphoreTakeRecursive(s_disp_mutex, portMAX_DELAY);
+
     for (int16_t row = top; row < bottom; row++) {
         int16_t gy = row - (y + yo);
 
@@ -326,6 +341,7 @@ int draw_char_gfx(int16_t x, int16_t y, unsigned char c, uint16_t fg, uint16_t b
         spi_device_polling_transmit(s_spi, &t);
         cs_hi();
     }
+    if (s_disp_mutex) xSemaphoreGiveRecursive(s_disp_mutex);
     return adv;
 }
 
@@ -453,6 +469,13 @@ static void spi_display_bus_init(void)
     }
 
     spi_device_interface_config_t devcfg = {};
+    /* Dropped 60 → 40 MHz (2026-05-14, second attempt). At 60 MHz the
+     * user observed intermittent corruption — green smear in the dose
+     * card, garbled OFFLINE/ONLINE pill bitmaps — exactly the failure
+     * mode the original 60 MHz comment warned about. The Nano's TFT
+     * goes over header pins + Dupont wires, signal integrity drops
+     * sharply above ~50 MHz on that routing. 40 MHz is the safe-stable
+     * value that worked for months before the bump. */
     devcfg.clock_speed_hz = 40 * 1000 * 1000;
     devcfg.mode = 0;
     devcfg.spics_io_num = -1;
@@ -507,7 +530,10 @@ extern "C" void display_clock_set_ip(const char *ip)
 extern "C" void display_clock_init(void)
 {
     ESP_LOGI(TAG, "Init ST7796S 480x320 - Interactive UI Layout");
-    if (!s_disp_mutex) s_disp_mutex = xSemaphoreCreateMutex();
+    /* Recursive: drawing primitives nest (e.g. draw_char_gfx_scaled
+     * calls fill_rect, which also takes this mutex). Non-recursive
+     * would deadlock the moment any string draw runs. */
+    if (!s_disp_mutex) s_disp_mutex = xSemaphoreCreateRecursiveMutex();
     spi_display_bus_init();
     if (!s_spi) {
         ESP_LOGE(TAG, "SPI fail");
@@ -603,28 +629,40 @@ static void clock_task(void *)
         }
         esp_task_wdt_reset();
 
-        if (!g_system_ready) {
-            static bool boot_screen_drawn = false;
-            if (!boot_screen_drawn) {
-                fill_screen(THEME_BG);
-                draw_utf8_centered_line_scaled(240, 148, "\xe0\xb9\x80\xe0\xb8\x84\xe0\xb8\xa3\xe0\xb8\xb7\xe0\xb9\x88\xe0\xb8\xad\xe0\xb8\x87\xe0\xb8\x88\xe0\xb9\x88\xe0\xb8\xb2\xe0\xb8\xa2\xe0\xb8\xa2\xe0\xb8\xb2", 0xFFFF, THEME_BG, 40);
-                draw_utf8_centered_line_scaled(240, 198, "\xe0\xb8\xad\xe0\xb8\xb1\xe0\xb8\x95\xe0\xb9\x82\xe0\xb8\x99\xe0\xb8\xa1\xe0\xb8\xb1\xe0\xb8\x95\xe0\xb8\xb4", 0xAD55, THEME_BG, 36);
-                boot_screen_drawn = true;
+        /* Splash gate: hold the "เครื่องจ่ายยา / อัตโนมัติ" screen until
+         * BOTH conditions are met:
+         *   1. g_system_ready (deferred_init finished local resources)
+         *   2. >= 2 s since boot (small floor so the splash isn't a
+         *      single-frame flash on warm reboots).
+         * Was 5 s, then 15 s historically — both were defensive after
+         * touch flakiness that's since been root-caused (FT6336U RST
+         * pulse + bus settle). User-visible boot wait is dominated by
+         * g_system_ready latency now, so the floor just needs to be
+         * long enough to look intentional, not as a safety margin. */
+        {
+            uint32_t uptime_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+            bool splash_hold = (!g_system_ready) || (uptime_ms < 2000);
+            if (splash_hold) {
+                static bool boot_screen_drawn = false;
+                if (!boot_screen_drawn) {
+                    fill_screen(THEME_BG);
+                    draw_utf8_centered_line_scaled(240, 148, "\xe0\xb9\x80\xe0\xb8\x84\xe0\xb8\xa3\xe0\xb8\xb7\xe0\xb9\x88\xe0\xb8\xad\xe0\xb8\x87\xe0\xb8\x88\xe0\xb9\x88\xe0\xb8\xb2\xe0\xb8\xa2\xe0\xb8\xa2\xe0\xb8\xb2", 0xFFFF, THEME_BG, 40);
+                    draw_utf8_centered_line_scaled(240, 198, "\xe0\xb8\xad\xe0\xb8\xb1\xe0\xb8\x95\xe0\xb9\x82\xe0\xb8\x99\xe0\xb8\xa1\xe0\xb8\xb1\xe0\xb8\x95\xe0\xb8\xb4", 0xAD55, THEME_BG, 36);
+                    boot_screen_drawn = true;
+                }
+                vTaskDelay(pdMS_TO_TICKS(100));
+                force_redraw = true;
+                continue;
             }
-            vTaskDelay(pdMS_TO_TICKS(100));
-            force_redraw = true;
-            continue;
         }
 
         uint16_t tx = 0, ty = 0;
         bool touched = false;
         /* Feed the TWDT before the I2C touch read — under bus contention
-         * (VL53 init burst, manual dispense's pcf8574_read loop, or a
-         * mid-recovery cycle) ft6336u_read_touch can stall up to 500 ms
-         * on the i2c_manager mutex. The top-of-loop reset alone left a
-         * narrow margin against TWDT=45 s if recovery + render + touch
-         * stacked unluckily; an extra reset right before the I2C call
-         * widens the margin to near-infinite for realistic workloads. */
+         * (mid-recovery cycle, contended I2C) ft6336u_read_touch can
+         * stall up to 500 ms on the i2c_manager mutex. The top-of-loop
+         * reset alone leaves a narrow TWDT margin if recovery + render
+         * + touch stack unluckily; this extra reset widens the margin. */
         esp_task_wdt_reset();
         ft6336u_read_touch(&tx, &ty, &touched);
 
@@ -746,6 +784,40 @@ static void clock_task(void *)
             }
         }
 
+        /* After a scheduled dispense, if a module came up empty or the IR
+         * never saw a pill, jump straight into that module's detail page
+         * so the user can refill or clear it. Set by execute_dispense
+         * (dispenser task). Wait until the dispense is actually done and
+         * we're back on standby — otherwise the popup-9 paint hides the
+         * jump. */
+        {
+            extern volatile uint8_t g_dispense_missed_nav_mask;
+            uint8_t snap = __atomic_load_n(&g_dispense_missed_nav_mask, __ATOMIC_SEQ_CST);
+            if (snap != 0 &&
+                !dispenser_is_busy() &&
+                current_page == PAGE_STANDBY) {
+                /* Pop lowest set bit → walks the user through every
+                 * failed module in this slot, one Refill/Clear popup
+                 * per module. Atomic AND so a concurrent set by the
+                 * dispenser task (rare but possible during a fast
+                 * slot run) can't drop our clear. */
+                int idx = __builtin_ctz(snap);
+                if (idx < DISPENSER_MED_COUNT) {
+                    __atomic_fetch_and(&g_dispense_missed_nav_mask,
+                                       (uint8_t)~(1u << idx), __ATOMIC_SEQ_CST);
+                    selected_med_idx = idx;
+                    pending_page = PAGE_SETUP_MEDS_DETAIL;
+                    force_redraw = true;
+                    ui_setup_meds_arm_refill_or_clear();
+                    ESP_LOGI("DISP", "auto-nav to module %d detail (post-miss, snap=0x%02X)",
+                             idx + 1, snap);
+                } else {
+                    /* Defensive — stale bit beyond med count, clear it. */
+                    __atomic_store_n(&g_dispense_missed_nav_mask, 0, __ATOMIC_SEQ_CST);
+                }
+            }
+        }
+
         if (current_page == PAGE_TIME_PICKER && touched) {
             uint16_t atx = last_tx, aty = last_ty;
             uint16_t tx_n, ty_n;
@@ -822,9 +894,21 @@ static void clock_task(void *)
 
         static netpie_shadow_t s_last_sh_for_popup = {0};
         static bool s_popup_init = false;
-        const netpie_shadow_t *curr_sh_ptr = netpie_get_shadow();
-        
-        if (!s_popup_init && curr_sh_ptr->loaded) {
+        /* Atomic snapshot via netpie_shadow_copy — using netpie_get_shadow()
+         * here and then memcpy'ing *curr_sh_ptr could read a half-published
+         * buffer if the publish task flipped the double-buffer mid-copy
+         * (the pointer is stable but the buffer it points to becomes the
+         * "scratch" side after the flip). 500-byte struct memcpy is not
+         * atomic. */
+        netpie_shadow_t curr_sh_local = {0};
+        bool have_shadow = netpie_shadow_copy(&curr_sh_local);
+        const netpie_shadow_t *curr_sh_ptr = &curr_sh_local;
+
+        if (!have_shadow) {
+             /* No shadow yet (boot before NETPIE/NVS restored). Skip the
+              * change-detection block; downstream code already handles
+              * the un-init case via s_popup_init. */
+        } else if (!s_popup_init && curr_sh_ptr->loaded) {
              s_last_sh_for_popup = *curr_sh_ptr;
              s_popup_init = true;
         } else if (s_popup_init && curr_sh_ptr->loaded) {
@@ -851,11 +935,10 @@ static void clock_task(void *)
                  uint32_t now_ms = now * portTICK_PERIOD_MS;
                  uint32_t local_touch_age = now_ms - s_last_local_touch_ms;
                  // Only force_redraw on structural shadow changes (schedule
-                 // toggle, slot times, med name, slot mask). Count drift from
-                 // the VL53 → shadow sync triggered fill_screen on every page
-                 // (menu, setup-meds list, etc.) — visible flicker the user
-                 // complained about. Pages that show counts (standby,
-                 // setup-meds list) have their own partial redraw.
+                 // toggle, slot times, med name, slot mask). Pure count drift
+                 // is handled by the per-page partial redraw (standby +
+                 // setup-meds list) — a full fill_screen on every page would
+                 // cause visible flicker.
                  bool structural_change = (curr_sh_ptr->enabled != s_last_sh_for_popup.enabled);
                  if (!structural_change) {
                      for (int i = 0; i < 7; i++) {

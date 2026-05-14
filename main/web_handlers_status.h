@@ -40,28 +40,5 @@ esp_err_t sound_state_handler(httpd_req_t *req);
 esp_err_t sound_save_handler(httpd_req_t *req);
 esp_err_t sound_play_handler(httpd_req_t *req);
 
-/* ── GET /sensors.json — ค่า VL53 ทั้ง 6 channel ── */
-esp_err_t sensors_json_handler(httpd_req_t *req);
-
-/* ── POST /sensors/config — ตั้งค่า tray config ต่อ channel ── */
-esp_err_t sensors_config_handler(httpd_req_t *req);
-
-/* ── POST /sensors/cal_capture — บันทึกระยะปัจจุบัน (full/empty) ── */
-esp_err_t sensors_capture_handler(httpd_req_t *req);
-
-/* ── POST /sensors/offset — ปรับ +/- จำนวนเม็ดยา (signed) ── */
-esp_err_t sensors_offset_handler(httpd_req_t *req);
-
-/* ── /sensors/cal_guide — guided per-pill calibration session
- *  POST ?ch=N&action=start|step|finish|reset
- *  GET  ?ch=N         → current session state (table of dist per step)
- */
-esp_err_t sensors_calguide_handler(httpd_req_t *req);
-
 /* ── GET /audit.json — ประวัติการเพิ่ม/ลด/จ่ายของยาแต่ละช่อง ── */
 esp_err_t audit_json_handler(httpd_req_t *req);
-
-/* ── GET /vl53 — live HTML view of VL53 readings (auto-refreshes the
- *    /sensors.json data every 3 s; each refresh triggers an on-demand
- *    poll so values are current). No auth needed for read-only view. */
-esp_err_t vl53_live_handler(httpd_req_t *req);

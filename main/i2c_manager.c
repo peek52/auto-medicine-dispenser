@@ -101,33 +101,13 @@ static int s_device_count = 0;
  * per-device scl_speed_hz: the bus automatically switches clock when
  * talking to each device.
  *
- * History: tried 400 kHz for non-VL53 devices but it broke OV5647 SCCB
- * init + VL53 SPAD calibration (modules' internal pull-ups can't supply
- * the rise-time current at 400 kHz on the shared bus). Field-safe split:
- *   100 kHz — PCF8574, PCA9685, FT6336U, DS3231, TCA9548A, EEPROM
- *    50 kHz — VL53L0X (via TCA mux, long wires), OV5647 SCCB
- *
- * Reference transaction times after this change:
- *   FT6336U touch read (6 bytes + addr) at 100 kHz = ~760 us (was ~1.5 ms)
- *   PCF8574 IR read (1 byte) at 100 kHz = ~180 us (was ~360 us)
- * 2× speedup on the high-traffic devices, no SCCB/VL53 regressions. */
+ *   100 kHz — PCA9685, FT6336U, DS3231, EEPROM (standard speed,
+ *             works for modules that rely on weak internal pull-ups).
+ *    50 kHz — OV5647 SCCB (long wires need the extra rise-time slack). */
 static uint32_t device_clock_hz(uint8_t addr)
 {
-    /* VL53L0X — default address 0x29 and readdressed channels 0x71-0x76.
-     * Dropped to 50 kHz (was 100 kHz): SPAD/ref_cal reads on long wires
-     * + weak internal pull-ups gave ~30% per-attempt failure rate at
-     * 100 kHz. 50 kHz doubles bit-time so the noisy rising edges have
-     * enough slack to settle. Throughput cost is irrelevant: VL53 only
-     * polls every 5 s. */
-    if (addr == 0x29) return 50000;
-    if (addr >= 0x71 && addr <= 0x76) return 50000;
-    /* OV5647 camera SCCB — same long-wire concern. */
+    /* OV5647 camera SCCB — long-wire concern. */
     if (addr == 0x36) return 50000;
-    /* Everything else dropped 400 kHz → 100 kHz (2026-05-13). Field
-     * symptom "ทำงานพร้อมกันไม่เวิค" (servo+IR+VL53 fight each other)
-     * traced to fast-mode rise-time issues on the shared bus without
-     * external pullups. 100 kHz halves the contention window and is
-     * the standard-mode speed every I2C peripheral spec-supports. */
     return 100000;
 }
 

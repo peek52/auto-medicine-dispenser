@@ -8,8 +8,6 @@
 #include "jpeg_encoder.h"
 #include "camera_init.h"
 #include "ds3231.h"
-#include "vl53l0x_multi.h"
-#include "pill_sensor_status.h"
 #include "cJSON.h"
 #include <stdio.h>
 #include <string.h>
@@ -759,8 +757,7 @@ static bool telegram_http_post_json_text(const char *url, const char *post_data,
 
 static void telegram_send_snapshot_reply(const char *caption)
 {
-    /* Lazy camera init — first /photo wakes the sensor. Camera no longer
-     * runs at boot so VL53 bootstrap has the I2C bus to itself. */
+    /* Lazy camera init — first /photo wakes the sensor. */
     if (camera_ensure_initialized() != ESP_OK) {
         telegram_send_text(telegram_pick(
             "Camera failed to initialise. Check the ribbon and try /photo again.",
@@ -1230,127 +1227,26 @@ static void handle_telegram_command_safe(const char *cmd_text)
             return;
         }
 
-        /* Wake VL53 for a fresh fill-level reading. The sensor is idle
-         * 99% of the time (no auto-polling) to keep the I2C bus quiet,
-         * so a /status command is the user's one chance to probe it.
-         * Retry up to 3 times — VL53 + TCA mux can need one or two
-         * warmup polls before all 6 channels come back valid. We accept
-         * the result as soon as every present channel has a valid
-         * reading, or after the third attempt either way. */
-        for (int attempt = 0; attempt < 3; ++attempt) {
-            (void)vl53l0x_multi_check_now(8000);
-            bool all_valid = true;
-            for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
-                const pill_sensor_status_t *ps = pill_sensor_status_get(i);
-                if (!ps || !ps->present) continue;
-                if (!ps->valid) { all_valid = false; break; }
-            }
-            if (all_valid) break;
-            vTaskDelay(pdMS_TO_TICKS(200));
-        }
-
-        bool any_recommend_return = false;
         char msg[2048];
         int len = snprintf(msg, sizeof(msg), "%s",
                            telegram_pick("Medication status for all 6 modules\n\n",
                                          "สถานะยาทั้ง 6 โมดูล\n\n"));
 
         for (int i = 0; i < DISPENSER_MED_COUNT && len < (int)sizeof(msg) - 1; i++) {
-            /* Always report all 6 modules — user explicitly asked for
-             * a complete report regardless of whether a name has been
-             * assigned. Show "(ยังไม่ได้ตั้งชื่อ)" placeholder for unset. */
             bool th = (s_tg_language == TELEGRAM_LANG_TH);
             const char *name = (sh->med[i].name[0])
                                    ? sh->med[i].name
                                    : (th ? "(ยังไม่ได้ตั้งชื่อ)" : "(unnamed)");
-
-            /* Fill-state label. Prefer the 4-state classification when
-             * ps->valid, otherwise fall back to a best-guess based on
-             * the raw distance reading so the user still sees SOMETHING
-             * from VL53 (the user explicitly removed the "sensor not
-             * responding" line — they want a hint either way). The raw
-             * mm is appended in parentheses so flaky channels are
-             * obvious at a glance. */
-            char fill_buf[96] = "";
-            const pill_sensor_status_t *ps = pill_sensor_status_get(i);
-            if (ps && ps->present) {
-                const char *state = NULL;
-                if (ps->valid) {
-                    switch (ps->fill) {
-                        case PILL_FILL_EMPTY:
-                            state = th ? "🔴 ยาหมด" : "🔴 Empty";
-                            any_recommend_return = true;
-                            break;
-                        case PILL_FILL_LOW:
-                            state = th ? "🟡 ยาน้อย ควรเติมเร็วๆ นี้"
-                                       : "🟡 Low — refill soon";
-                            break;
-                        case PILL_FILL_MEDIUM:
-                            state = th ? "🟢 มียา" : "🟢 OK";
-                            break;
-                        case PILL_FILL_FULL:
-                            state = th ? "🟢 มียาเต็ม" : "🟢 Full";
-                            break;
-                        default:
-                            break;
-                    }
-                } else if (ps->raw_mm >= 0) {
-                    /* Not "valid" by VL53 strict criteria but the raw
-                     * value is still informative. 0 mm = sensor saw
-                     * something very close (lens-pressed or full tube);
-                     * > VL53_MAX_VALID_MM (~2 m) = sensor saw no target
-                     * = empty tube. */
-                    if (ps->raw_mm == 0) {
-                        state = th ? "🟢 ตรวจพบใกล้เซ็นเซอร์ (น่าจะมียา)"
-                                   : "🟢 Near (likely has pills)";
-                    } else if (ps->raw_mm > 2000) {
-                        state = th ? "🔴 ระยะเกินช่วงวัด (น่าจะหมด)"
-                                   : "🔴 Out of range (likely empty)";
-                        any_recommend_return = true;
-                    } else {
-                        /* In-range but rejected as invalid by the
-                         * sample filter (e.g. still warming up).
-                         * Show the raw number without a verdict. */
-                        state = th ? "⏳ กำลังตรวจ" : "⏳ Reading";
-                    }
-                }
-                if (state) {
-                    if (ps->raw_mm >= 0) {
-                        snprintf(fill_buf, sizeof(fill_buf), "%s (%d mm)", state, ps->raw_mm);
-                    } else {
-                        snprintf(fill_buf, sizeof(fill_buf), "%s", state);
-                    }
-                }
-            }
-
-            int written;
-            if (fill_buf[0]) {
-                written = snprintf(msg + len, sizeof(msg) - (size_t)len,
-                                   th ? "โมดูล %d: %s\nคงเหลือ: %d เม็ด\n%s\n\n"
-                                      : "Module %d: %s\nRemaining: %d pills\n%s\n\n",
-                                   i + 1, name, sh->med[i].count, fill_buf);
-            } else {
-                written = snprintf(msg + len, sizeof(msg) - (size_t)len,
+            int written = snprintf(msg + len, sizeof(msg) - (size_t)len,
                                    th ? "โมดูล %d: %s\nคงเหลือ: %d เม็ด\n\n"
                                       : "Module %d: %s\nRemaining: %d pills\n\n",
                                    i + 1, name, sh->med[i].count);
-            }
             if (written < 0) break;
             if (written >= (int)(sizeof(msg) - (size_t)len)) {
                 len = (int)sizeof(msg) - 1;
                 break;
             }
             len += written;
-        }
-
-        /* Trailing recommendation when ANY module is fully empty —
-         * suggest using the Return-All flow so the user clears the
-         * empty cartridge in one shot and refills cleanly. */
-        if (any_recommend_return && len < (int)sizeof(msg) - 1) {
-            (void)snprintf(msg + len, sizeof(msg) - (size_t)len, "%s",
-                           (s_tg_language == TELEGRAM_LANG_TH)
-                               ? "💊 แนะนำให้คืนยาทั้งหมดแล้วเติมยาใหม่"
-                               : "💊 Tip: return all remaining pills and refill.");
         }
 
         telegram_send_text(msg);
@@ -1382,9 +1278,9 @@ static void handle_telegram_command_safe(const char *cmd_text)
         size_t n = dispenser_audit_get(entries, total);
         const netpie_shadow_t *sh = netpie_get_shadow();
 
-        /* Count only the entry kinds the user wants to see ('M', 'S',
-         * 'L', 'N') so the header total reflects what they'll actually
-         * read. 'V' (VL53 sync) and 'W' (web stock edit) are hidden. */
+        /* Audit ring now only stores scheduled-dispense outcomes
+         * ('S'), so visible_n == n. Loop kept for forward-compat in
+         * case a non-'S' source ever sneaks in. */
         size_t visible_n = 0;
         for (size_t i = 0; i < n; ++i) {
             char src = entries[i].source;
@@ -1411,11 +1307,8 @@ static void handle_telegram_command_safe(const char *cmd_text)
 
         for (size_t i = 0; i < n; ++i) {
             const dispenser_audit_entry_t *e = &entries[i];
-            /* Hide internal source kinds that the user explicitly said
-             * shouldn't appear in /log: VL53 sync ('V') and web/UI
-             * stock adjustments ('W'). Only successful dispenses ('M',
-             * 'S'), missed doses ('L') and no-stock skips ('N') survive
-             * the filter. */
+            /* Only scheduled-dispense entries ('S') are written to the
+             * ring now; this filter is a forward-compat safety net. */
             if (e->source == 'V' || e->source == 'W') continue;
 
             char ts[24] = "--/-- --:--";

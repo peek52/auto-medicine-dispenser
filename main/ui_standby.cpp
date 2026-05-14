@@ -7,10 +7,17 @@
 #include "wifi_sta.h"
 #include "ui_standby_thai_labels.h"
 #include "ui_utf8_text.h"
-#include "pill_sensor_status.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+/* Stub kept after the chrome-cache experiment was reverted (user
+ * preferred the original full-repaint behaviour). Other translation
+ * units still link against this symbol via ui_core.h, so leave it as
+ * a no-op rather than touch every call site. */
+void ui_standby_invalidate_chrome(void) {}
 
 static bool s_today_schedule_popup_drawn = false;
 static bool s_hw_alert_drawn = false;
@@ -23,6 +30,51 @@ static int s_schedule_visible_slots[7] = {0};
 static int s_schedule_visible_count = 0;
 static int s_schedule_detail_slot = -1;
 static bool s_show_only_missed = false;
+
+/* "Incomplete module with stale pills" alert (popup state 6).
+ * Tracks which module index the warning is currently pointing at so
+ * the touch handler can navigate to the right detail page when the
+ * user taps. -1 = no alert currently shown. */
+static int  s_incomplete_pill_idx = -1;
+static bool s_incomplete_pill_drawn = false;
+
+/* Boot-time "all empty — flush leftovers?" prompt (popup state 7) and
+ * "clearing in progress" (state 8).
+ *   s_boot_clear_offered  set true once we've shown the prompt this
+ *                         boot — prevents re-prompting after the user
+ *                         dismisses.
+ *   s_boot_clear_seen     latched on first render after shadow loaded
+ *                         so we only check the all-zero condition
+ *                         once per boot. */
+static bool s_boot_clear_offered = false;
+static bool s_boot_clear_seen    = false;
+static bool s_boot_clear_drawn   = false;
+static int  s_boot_clear_last_module_drawn = -2;
+
+/* Popup state 9 — "กำลังจ่ายยา" overlay shown on standby while a
+ * scheduled dispense is in progress. Painted ONCE per run (the
+ * underlying state doesn't change while servos cycle), then cleared
+ * when dispenser_is_busy() goes false. */
+static bool s_dispensing_popup_drawn = false;
+
+/* Boot-time "configured-but-empty" alert. At boot, latch the mask of
+ * modules whose name + slots are set but count == 0. Only THOSE modules
+ * trigger the state-6 alert — a different module that gets emptied
+ * later by a scheduled dispense does NOT inherit the latch, so the
+ * user doesn't get a false "data missing" alarm right after a normal
+ * dispense. Bits clear as user fixes each module (count > 0 or
+ * config wiped). */
+static bool    s_boot_empty_check_done = false;
+static uint8_t s_boot_empty_mask       = 0;
+
+/* One-shot audio guards — play voice prompt on FIRST appearance of the
+ * popup, not on every render frame. Reset when the popup goes away so
+ * a future re-entry plays again. Tracks (per user 2026-05-14 spec):
+ *   104/105 — boot startup popup (state 7: "เริ่มต้นใช้งาน, กรุณาล้างยา")
+ *   106/107 — clear-all in progress (state 8: "กำลังล้างยาทั้งหมด")
+ *   108/109 — incomplete-module alert (state 6: "จัดการยาให้สมบูรณ์") */
+static bool s_audio_played_state6 = false;
+static bool s_audio_played_state7 = false;
 
 static const int kSchedulePopupX = 24;
 static const int kSchedulePopupY = 24;
@@ -87,12 +139,15 @@ static void draw_standby_modal_button(int16_t x, int16_t y, int16_t w, int16_t h
 static const char *standby_translate_slot_th(const char *slot_label)
 {
     if (!slot_label) return "";
-    if (strcmp(slot_label, "Before Breakfast") == 0) return "ก่อนเช้า";
-    if (strcmp(slot_label, "After Breakfast") == 0)  return "หลังเช้า";
-    if (strcmp(slot_label, "Before Lunch") == 0)     return "ก่อนกลางวัน";
-    if (strcmp(slot_label, "After Lunch") == 0)      return "หลังกลางวัน";
-    if (strcmp(slot_label, "Before Dinner") == 0)    return "ก่อนเย็น";
-    if (strcmp(slot_label, "After Dinner") == 0)     return "หลังเย็น";
+    /* Full meal names per 2026-05-14 user spec — show "ก่อนอาหารเช้า"
+     * etc., not the abbreviated "ก่อนเช้า". The renderer auto-shrinks
+     * the font size if the longer string overruns the dose card. */
+    if (strcmp(slot_label, "Before Breakfast") == 0) return "ก่อนอาหารเช้า";
+    if (strcmp(slot_label, "After Breakfast") == 0)  return "หลังอาหารเช้า";
+    if (strcmp(slot_label, "Before Lunch") == 0)     return "ก่อนอาหารกลางวัน";
+    if (strcmp(slot_label, "After Lunch") == 0)      return "หลังอาหารกลางวัน";
+    if (strcmp(slot_label, "Before Dinner") == 0)    return "ก่อนอาหารเย็น";
+    if (strcmp(slot_label, "After Dinner") == 0)     return "หลังอาหารเย็น";
     if (strcmp(slot_label, "Bedtime") == 0)          return "ก่อนนอน";
     return slot_label;
 }
@@ -223,38 +278,44 @@ static void draw_standby_next_dose_en_line(int16_t content_left, int16_t content
                                            const char *phase, const char *meal, const char *time,
                                            uint16_t phase_color, uint16_t main_color, uint16_t bg)
 {
-    char meal_time[48] = "";
-    int16_t phase_w = 0;
-    int16_t main_w = 0;
-    int16_t gap = 0;
-    int16_t total_w = 0;
-    int16_t start_x = 0;
+    (void)phase_color;
 
     if (!meal || !meal[0]) return;
 
-    if (time && time[0]) {
-        // English: append " hrs" so the line reads "Breakfast 08:00 hrs".
-        snprintf(meal_time, sizeof(meal_time), "%s %s hrs", meal, time);
-    } else {
-        safe_copy(meal_time, sizeof(meal_time), meal);
-    }
-
+    /* Build the full line: "Before Breakfast 08:00" / "Bedtime 21:00".
+     * Phase (Before/After) is part of the same bold line per
+     * 2026-05-14 user spec — they want the meal-phase visible. */
+    char line[64] = "";
     if (phase && phase[0]) {
-        phase_w = gfx_text_width(phase, &FreeSans9pt7b);
-        gap = 10;
+        if (time && time[0]) {
+            snprintf(line, sizeof(line), "%s %s %s", phase, meal, time);
+        } else {
+            snprintf(line, sizeof(line), "%s %s", phase, meal);
+        }
+    } else {
+        if (time && time[0]) {
+            snprintf(line, sizeof(line), "%s %s", meal, time);
+        } else {
+            safe_copy(line, sizeof(line), meal);
+        }
     }
-    main_w = gfx_text_width_scaled(meal_time, &FreeSans12pt7b, 2);
-    total_w = phase_w + gap + main_w;
 
-    start_x = content_left + (((content_right - content_left) - total_w) / 2);
+    /* Try big-bold first. If the full "Before Breakfast 08:00" string is
+     * too wide for the dose card, fall back to 18pt bold which always
+     * fits. Both are bold per user request. */
+    const GFXfont *font = &FreeSansBold24pt7b;
+    int16_t main_w = gfx_text_width(line, font);
+    int avail_w = content_right - content_left;
+    if (main_w > avail_w) {
+        font = &FreeSansBold18pt7b;
+        main_w = gfx_text_width(line, font);
+    }
+
+    int16_t start_x = content_left + (((content_right - content_left) - main_w) / 2);
     if (start_x < content_left) start_x = content_left;
 
-    fill_rect(content_left, baseline_y - 30, content_right - content_left, 40, bg);
-
-    if (phase_w > 0) {
-        draw_string_gfx(start_x, baseline_y - 4, phase, phase_color, bg, &FreeSans9pt7b);
-    }
-    draw_string_gfx_scaled(start_x + phase_w + gap, baseline_y, meal_time, main_color, bg, &FreeSans12pt7b, 2);
+    fill_rect(content_left, baseline_y - 32, content_right - content_left, 44, bg);
+    draw_string_gfx(start_x, baseline_y, line, main_color, bg, font);
 }
 
 static const char *standby_slot_label_en_compact(int slot_idx)
@@ -315,10 +376,7 @@ static int standby_slot_assigned_med_count(int slot_idx, bool include_empty_stoc
     for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
         if (!((sh->med[i].slots >> slot_idx) & 0x01)) continue;
         if (!include_empty_stock) {
-            const pill_sensor_status_t *ps = pill_sensor_status_get(i);
-            int stock = (ps && ps->valid && ps->pill_count >= 0)
-                            ? ps->pill_count : sh->med[i].count;
-            if (stock <= 0) continue;
+            if (sh->med[i].count <= 0) continue;
         }
         ++count;
     }
@@ -399,11 +457,7 @@ static int standby_build_slot_detail_lines(int slot_idx, char lines[][96], int m
         if (!((sh->med[i].slots >> slot_idx) & 0x01)) continue;
 
         const char *name = sh->med[i].name[0] ? sh->med[i].name : ((lang == UI_LANG_TH) ? "ยังไม่ได้ตั้งชื่อ" : "Unnamed med");
-        /* Prefer VL53-derived count when the sensor reading is valid;
-         * fall back to dispenser-tracked count otherwise. */
-        const pill_sensor_status_t *ps = pill_sensor_status_get(i);
-        int stock = (ps && ps->valid && ps->pill_count >= 0)
-                        ? ps->pill_count : sh->med[i].count;
+        int stock = sh->med[i].count;
         if (stock > 0) {
             snprintf(lines[line_count], 96, "%d. %s (%d)", line_count + 1, name, stock);
         } else {
@@ -695,6 +749,111 @@ static void draw_schedule_popup_line(int16_t x, int16_t top_y, const char *text,
     draw_schedule_text_line(x, top_y, 360, text, fg, bg, 18);
 }
 
+/* ── Smooth seconds renderer ─────────────────────────────────────
+ * Old path: draw_string_gfx_scaled() → draw_char_gfx_scaled() does
+ *   1. fill_rect(cell, bg)          ← eye sees blank frame
+ *   2. loop fg-pixels → fill_rect(2x2)  ← eye sees "build up"
+ * That's ~hundreds of SPI transactions per char, each visible.
+ *
+ * New path: render the whole text into a PSRAM buffer (no SPI), then
+ * push once with ui_draw_rgb_bitmap. Eye sees a single atomic flip.
+ *
+ * Buffer is allocated once on first call (PSRAM, freed never — it's
+ * reused every second).  Plenty of slack: 200×120 fits :88:88 too. */
+static uint16_t *s_ss_buf      = NULL;
+static int       s_ss_buf_w    = 0;
+static int       s_ss_buf_h    = 0;
+
+static void draw_string_buffered(int16_t x, int16_t baseline_y,
+                                 int16_t cell_w, int16_t cell_h,
+                                 const char *str, uint16_t fg, uint16_t bg,
+                                 const GFXfont *font, uint8_t scale)
+{
+    if (cell_w <= 0 || cell_h <= 0 || !str || !font) return;
+
+    /* Lazy-alloc once.  Sized for the biggest user (seconds at 24pt×2). */
+    const int CAP_W = 220;
+    const int CAP_H = 130;
+    if (!s_ss_buf) {
+        s_ss_buf = (uint16_t *)heap_caps_malloc(CAP_W * CAP_H * 2,
+                                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!s_ss_buf) {
+            /* PSRAM exhausted — fall back to direct draw (flickery but
+             * functionally correct). */
+            draw_string_gfx_scaled(x, baseline_y, str, fg, bg, font, scale);
+            return;
+        }
+        s_ss_buf_w = CAP_W;
+        s_ss_buf_h = CAP_H;
+    }
+    if (cell_w > s_ss_buf_w || cell_h > s_ss_buf_h) {
+        /* Caller asked for a bigger cell than the buffer can hold. */
+        draw_string_gfx_scaled(x, baseline_y, str, fg, bg, font, scale);
+        return;
+    }
+
+    /* Fill with bg.  RGB565 is big-endian over SPI for ST7796S — write
+     * MSB first.  We'll splat bytes since fg/bg are 16-bit constants. */
+    uint8_t bg_hi = (uint8_t)(bg >> 8);
+    uint8_t bg_lo = (uint8_t)(bg & 0xFF);
+    uint8_t *bp = (uint8_t *)s_ss_buf;
+    for (int i = 0; i < cell_w * cell_h; i++) {
+        bp[i * 2]     = bg_hi;
+        bp[i * 2 + 1] = bg_lo;
+    }
+
+    /* Plot each glyph into the buffer (baseline-anchored coordinates,
+     * same math as draw_char_gfx_scaled but writing to RAM instead of
+     * piecewise SPI). The buffer's local origin is (x, baseline_y -
+     * cell_h + something) — we work in (rel_x, rel_y) where rel_y=0 is
+     * the buffer top. */
+    int pen_x = 0;
+    /* In the original renderer y is the BASELINE in screen coords. The
+     * buffer's top is at (baseline_y - top_of_glyph_yoffset_at_scale).
+     * For simplicity we assume the caller passes a cell that fully
+     * encloses the glyph stack with the baseline aligned to the bottom
+     * of caps.  We'll compute baseline within buf such that yo*scale
+     * lands at the right place. */
+    /* baseline_in_buf places the descender row near the bottom. Pick
+     * an offset that leaves room for ascender above (yo is negative). */
+    int baseline_in_buf = cell_h - scale * 2;  /* leave 2 px descender pad */
+    while (*str) {
+        unsigned char c = (unsigned char)*str++;
+        if (c < font->first || c > font->last) continue;
+        const GFXglyph *glyph = &font->glyph[c - font->first];
+        uint16_t bo = glyph->bitmapOffset;
+        uint8_t gw = glyph->width, gh = glyph->height;
+        int8_t  xo = glyph->xOffset, yo = glyph->yOffset;
+        uint8_t adv = glyph->xAdvance;
+        const uint8_t *bitmap = font->bitmap;
+
+        uint32_t bit_idx = 0;
+        for (uint8_t gy = 0; gy < gh; gy++) {
+            for (uint8_t gx = 0; gx < gw; gx++, bit_idx++) {
+                uint8_t b = bitmap[bo + bit_idx / 8];
+                bool on = (b >> (7 - (bit_idx & 7))) & 1;
+                if (!on) continue;
+                int px = pen_x + ((gx + xo) * scale);
+                int py = baseline_in_buf + ((gy + yo) * scale);
+                for (int dy = 0; dy < scale; dy++) {
+                    int yy = py + dy;
+                    if (yy < 0 || yy >= cell_h) continue;
+                    for (int dx = 0; dx < scale; dx++) {
+                        int xx = px + dx;
+                        if (xx < 0 || xx >= cell_w) continue;
+                        s_ss_buf[yy * cell_w + xx] = fg;
+                    }
+                }
+            }
+        }
+        pen_x += adv * scale;
+    }
+
+    /* Compute screen Y so the in-buf baseline matches baseline_y. */
+    int16_t screen_y = baseline_y - baseline_in_buf;
+    ui_draw_rgb_bitmap(x, screen_y, cell_w, cell_h, s_ss_buf);
+}
+
 static void draw_standby_page(bool force, const char *hhmm, const char *ss, const char *date_str, const char *dose)
 {
     static char prev_hhmm[8] = "";
@@ -780,12 +939,19 @@ static void draw_standby_page(bool force, const char *hhmm, const char *ss, cons
         char ss_with_colon[8];
         snprintf(ss_with_colon, sizeof(ss_with_colon), ":%s", ss);
 
-        // No fill_rect here — draw_string_gfx_scaled paints background
-        // pixels in the glyph bounding box itself (fg/bg pair), so the
-        // explicit pre-clear was redundant and the brief blank window
-        // between fill and draw was the visible per-second flicker on
-        // the standby clock seconds.
-        draw_string_gfx_scaled(ss_x, TIME_BASELINE_Y, ss_with_colon, ST_TXT_TIME, ST_TIME_CARD, &FreeSansBold24pt7b, TIME_SCALE);
+        /* Render via the buffered helper: builds the whole ":SS" cell
+         * in PSRAM then pushes once. Eliminates the per-pixel SPI
+         * transactions that made the digit flicker every second.
+         *
+         * cell_h sized to fit the glyph ONLY (cap top ≈ baseline-64 at
+         * 24pt×2 + a small descender pad). If we passed the full
+         * TIME_BLOCK_H, the buffer top would land above the card frame
+         * line (y=16) and the buffer's bg color would paint over the
+         * frame border, visually merging the digit into the frame. */
+        const int16_t ss_cell_h = 70;
+        draw_string_buffered(ss_x, TIME_BASELINE_Y, ss_area_w, ss_cell_h,
+                             ss_with_colon, ST_TXT_TIME, ST_TIME_CARD,
+                             &FreeSansBold24pt7b, TIME_SCALE);
     }
 
     // --- redraw date เฉพาะตอนเปลี่ยน ---
@@ -824,7 +990,17 @@ static void draw_standby_page(bool force, const char *hhmm, const char *ss, cons
             if (g_ui_language == UI_LANG_TH) {
                 char line[64] = "";
                 if (standby_build_next_dose_th_single_line(dose, line, sizeof(line))) {
-                    draw_utf8_centered_line_scaled(content_center_x, DOSE_Y + 24, line, ST_UP_TEXT, ST_DOSE_CARD, 36);
+                    /* Auto-shrink: "หลังอาหารกลางวัน 12:30" at size 36
+                     * runs past the dose card. Step down until the
+                     * rendered width fits the content area. */
+                    int avail_w = content_right - content_left;
+                    uint8_t target_h = 36;
+                    while (target_h > 22 &&
+                           ui_utf8_text_width_scaled_px(line, target_h) > avail_w) {
+                        target_h -= 2;
+                    }
+                    int16_t top_y = DOSE_Y + (36 - target_h) / 2 + 24;
+                    draw_utf8_centered_line_scaled(content_center_x, top_y, line, ST_UP_TEXT, ST_DOSE_CARD, target_h);
                 }
             } else {
                 char slot[40] = "";
@@ -925,63 +1101,10 @@ static void ui_standby_render_modal(uint32_t now)
     // (touch on a popup button, page switch, etc.); calling ping_3x ×
     // 3 devices on every redraw makes the UI freeze 1-3 s when the bus
     // is in a bad state, because each ping_3x can block on i2c master
-    // mutex + 3 retries with delays. The cached verdicts from the last
-    // timer check are good enough for a redraw — modal will catch up
-    // on the next scheduled health window.
-    if (now_ms >= s_hw_health_next_check_ms) {
-        // Hysteresis: only flip "down" after CONSECUTIVE_FAIL_THRESHOLD
-        // failed health windows in a row (default 2 = 20 s). Cuts modal
-        // false-alarms when bus glitches briefly mid-operation.
-        // ESP_ERR_INVALID_STATE means the i2c driver itself is wedged —
-        // keep poking it and we trigger a store fault inside ISR. Skip
-        // remaining pings AND don't update fail counts on a wedge so a
-        // transient driver hiccup doesn't escalate to a "device down"
-        // verdict on its own.
-        constexpr int CONSECUTIVE_FAIL_THRESHOLD = 2;
-        static int s_fail_pca = 0, s_fail_pcf = 0, s_fail_rtc = 0;
-        // Track whether each device has *ever* answered OK in this boot.
-        // We only raise the modal for devices that were once known
-        // present and then went away — never-seen devices are treated as
-        // "not configured" so a flaky probe at boot doesn't permanently
-        // alarm the user even when their wiring is correct and the next
-        // round will succeed. This is the fix for the "boot probe NACK
-        // → modal stays even after bus recovers" pattern.
-        static bool s_seen_pca = false, s_seen_pcf = false, s_seen_rtc = false;
-
-        auto ping_3x = [](uint16_t addr) -> esp_err_t {
-            for (int a = 0; a < 3; ++a) {
-                esp_err_t r = i2c_manager_ping(addr);
-                if (r == ESP_OK) return ESP_OK;
-                if (r == ESP_ERR_INVALID_STATE) return r;
-                vTaskDelay(pdMS_TO_TICKS(30));
-            }
-            return ESP_FAIL;
-        };
-        auto update_one = [&](uint16_t addr, int *fail_count, bool *cache, bool *seen) -> bool {
-            esp_err_t r = ping_3x(addr);
-            if (r == ESP_ERR_INVALID_STATE) {
-                return false;  // bus wedged — leave verdict alone
-            }
-            if (r == ESP_OK) {
-                *seen = true;
-                *fail_count = 0;
-                *cache = false;
-                return true;
-            }
-            // NACK / no response. Only flag if we've ever seen this
-            // device alive. If we've never seen it (boot probe missed,
-            // user may be running without that module), keep quiet.
-            if (!*seen) { *cache = false; return true; }
-            if (*fail_count < CONSECUTIVE_FAIL_THRESHOLD) (*fail_count)++;
-            if (*fail_count >= CONSECUTIVE_FAIL_THRESHOLD) *cache = true;
-            return true;
-        };
-        if (update_one(ADDR_PCA9685, &s_fail_pca, &s_cached_pca_err, &s_seen_pca) &&
-            update_one(ADDR_PCF8574, &s_fail_pcf, &s_cached_pcf_err, &s_seen_pcf)) {
-            update_one(ADDR_DS3231, &s_fail_rtc, &s_cached_rtc_err, &s_seen_rtc);
-        }
-        s_hw_health_next_check_ms = now_ms + 10000;
-    }
+    /* I2C health check + HARDWARE ERROR popup removed 2026-05-13.
+     * Cached "err" flags stay false forever — RTC/PCA failures will
+     * show through their own symptoms (servo doesn't move, clock
+     * frozen) rather than nagging the user with a modal. */
 
     if (s_netpie_sync_popup_until > 0 && now_ms >= s_netpie_sync_popup_until) {
         s_netpie_sync_popup_until = 0;
@@ -1033,104 +1156,409 @@ static void ui_standby_render_modal(uint32_t now)
         }
     }
 
-    bool pca_err = s_cached_pca_err;
-    bool pcf_err = s_cached_pcf_err;
-    bool rtc_err = s_cached_rtc_err;
-    bool hw_err = (pca_err || pcf_err || rtc_err);
-    uint8_t hw_mask = 0;
-    if (pca_err) hw_mask |= 0x01;
-    if (pcf_err) hw_mask |= 0x02;
-    if (rtc_err) hw_mask |= 0x04;
-
-    if (!hw_err && s_popup_state == 2) {
-        // Bus came back. Tear down the modal but DON'T reset
-        // s_hw_warn_dismissed *or* s_hw_alert_mask — a flapping bus
-        // oscillates "all good ⇄ all down" every 10 s; if we zeroed the
-        // mask here, the next failure with the same device set would
-        // satisfy the "(hw_mask & ~s_hw_alert_mask) != 0" new-bit check
-        // and re-arm dismiss, popping the modal again. Keeping the mask
-        // means: dismissed once → stays dismissed for the same fault
-        // pattern, even across recovery flaps.
-        s_hw_alert_drawn = false;
-        s_today_schedule_popup_drawn = false;
-        s_popup_state = 0;
-        is_forced = true;
+    /* Boot-time "all modules empty — offer to flush leftovers" check.
+     * Done once per boot, after shadow has been loaded (so we don't
+     * latch on the BSS-zero default). If every count is 0, show the
+     * prompt popup (state 7). Skipped if the user already dismissed
+     * it or clear-all is in progress. */
+    if (!s_boot_clear_seen && sh && sh->loaded) {
+        bool all_zero = true;
+        for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
+            if (sh->med[i].count != 0) { all_zero = false; break; }
+        }
+        if (all_zero) s_boot_clear_offered = true;
+        s_boot_clear_seen = true;
     }
 
-    if (s_popup_state != 1 && s_popup_state != 2 && s_popup_state != 3 &&
-        s_popup_state != 4 && s_popup_state != 5) {
+    /* HARDWARE ERROR popup removed 2026-05-13.
+     *
+     * Popup state 6 = "incomplete module with stale pills" — at least
+     * one cartridge has count > 0 but is missing name or schedule
+     * slots. User must clear the cartridge before reconfiguring it
+     * so old pills don't mix with new ones. */
+    int incomplete_idx = -1;
+    bool incomplete_has_pills = false;
+    bool incomplete_needs_count = false;  /* true → boot-empty case: ask
+                                            * user to fill in the count */
+    if (sh && sh->loaded) {
+        /* First render after shadow loaded — latch the boot empty-count
+         * alert if any module is configured (name + slots) but has 0
+         * pills. This catches the case where reboot finds modules in
+         * "configured-but-empty" state and the user never gets a prompt
+         * to add stock. */
+        if (!s_boot_empty_check_done) {
+            for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
+                if (sh->med[i].name[0] != '\0' &&
+                    sh->med[i].slots != 0 &&
+                    sh->med[i].count == 0) {
+                    s_boot_empty_mask |= (uint8_t)(1u << i);
+                }
+            }
+            s_boot_empty_check_done = true;
+        }
+
+        for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
+            bool has_name  = sh->med[i].name[0] != '\0';
+            bool has_slots = sh->med[i].slots != 0;
+            int  count     = sh->med[i].count;
+            bool has_count = (count > 0);
+            bool partial_config = (has_name != has_slots);  /* name XOR slots */
+            bool stale_pills    = has_count && !(has_name && has_slots);
+            /* boot_empty_now → THIS specific module was tagged at boot
+             * AND still meets the condition. Per-module latch prevents
+             * a scheduled dispense from triggering the alert on a
+             * different module. */
+            bool boot_empty_now = (s_boot_empty_mask & (1u << i)) &&
+                                  has_name && has_slots && !has_count;
+            /* Clear the per-module latch as soon as the user resolves it
+             * (refilled, or wiped config). */
+            if ((s_boot_empty_mask & (1u << i)) &&
+                !(has_name && has_slots && !has_count)) {
+                s_boot_empty_mask &= (uint8_t)~(1u << i);
+            }
+            if (incomplete_idx < 0 &&
+                (partial_config || stale_pills || boot_empty_now)) {
+                incomplete_idx = i;
+                incomplete_has_pills = has_count;
+                incomplete_needs_count = boot_empty_now &&
+                                         !partial_config && !stale_pills;
+            }
+        }
+    }
+    s_incomplete_pill_idx = incomplete_idx;
+
+    bool clear_all_running = dispenser_clear_all_active();
+    bool dispense_running  = dispenser_is_busy();
+
+    /* Edge-detect clear-all completion: was running last frame, now idle
+     * → play the "เริ่มต้นใช้งานพร้อมแล้ว" voice (TH 112 / EN 113) once. */
+    static bool s_prev_clear_all_running = false;
+    static uint32_t s_clear_all_done_ms  = 0;
+    if (s_prev_clear_all_running && !clear_all_running) {
+        dfplayer_play_track((g_ui_language == UI_LANG_TH) ? 112 : 113);
+        s_clear_all_done_ms = esp_log_timestamp();
+    }
+    s_prev_clear_all_running = clear_all_running;
+    /* Within this window after clear-all-done, suppress state-6 voice
+     * so 108/109 doesn't immediately cut off 112/113. 2.5 s is roughly
+     * the length of the done prompt; state 6 popup itself still renders,
+     * only its voice is held. */
+    bool clear_all_done_recently =
+        s_clear_all_done_ms != 0 &&
+        (esp_log_timestamp() - s_clear_all_done_ms) < 2500;
+    /* On a forced redraw we MUST paint the standby background even if a
+     * popup will overlay it — otherwise we land on standby fresh from
+     * another page (e.g. PAGE_CONFIRM_MEDS) with leftover pixels behind
+     * the popup. The "DISPENSING…" overlay (state 9) is the canonical
+     * case: user taps Confirm → page flips to standby → without this
+     * fill the red confirm card is still visible behind the popup. */
+    if (is_forced ||
+        (s_popup_state != 1 && s_popup_state != 2 && s_popup_state != 3 &&
+         s_popup_state != 4 && s_popup_state != 5 && s_popup_state != 6 &&
+         s_popup_state != 7 && s_popup_state != 8 && s_popup_state != 9 &&
+         incomplete_idx < 0 && !s_boot_clear_offered && !clear_all_running &&
+         !dispense_running)) {
         draw_standby_page(is_forced, hhmm, ss, date_str, dose_str);
     }
 
-    if (hw_err) {
-        // Once dismissed, stay dismissed *until a new device fails*.
-        // The bus flaps every health-check window (devices appearing /
-        // disappearing every 10 s); without sticky dismiss the modal
-        // would pop again on every cycle. Only the *new bits* in the
-        // failing mask compared to what was failing at dismiss time
-        // count as a fresh fault.
-        if (s_hw_warn_dismissed) {
-            if ((hw_mask & ~s_hw_alert_mask) == 0) {
-                // No new device joined the failing set — keep silenced.
-                return;
+    /* When the dispense finishes, drop popup state 9 and force a fresh
+     * standby paint so the stale overlay is wiped. */
+    if (s_popup_state == 9 && !dispense_running) {
+        s_popup_state = 0;
+        s_dispensing_popup_drawn = false;
+        is_forced = true;
+        draw_standby_page(is_forced, hhmm, ss, date_str, dose_str);
+    }
+
+    /* Popup state 9 — scheduled dispense in progress.
+     * Highest priority: takes precedence over the schedule warning,
+     * incomplete-pills alert, etc. The user just tapped "รับยา" and
+     * needs immediate visual confirmation that the system is working
+     * BEFORE the servo whirrs (which gets gated on
+     * g_ui_dispensing_popup_painted in execute_dispense). */
+    if (dispense_running) {
+        if (!s_dispensing_popup_drawn || is_forced || s_popup_state != 9) {
+            fill_round_rect_frame(40, 80, 400, 160, 16, THEME_OK, 0xFFFF);
+            bool th = (g_ui_language == UI_LANG_TH);
+            if (th) {
+                draw_utf8_centered_line_scaled(LCD_W / 2, 120, "กำลังจ่ายยา",
+                                               0xFFFF, THEME_OK, 36);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 185, "กรุณารอสักครู่",
+                                               0xFFFF, THEME_OK, 24);
+            } else {
+                draw_string_centered(LCD_W / 2, 135, "DISPENSING...",
+                                     0xFFFF, THEME_OK, &FreeSansBold24pt7b);
+                draw_string_centered(LCD_W / 2, 195, "Please wait",
+                                     0xFFFF, THEME_OK, &FreeSans18pt7b);
             }
-            // New failure → re-arm.
-            s_hw_warn_dismissed = false;
+            s_dispensing_popup_drawn = true;
+            s_popup_state = 9;
+            /* Signal to execute_dispense() that the popup is on screen —
+             * unblocks the pre-servo paint-ack wait. */
+            extern volatile bool g_ui_dispensing_popup_painted;
+            g_ui_dispensing_popup_painted = true;
         }
-        if (s_popup_state == 2 && s_hw_alert_drawn && !is_forced && hw_mask == s_hw_alert_mask) {
-            return;
-        }
+        return;
+    }
 
-        fill_round_rect_frame(40, 50, 400, 220, 15, THEME_BAD, 0xFFFF);
-        if (g_ui_language == UI_LANG_TH) {
-            draw_standby_label((LCD_W - kThHwError1.width) / 2, 68, &kThHwError1);
-        } else {
-            draw_string_centered(240, 85, "HARDWARE ERROR!", 0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
-        }
+    /* If state was 6 but the condition cleared (user returned the pills),
+     * reset the popup. */
+    if (s_popup_state == 6 && incomplete_idx < 0) {
+        s_popup_state = 0;
+        s_incomplete_pill_drawn = false;
+        s_audio_played_state6 = false;  /* re-arm voice prompt for next time */
+        is_forced = true;
+        draw_standby_page(is_forced, hhmm, ss, date_str, dose_str);
+    }
 
-        const uint16_t alert_row_bg = ST_RGB565(164, 34, 52);
-        int row_y = 108;
-        if (pca_err) {
-            draw_alert_detail_row(68, row_y, 304, 24,
-                                  (g_ui_language == UI_LANG_TH) ? "Servo Driver [PCA9685]" : "Servo Driver [PCA9685]",
-                                  alert_row_bg, g_ui_language);
-            row_y += 28;
+    /* Render the incomplete-pills modal. Takes priority over the
+     * generic schedule warning so the user fixes the stale-pill
+     * situation first (it's more urgent — physical pills in the wrong
+     * place).
+     *
+     * SUPPRESSED when the boot clear-all popup (state 7) is queued or
+     * currently running (state 8): we must flush any leftover pills
+     * BEFORE the user refills/reconfigures, otherwise new pills land
+     * on top of old ones. Boot clear-all always wins at boot. */
+    if (incomplete_idx >= 0 && !s_boot_clear_offered && !clear_all_running) {
+        if (!s_incomplete_pill_drawn || is_forced || s_popup_state != 6) {
+            fill_round_rect_frame(40, 50, 400, 220, 14, THEME_BAD, 0xFFFF);
+            bool th = (g_ui_language == UI_LANG_TH);
+            char head[64];
+            if (th) {
+                if (incomplete_has_pills) {
+                    snprintf(head, sizeof(head), "ตลับที่ %d มียาค้าง", incomplete_idx + 1);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 75, head, 0xFFFF, THEME_BAD, 30);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 125,
+                        "แต่ข้อมูลยายังไม่ครบ", 0xFFFF, THEME_BAD, 24);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 165,
+                        "ต้องคืนยาก่อนตั้งค่าใหม่", 0xFFFF, THEME_BAD, 24);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 220,
+                        "แตะที่หน้าจอเพื่อคืนยา", 0xFFFF, THEME_BAD, 22);
+                } else if (incomplete_needs_count) {
+                    snprintf(head, sizeof(head), "ตลับที่ %d ยังไม่ใส่ยา", incomplete_idx + 1);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 75, head, 0xFFFF, THEME_BAD, 30);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 130,
+                        "ตั้งชื่อและมื้อแล้ว", 0xFFFF, THEME_BAD, 24);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 170,
+                        "แต่ยังไม่ระบุจำนวนเม็ดยา", 0xFFFF, THEME_BAD, 24);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 220,
+                        "แตะที่หน้าจอเพื่อเติมยา", 0xFFFF, THEME_BAD, 22);
+                } else {
+                    snprintf(head, sizeof(head), "ตลับที่ %d ข้อมูลไม่ครบ", incomplete_idx + 1);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 75, head, 0xFFFF, THEME_BAD, 30);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 130,
+                        "กรุณาตั้งค่าให้ครบทุกช่อง", 0xFFFF, THEME_BAD, 24);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 170,
+                        "(ชื่อ + มื้อ + จำนวน)", 0xFFFF, THEME_BAD, 22);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 220,
+                        "แตะที่หน้าจอเพื่อตั้งค่า", 0xFFFF, THEME_BAD, 22);
+                }
+            } else {
+                if (incomplete_has_pills) {
+                    snprintf(head, sizeof(head), "Cartridge %d Has Pills", incomplete_idx + 1);
+                    draw_string_centered(LCD_W / 2, 90, head,
+                                         0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+                    draw_string_centered(LCD_W / 2, 135, "but its setup is incomplete",
+                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                    draw_string_centered(LCD_W / 2, 170, "Return pills before reconfiguring",
+                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                    draw_string_centered(LCD_W / 2, 225, "Tap to return pills",
+                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                } else if (incomplete_needs_count) {
+                    snprintf(head, sizeof(head), "Cartridge %d Is Empty", incomplete_idx + 1);
+                    draw_string_centered(LCD_W / 2, 90, head,
+                                         0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+                    draw_string_centered(LCD_W / 2, 140, "Name and schedule are set,",
+                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                    draw_string_centered(LCD_W / 2, 175, "but pill count is 0",
+                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                    draw_string_centered(LCD_W / 2, 225, "Tap to refill",
+                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                } else {
+                    snprintf(head, sizeof(head), "Cartridge %d Incomplete", incomplete_idx + 1);
+                    draw_string_centered(LCD_W / 2, 90, head,
+                                         0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+                    draw_string_centered(LCD_W / 2, 140, "Please fill all required fields",
+                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                    draw_string_centered(LCD_W / 2, 175, "(name + slots + count)",
+                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                    draw_string_centered(LCD_W / 2, 225, "Tap to set up",
+                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                }
+            }
+            s_incomplete_pill_drawn = true;
+            s_popup_state = 6;
+            /* Voice prompt: "จัดการยาให้สมบูรณ์" (TH 108) / EN 109.
+             * One-shot — re-armed when incomplete_idx goes back to -1.
+             * Held back briefly if the clear-all-done prompt is still
+             * playing so 112/113 isn't cut off mid-sentence. */
+            if (!s_audio_played_state6 && !clear_all_done_recently) {
+                dfplayer_play_track((g_ui_language == UI_LANG_TH) ? 108 : 109);
+                s_audio_played_state6 = true;
+            }
         }
-        if (pcf_err) {
-            draw_alert_detail_row(68, row_y, 304, 24,
-                                  (g_ui_language == UI_LANG_TH) ? "Sensor Expander [PCF8574]" : "Sensor Expander [PCF8574]",
-                                  alert_row_bg, g_ui_language);
-            row_y += 28;
-        }
-        if (rtc_err) {
-            draw_alert_detail_row(68, row_y, 304, 24,
-                                  (g_ui_language == UI_LANG_TH) ? "RTC Clock [DS3231]" : "RTC Clock [DS3231]",
-                                  alert_row_bg, g_ui_language);
-            row_y += 28;
-        }
-
-        // Bus is stuck: only a full power-cycle of the modules' VCC fixes
-        // it (chip reset alone leaves slaves in their hung state). Tell
-        // the user that directly — the previous "check wiring" hint just
-        // wasted time when the wiring is actually fine.
-        draw_schedule_text_line(58, 188, 320,
-                                "Unplug USB power for 5 sec to recover",
-                                0xFFFF, THEME_BAD, 16);
-
-        // Dismiss button — lets the user keep using the device when a
-        // module is still listed as missing but everything else works.
-        // The modal will reappear automatically if the failing-device
-        // set changes (covered by the hw_mask compare above).
-        draw_standby_modal_button(kAlertButtonX, kAlertButtonY, kAlertButtonW, kAlertButtonH, ST_RGB565(185, 28, 28), 0xFFFF);
-
-        s_hw_alert_drawn = true;
-        s_hw_alert_mask = hw_mask;
-        s_popup_state = 2;
         return;
     } else {
-        // All hardware reachable again — clear dismiss so a future fault
-        // can repaint the modal.
-        s_hw_warn_dismissed = false;
+        s_incomplete_pill_drawn = false;
+        s_audio_played_state6 = false;
+    }
+
+    /* Popup state 8: clear-all in progress. Refreshes every render to
+     * show which module is currently being cleared. Takes priority
+     * over state 7 (offer prompt) because the task is already running.
+     *
+     * Uses the SAME frame bounds as state 7 (40,50,400,220) so the
+     * transition from state 7 → 8 paints over the old popup cleanly
+     * with no leftover edges. */
+    if (clear_all_running) {
+        int cur = dispenser_clear_all_current_module();
+        int pills_cur = dispenser_clear_all_pills_current();
+        bool full_paint = (!s_boot_clear_drawn || is_forced || s_popup_state != 8);
+        /* Repaint the mid-band whenever either the active module changes
+         * OR the live pill count for the current module ticks. Without
+         * the pills-changed check the count line would only update on
+         * module rollover, hiding the IR counter live updates. */
+        static int s_last_pills_drawn = -1;
+        bool line_only  = (!full_paint &&
+                           (cur != s_boot_clear_last_module_drawn ||
+                            pills_cur != s_last_pills_drawn));
+
+        if (full_paint) {
+            /* First entry (or forced redraw) — paint the whole popup. */
+            fill_round_rect_frame(40, 50, 400, 220, 14, THEME_PANEL, THEME_BORDER);
+            bool th = (g_ui_language == UI_LANG_TH);
+            if (th) {
+                draw_utf8_centered_line_scaled(LCD_W / 2, 70,
+                    "กำลังล้างยาทุกโมดูล", 0xFFFF, THEME_PANEL, 26);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 225,
+                    "โปรดรอสักครู่…", 0xFFFF, THEME_PANEL, 20);
+            } else {
+                draw_string_centered(LCD_W / 2, 88, "Clearing all modules",
+                                     0xFFFF, THEME_PANEL, &FreeSansBold18pt7b);
+                draw_string_centered(LCD_W / 2, 240, "Please wait…",
+                                     0xFFFF, THEME_PANEL, &FreeSans12pt7b);
+            }
+        }
+
+        if (full_paint || line_only) {
+            /* Mid-band: module index (large) + live pill count (small).
+             * On full_paint draw fresh; on line_only wipe just the band
+             * so header/footer don't blink. y=105..205 = 100 px tall. */
+            bool th = (g_ui_language == UI_LANG_TH);
+            if (line_only) {
+                fill_rect(50, 105, 380, 100, THEME_PANEL);
+            }
+            char line[64];
+            char pills_line[40] = "";
+            if (cur < 0) {
+                /* Not started yet (waiting for first module). */
+                if (th) snprintf(line, sizeof(line), "กำลังเตรียม…");
+                else    snprintf(line, sizeof(line), "Preparing…");
+            } else if (cur < DISPENSER_MED_COUNT) {
+                if (th) {
+                    snprintf(line, sizeof(line), "โมดูลที่ %d / %d",
+                             cur + 1, DISPENSER_MED_COUNT);
+                    snprintf(pills_line, sizeof(pills_line),
+                             "พบยา %d เม็ด", pills_cur);
+                } else {
+                    snprintf(line, sizeof(line), "Module %d / %d",
+                             cur + 1, DISPENSER_MED_COUNT);
+                    snprintf(pills_line, sizeof(pills_line),
+                             "Found %d pills", pills_cur);
+                }
+            } else {
+                /* Done — show total instead of "พบยา" */
+                int total = dispenser_clear_all_pills_total();
+                if (th) {
+                    snprintf(line, sizeof(line), "เสร็จสิ้น");
+                    snprintf(pills_line, sizeof(pills_line),
+                             "รวม %d เม็ด", total);
+                } else {
+                    snprintf(line, sizeof(line), "Done");
+                    snprintf(pills_line, sizeof(pills_line),
+                             "Total %d pills", total);
+                }
+            }
+            if (th) {
+                draw_utf8_centered_line_scaled(LCD_W / 2, 130, line,
+                                               0xFFFF, THEME_PANEL, 28);
+                if (pills_line[0]) {
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 180, pills_line,
+                                                   0xFFE0, THEME_PANEL, 22);
+                }
+            } else {
+                draw_string_centered(LCD_W / 2, 145, line,
+                                     0xFFFF, THEME_PANEL, &FreeSans18pt7b);
+                if (pills_line[0]) {
+                    draw_string_centered(LCD_W / 2, 185, pills_line,
+                                         0xFFE0, THEME_PANEL, &FreeSans12pt7b);
+                }
+            }
+            s_boot_clear_drawn = true;
+            s_boot_clear_last_module_drawn = cur;
+            s_last_pills_drawn = pills_cur;
+            s_popup_state = 8;
+            /* Signal to clear_all_task that the popup is now on screen —
+             * task uses this to release its pre-servo wait. */
+            extern volatile bool g_ui_clear_all_popup_painted;
+            g_ui_clear_all_popup_painted = true;
+        }
+        return;
+    }
+
+    /* Popup state 7: boot-time "all modules empty — flush leftovers"
+     * prompt. Shown once per boot if the all-zero condition is met.
+     * Only ONE button (Clear) — user is forced to acknowledge the
+     * safety flush, no skip path. User spec 2026-05-14: "ห้ามกดข้าม
+     * บังคับให้กดล้างยา". */
+    if (s_boot_clear_offered) {
+        if (!s_boot_clear_drawn || is_forced) {
+            fill_round_rect_frame(40, 50, 400, 220, 14, THEME_WARN, 0xFFFF);
+            bool th = (g_ui_language == UI_LANG_TH);
+            if (th) {
+                draw_utf8_centered_line_scaled(LCD_W / 2, 75,
+                    "เริ่มต้นใช้งาน", 0xFFFF, THEME_WARN, 30);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 130,
+                    "ตลับยาทุกตลับเป็น 0", 0xFFFF, THEME_WARN, 22);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 165,
+                    "ต้องล้างยาที่อาจค้างก่อนใช้งาน", 0xFFFF, THEME_WARN, 22);
+            } else {
+                draw_string_centered(LCD_W / 2, 90, "Startup Check",
+                                     0xFFFF, THEME_WARN, &FreeSansBold18pt7b);
+                draw_string_centered(LCD_W / 2, 135, "All cartridges report 0",
+                                     0xFFFF, THEME_WARN, &FreeSans12pt7b);
+                draw_string_centered(LCD_W / 2, 165, "Flush leftover pills before use",
+                                     0xFFFF, THEME_WARN, &FreeSans12pt7b);
+            }
+            /* Single big "Clear" button centered — no skip. */
+            fill_round_rect(140, 205, 200, 50, 12, THEME_BAD);
+            if (th) {
+                draw_utf8_centered_line_scaled(240, 218, "เริ่มล้างยา",
+                                               0xFFFF, THEME_BAD, 28);
+            } else {
+                draw_string_centered(240, 237, "Clear Now",
+                                     0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+            }
+            s_boot_clear_drawn = true;
+            s_popup_state = 7;
+            /* Voice prompt: "เริ่มต้นใช้งาน กรุณาล้างยาทั้งหมด" (TH 104) / EN 105.
+             * Fires once per popup appearance — re-armed when state 7
+             * is dismissed via the Clear button. */
+            if (!s_audio_played_state7) {
+                dfplayer_play_track((g_ui_language == UI_LANG_TH) ? 104 : 105);
+                s_audio_played_state7 = true;
+            }
+        }
+        return;
+    } else {
+        if (s_popup_state == 7 || s_popup_state == 8) {
+            s_boot_clear_drawn = false;
+            s_audio_played_state7 = false;
+            s_popup_state = 0;
+            is_forced = true;
+            draw_standby_page(is_forced, hhmm, ss, date_str, dose_str);
+        }
     }
 
     if (s_netpie_sync_popup_until > 0 && now_ms < s_netpie_sync_popup_until) {
@@ -1140,8 +1568,10 @@ static void ui_standby_render_modal(uint32_t now)
                 draw_standby_label((LCD_W - kThSyncOk1.width) / 2, 128, &kThSyncOk1);
                 draw_standby_label((LCD_W - kThSyncOk2.width) / 2, 172, &kThSyncOk2);
             } else {
+                /* Shortened — "Schedule Updated Successfully!" was wider
+                 * than the 360-px popup at FreeSans12pt7b. */
                 draw_string_centered(240, 145, "NETPIE SYNC", 0xFFFF, THEME_OK, &FreeSansBold18pt7b);
-                draw_string_centered(240, 185, "Schedule Updated Successfully!", 0xFFFF, THEME_OK, &FreeSans12pt7b);
+                draw_string_centered(240, 185, "Schedule Updated", 0xFFFF, THEME_OK, &FreeSans12pt7b);
             }
             s_popup_state = 3;
         }
@@ -1155,8 +1585,13 @@ static void ui_standby_render_modal(uint32_t now)
                 draw_standby_label_centered(LCD_W / 2, 82, &kThNoSchedule1);
                 draw_standby_label_centered(LCD_W / 2, 130, &kThNoSchedule2);
             } else {
-                draw_string_centered(LCD_W / 2, 102, "NO SCHEDULE DETECTED", 0xFFFF, THEME_WARN, &FreeSansBold18pt7b);
-                draw_string_centered(LCD_W / 2, 146, "Please set schedule via Netpie or Menu", 0xFFFF, THEME_WARN, &FreeSans12pt7b);
+                /* Lines trimmed to fit safely inside the 424-wide popup
+                 * at FreeSansBold18pt7b / FreeSans12pt7b respectively.
+                 * Old "Please set schedule via Netpie or Menu" + a long
+                 * title pushed past the rounded-frame right edge. */
+                draw_string_centered(LCD_W / 2, 102, "No Schedule Set", 0xFFFF, THEME_WARN, &FreeSansBold18pt7b);
+                draw_string_centered(LCD_W / 2, 142, "Set via Netpie app", 0xFFFF, THEME_WARN, &FreeSans12pt7b);
+                draw_string_centered(LCD_W / 2, 168, "or the on-screen Menu", 0xFFFF, THEME_WARN, &FreeSans12pt7b);
             }
 
             draw_standby_modal_button(kAlertButtonX, kAlertButtonY, kAlertButtonW, kAlertButtonH, ST_RGB565(185, 28, 28), 0xFFFF);
@@ -1327,6 +1762,64 @@ void ui_standby_render(uint32_t now)
 
 static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
 {
+    /* Popup state 8 = clear-all in progress. All taps ignored — user
+     * cannot interrupt the safety flush. Popup self-dismisses when
+     * the task finishes (s_clear_all_running goes false). */
+    if (s_popup_state == 8 || dispenser_clear_all_active()) {
+        return;
+    }
+
+    /* Popup state 9 = scheduled dispense in progress. Ignore all taps —
+     * servo is moving, user cannot interrupt. Auto-dismisses when
+     * dispenser_is_busy() returns false. */
+    if (s_popup_state == 9 || dispenser_is_busy()) {
+        return;
+    }
+
+    /* Popup state 7 = boot-time forced clear-all. Only one button
+     * ("Clear Now") — no skip option per user spec 2026-05-14
+     * "ห้ามกดข้าม บังคับให้กดล้างยา". */
+    if (s_popup_state == 7 && s_boot_clear_offered) {
+        bool in_btn = (tx_n >= 140 && tx_n <= 340 && ty_n >= 205 && ty_n <= 255);
+        if (in_btn) {
+            s_boot_clear_offered = false;
+            s_boot_clear_drawn = false;
+            s_audio_played_state7 = false;
+            s_boot_clear_last_module_drawn = -2;  /* force fresh paint on state 8 */
+            if (dispenser_clear_all_start()) {
+                s_popup_state = 8;
+                /* "กำลังล้างยาทั้งหมด" voice — TH 106 / EN 107. */
+                dfplayer_play_track((g_ui_language == UI_LANG_TH) ? 106 : 107);
+            } else {
+                s_popup_state = 0;
+            }
+            force_redraw = true;
+            return;
+        }
+        return;  /* tap outside button — ignore, user must press Clear */
+    }
+
+    /* Incomplete-module modal (state 6) — any tap navigates to that
+     * module's detail page. If pills are inside, auto-open the
+     * return-pill confirm dialog pre-filled with "ALL"; otherwise
+     * just go to detail so the user can fill in missing fields. */
+    if (s_popup_state == 6 && s_incomplete_pill_idx >= 0) {
+        (void)tx_n; (void)ty_n;
+        const netpie_shadow_t *sh_now = netpie_get_shadow();
+        bool has_pills = (sh_now && sh_now->med[s_incomplete_pill_idx].count > 0);
+        selected_med_idx    = s_incomplete_pill_idx;
+        if (has_pills) {
+            show_return_confirm = true;
+            return_qty          = 100;          /* default to ALL */
+        }
+        s_popup_state       = 0;
+        s_incomplete_pill_drawn = false;
+        pending_page        = PAGE_SETUP_MEDS_DETAIL;
+        force_redraw        = true;
+        dfplayer_play_track(28);                /* confirm/forward sound */
+        return;
+    }
+
     if (s_popup_state == 1) {
         if (tx_n >= kAlertButtonX && tx_n <= (kAlertButtonX + kAlertButtonW) &&
             ty_n >= kAlertButtonY && ty_n <= (kAlertButtonY + kAlertButtonH)) {

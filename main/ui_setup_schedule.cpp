@@ -126,7 +126,10 @@ void ui_setup_schedule_render(void)
         if (g_ui_language == UI_LANG_TH) {
             draw_schedule_label(374 + ((88 - (enabled ? kThOn.width : kThOff.width)) / 2), 18, enabled ? &kThOn : &kThOff);
         } else {
-            draw_string_centered(418, 28, enabled ? "ON" : "OFF", 0xFFFF, enabled ? THEME_OK : THEME_INACTIVE, &FreeSans12pt7b);
+            /* 9pt + baseline=37 fits cleanly inside the 88×28 pill
+             * (y=18..46). FreeSans12pt7b's 29 px yAdvance overflowed
+             * the pill's top edge by ~4 px. */
+            draw_string_centered(418, 37, enabled ? "ON" : "OFF", 0xFFFF, enabled ? THEME_OK : THEME_INACTIVE, &FreeSans9pt7b);
         }
 
         draw_schedule_card_shell(SCHED_LEFT_X, SCHED_TOP_Y, SCHED_CARD_W, SCHED_TOP_H, SCHED_MORNING);
@@ -186,7 +189,7 @@ void ui_setup_schedule_render(void)
             if (g_ui_language == UI_LANG_TH) {
                 draw_schedule_label(374 + ((88 - (enabled ? kThOn.width : kThOff.width)) / 2), 18, enabled ? &kThOn : &kThOff);
             } else {
-                draw_string_centered(418, 38, enabled ? "ON" : "OFF", 0xFFFF, enabled ? THEME_OK : THEME_INACTIVE, &FreeSans12pt7b);
+                draw_string_centered(418, 37, enabled ? "ON" : "OFF", 0xFFFF, enabled ? THEME_OK : THEME_INACTIVE, &FreeSans9pt7b);
             }
             prev_enabled = enabled;
         }

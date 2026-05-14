@@ -38,8 +38,7 @@ esp_err_t i2c_manager_write(uint8_t addr, const uint8_t *data, size_t len);
 
 /**
  * Like i2c_manager_write but the caller must already hold g_i2c_mutex.
- * Used to batch multiple operations (e.g. TCA channel-select + sensor I/O)
- * under a single lock to prevent channel races.
+ * Used to batch multiple operations under a single lock.
  */
 esp_err_t i2c_manager_write_locked(uint8_t addr, const uint8_t *data, size_t len);
 
@@ -53,8 +52,7 @@ esp_err_t i2c_manager_write_locked(uint8_t addr, const uint8_t *data, size_t len
 esp_err_t i2c_manager_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len);
 
 /**
- * Pure read (no register byte sent). For devices like PCF8574.
- * Acquires mutex internally.
+ * Pure read (no register byte sent). Acquires mutex internally.
  */
 esp_err_t i2c_manager_read(uint8_t addr, uint8_t *buf, size_t len);
 

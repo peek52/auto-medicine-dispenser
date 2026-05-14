@@ -84,7 +84,13 @@ void ui_confirm_handle_touch(uint16_t tx_n, uint16_t ty_n)
 
     if (dispenser_is_empty_warning()) {
         dispenser_skip_meds();
-    } else {
-        dispenser_confirm_meds();
+        return;
     }
+
+    /* Just signal the scheduler. The display task transitions back to
+     * PAGE_STANDBY (dispenser_is_waiting() goes false → see display_clock
+     * page-switch block) and standby's popup state 9 paints the
+     * "กำลังจ่ายยา" overlay on the standby background. execute_dispense
+     * waits for g_ui_dispensing_popup_painted before spinning the servo. */
+    dispenser_confirm_meds();
 }

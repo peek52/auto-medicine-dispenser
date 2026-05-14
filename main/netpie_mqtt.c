@@ -426,57 +426,6 @@ void netpie_shadow_update_count(int med_id, int new_count)
     publish_shadow_payload(build_shadow_payload_int(key, new_count));
 }
 
-void netpie_shadow_update_distances(const int dist_mm[6])
-{
-    if (!dist_mm) return;
-    // Build one JSON message with all 6 fields. Skip NVS — distance is
-    // ephemeral telemetry, the next reboot reads fresh anyway.
-    char payload[256];
-    int off = snprintf(payload, sizeof(payload), "{\"data\":{");
-    for (int i = 0; i < 6 && off < (int)sizeof(payload); ++i) {
-        if (dist_mm[i] < 0) {
-            off += snprintf(payload + off, sizeof(payload) - off,
-                            "%s\"med%d_dist\":null",
-                            i ? "," : "", i + 1);
-        } else {
-            off += snprintf(payload + off, sizeof(payload) - off,
-                            "%s\"med%d_dist\":%d",
-                            i ? "," : "", i + 1, dist_mm[i]);
-        }
-    }
-    snprintf(payload + off, sizeof(payload) - off, "}}");
-
-    if (s_client && s_connected) {
-        esp_mqtt_client_publish(s_client, NETPIE_TOPIC_SET, payload, 0, 0, 0);
-    }
-    // If offline, drop the message — distance telemetry isn't worth
-    // queueing in the offline_sync NVS buffer; reading resumes when
-    // MQTT comes back online.
-}
-
-void netpie_shadow_update_pills(const int pills[6])
-{
-    if (!pills) return;
-    char payload[256];
-    int off = snprintf(payload, sizeof(payload), "{\"data\":{");
-    for (int i = 0; i < 6 && off < (int)sizeof(payload); ++i) {
-        if (pills[i] < 0) {
-            off += snprintf(payload + off, sizeof(payload) - off,
-                            "%s\"med%d_pills\":null",
-                            i ? "," : "", i + 1);
-        } else {
-            off += snprintf(payload + off, sizeof(payload) - off,
-                            "%s\"med%d_pills\":%d",
-                            i ? "," : "", i + 1, pills[i]);
-        }
-    }
-    snprintf(payload + off, sizeof(payload) - off, "}}");
-
-    if (s_client && s_connected) {
-        esp_mqtt_client_publish(s_client, NETPIE_TOPIC_SET, payload, 0, 0, 0);
-    }
-}
-
 void netpie_shadow_update_med_name(int med_id, const char *name)
 {
     if (!name || med_id < 1 || med_id > DISPENSER_MED_COUNT) return;

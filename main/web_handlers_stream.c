@@ -49,12 +49,27 @@ esp_err_t stream_handler(httpd_req_t *req) {
 
     jpeg_enc_client_added();
     char part_hdr[128];
+    int consec_get_fail = 0;
     while (true) {
         uint8_t *jpeg_buf = NULL;
         size_t jpeg_len = 0;
 
         /* รอ JPEG frame จาก encoder (timeout 1 วินาที) */
-        if (jpeg_enc_get_frame(&jpeg_buf, &jpeg_len, 1000) != ESP_OK) continue;
+        if (jpeg_enc_get_frame(&jpeg_buf, &jpeg_len, 1000) != ESP_OK) {
+            /* Camera dead / recovering — get_frame returns immediately on
+             * INVALID_STATE without sleeping, which busy-looped this
+             * handler at 100% CPU and pinned the httpd worker thread.
+             * Sleep so the scheduler can run other handlers, and bail
+             * after ~30 s of no frames so the client gets a clean close
+             * instead of a stale TCP connection. */
+            vTaskDelay(pdMS_TO_TICKS(100));
+            if (++consec_get_fail >= 300) {
+                ESP_LOGW(TAG, "MJPEG: 30 s of no frames — closing client");
+                break;
+            }
+            continue;
+        }
+        consec_get_fail = 0;
 
         /* ส่ง boundary */
         if (httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY)) != ESP_OK) {

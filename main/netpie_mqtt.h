@@ -30,18 +30,6 @@ void netpie_shadow_update_med_name(int med_id, const char *name);
 void netpie_shadow_update_med_slots(int med_id, uint8_t slots_mask);
 void netpie_shadow_update_slot(int slot_idx, const char *hh_mm);
 void netpie_shadow_update_enabled(bool enabled);
-/* Publish all 6 VL53 distances in one MQTT message as
- *   { "data": { "med1_dist": N, ..., "med6_dist": N } }
- * Passing -1 for a channel emits null. Diagnostic-only — does NOT
- * persist to NVS or update the local s_shadow struct (distance is
- * transient telemetry, not config). */
-void netpie_shadow_update_distances(const int dist_mm[6]);
-
-/* Publish all 6 derived pill counts in one MQTT message as
- *   { "data": { "med1_pills": N, ..., "med6_pills": N } }
- * Passing -1 emits null. Diagnostic-only — does NOT persist to NVS;
- * dispenser-tracked med*_count remains authoritative. */
-void netpie_shadow_update_pills(const int pills[6]);
 
 bool netpie_shadow_copy(netpie_shadow_t *out_shadow);
 const netpie_shadow_t *netpie_get_shadow(void);

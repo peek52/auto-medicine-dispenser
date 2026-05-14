@@ -25,6 +25,7 @@ void dispenser_get_next_dose_str(char *buf, size_t buf_len);
 
 bool dispenser_is_waiting(void);
 bool dispenser_is_empty_warning(void);
+bool dispenser_is_busy(void);
 int dispenser_seconds_left(void);
 int dispenser_waiting_slot(void);
 uint8_t dispenser_get_missed_slots(void);
@@ -40,31 +41,27 @@ void dispenser_reset_slot_refire_guard(int slot_idx);
 /** สั่งจ่ายยาแบบ Manual ทันที (Non-blocking) */
 void dispenser_manual_dispense(int med_idx, int qty);
 
-/** Per-module IR sensor presence flag (default: all true).
- *  When false, the dispense loop skips IR detection and trusts the
- *  servo cycle as the pill counter — useful when only some modules
- *  have an IR beam wired, or when the IR sensor is unreliable. The
- *  flag is persisted in NVS. */
-bool dispenser_ir_present(int med_idx);
-void dispenser_ir_set_present(int med_idx, bool present);
+/** Clear-all: run an eject-all return cycle on every module
+ *  sequentially. Used at boot when every cartridge reports count=0
+ *  to flush any pills that might have been left over from a previous
+ *  session. Non-blocking — spawns its own worker task.
+ *  Returns false if a clear-all is already in progress. */
+bool dispenser_clear_all_start(void);
 
-/** IR calibration sample — captured at high resolution during one
- *  full servo cycle so the operator can see WHEN the pill passed
- *  the beam. */
-typedef struct {
-    uint32_t time_ms;     // ms since cycle start
-    uint8_t  raw_byte;    // full PCF8574 read
-    uint8_t  bit_low;     // 1 if module's bit was LOW (pill blocking)
-} ir_cal_sample_t;
-
-/** Run a single calibration dispense cycle for med_idx and capture
- *  IR samples at ~5 ms resolution. Does not update shadow/count or
- *  send Telegram — pure diagnostic. Returns ESP_OK on success and
- *  fills *out_count with the number of samples written. */
-esp_err_t dispenser_ir_calibrate(int med_idx,
-                                 ir_cal_sample_t *samples,
-                                 int max_samples,
-                                 int *out_count);
+/** Live state of a clear-all run.  current_module ranges:
+ *    -1      → not running
+ *     0..5   → currently clearing module i
+ *     6      → finished, popup should auto-dismiss
+ *  Pills_total accumulates IR-counted pills across every module
+ *  cleared in the run (for the completion message). */
+bool dispenser_clear_all_active(void);
+int  dispenser_clear_all_current_module(void);
+int  dispenser_clear_all_pills_total(void);
+/* Running pill count for the module currently being cleared. Resets to
+ * 0 each time we move to the next module. UI uses this to show a live
+ * "พบยา N เม็ด" line inside the clear-all popup so the operator sees
+ * the IR counter ticking during each module's eject cycles. */
+int  dispenser_clear_all_pills_current(void);
 
 /** Emergency stop — block all new dispense triggers (manual + scheduled)
  *  until dispenser_emergency_clear() is called. In-flight servo motion
@@ -83,11 +80,9 @@ void dispenser_get_quiet_hours(int *start_min, int *end_min);
 bool dispenser_in_quiet_hours(int cur_h, int cur_m);
 
 /* Audit log entry exposed through /audit.json. Source codes:
- *   'M' = manual via touch UI / web manual button
- *   'S' = scheduled auto-dispense
- *   'W' = web/edit screen stock change (user typed new count)
- *   'V' = VL53 sensor sync (cartridge filled/refilled physically)
- *   'X' = unknown / other
+ *   'S' = scheduled auto-dispense (only entries that actually released
+ *         a pill — see 2026-05-14 spec "เก็บแค่ยาที่จ่ายออกมา").
+ *   'X' = unknown / other (defensive only — code paths don't write it)
  */
 typedef struct {
     uint32_t  timestamp;   // unix seconds (0 if RTC not synced)
@@ -113,8 +108,11 @@ size_t dispenser_audit_count(void);
  *  Returns the number actually written. */
 size_t dispenser_audit_get(dispenser_audit_entry_t *out_entries, size_t max_entries);
 
-/** บันทึกการปรับจำนวนยาจากหน้า setup และส่ง audit ไป Telegram แบบหน่วงรวมเหตุการณ์ */
-void dispenser_audit_stock_adjust(int med_idx, int old_count, int new_count);
+/** Build a human-readable comma-separated list of meal-slot names from
+ *  the bitmask in netpie_shadow_t.med[i].slots. Output respects the
+ *  Telegram language setting (TH/EN). Example: slots=0x05 →
+ *  "ก่อนอาหารเช้า, ก่อนอาหารกลางวัน". Writes "-" if mask is empty. */
+void dispenser_format_slots_to_names(uint8_t slots_mask, char *buf, size_t buf_len);
 
 // Google Sheets Logger
 void google_sheets_log(const char *event, const char *meds, const char *detail);

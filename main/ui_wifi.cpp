@@ -131,7 +131,15 @@ void ui_wifi_scan_render(void)
 
     } else if (wf_state == 2) {
         // ── Pass 3: Draw results ──
+        static int prev_scroll = -1;
+        static int prev_ap_count = -1;
         if (force_redraw) {
+            // Re-entry from BACK/RESCAN wipes chrome; sentinel the diff cache
+            // so the SSID list always re-renders on the next change-check below
+            // (otherwise unchanged scroll+count silently skips the redraw and
+            // the user sees an empty list that still responds to taps).
+            prev_scroll = -1;
+            prev_ap_count = -1;
             fill_screen(SB_COLOR_BG);
             fill_rect(0, 0, LCD_W, 44, SB_COLOR_PANEL);
             fill_rect(0, 43, LCD_W, 2, SB_COLOR_PRIMARY);
@@ -166,8 +174,6 @@ void ui_wifi_scan_render(void)
             force_redraw = false;
         }
 
-        static int prev_scroll = -1;
-        static int prev_ap_count = -1;
         if (wifi_scroll != prev_scroll || ap_count != prev_ap_count) {
             prev_scroll = wifi_scroll;
             prev_ap_count = ap_count;

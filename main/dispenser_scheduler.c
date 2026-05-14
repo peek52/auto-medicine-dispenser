@@ -17,12 +17,13 @@
 #include "netpie_mqtt.h"
 #include "ds3231.h"
 #include "pca9685.h"
-#include "pcf8574.h"
+#include "ir_input.h"
+#include "i2c_manager.h"
+#include "esp_rom_sys.h"
 #include "config.h"
 #include "telegram_bot.h"
 #include "jpeg_encoder.h"
 #include "camera_init.h"
-#include "vl53l0x_multi.h"
 #include "dfplayer.h"
 #include "cloud_secrets.h"
 #include "offline_sync.h"
@@ -92,110 +93,11 @@ static bool s_low_stock_alert_sent[DISPENSER_MED_COUNT] = {0};
 // NVS so an auto-restart while stopped stays stopped.
 static volatile bool s_emergency_stop = false;
 
-// Per-module IR sensor presence. Default true — IR is the authoritative
-// pill counter for this dispenser (servo cycles alone are not trusted,
-// because the user wants the system to refuse to "count" anything that
-// the IR beam didn't physically see). When IR is genuinely not wired
-// for a slot, disable it per-slot via the UI / /tech endpoint so that
-// slot's strict-IR loop bails immediately instead of running blind.
-static bool s_ir_present[DISPENSER_MED_COUNT] = {
-    true, true, true, true, true, true,
-};
-
-bool dispenser_ir_present(int med_idx)
-{
-    if (med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return true;
-    return s_ir_present[med_idx];
-}
-
-static void dispenser_ir_save_nvs(void)
-{
-    nvs_handle_t h;
-    if (nvs_open("dispenser", NVS_READWRITE, &h) != ESP_OK) return;
-    uint8_t mask = 0;
-    for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
-        if (s_ir_present[i]) mask |= (1 << i);
-    }
-    nvs_set_u8(h, "ir_mask", mask);
-    nvs_commit(h);
-    nvs_close(h);
-}
-
-static void dispenser_ir_load_nvs(void)
-{
-    nvs_handle_t h;
-    if (nvs_open("dispenser", NVS_READONLY, &h) != ESP_OK) return;
-    uint8_t mask = 0xFF;  // default: all IR present (matches s_ir_present[] init)
-    nvs_get_u8(h, "ir_mask", &mask);
-    nvs_close(h);
-    for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
-        s_ir_present[i] = (mask & (1 << i)) != 0;
-    }
-}
-
-void dispenser_ir_set_present(int med_idx, bool present)
-{
-    if (med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return;
-    if (s_ir_present[med_idx] == present) return;
-    s_ir_present[med_idx] = present;
-    dispenser_ir_save_nvs();
-    ESP_LOGI(TAG, "IR sensor for med%d %s",
-             med_idx + 1, present ? "ENABLED" : "DISABLED (servo-trust mode)");
-}
-
-/* ── IR calibration: run one cycle and record IR samples ── */
-esp_err_t dispenser_ir_calibrate(int med_idx,
-                                 ir_cal_sample_t *samples,
-                                 int max_samples,
-                                 int *out_count)
-{
-    if (!samples || max_samples <= 0 || !out_count) return ESP_ERR_INVALID_ARG;
-    if (med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return ESP_ERR_INVALID_ARG;
-    *out_count = 0;
-    if (!s_dispense_mutex) return ESP_ERR_INVALID_STATE;
-    if (xSemaphoreTake(s_dispense_mutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
-        return ESP_ERR_TIMEOUT;
-    }
-
-    ESP_LOGI(TAG, "IR calibrate: med%d", med_idx + 1);
-    int count = 0;
-    uint8_t bit_mask = (uint8_t)(1 << med_idx);
-    uint32_t cycle_start = esp_log_timestamp();
-
-    pca9685_go_work(med_idx);
-    while ((esp_log_timestamp() - cycle_start) < 1500) {
-        uint8_t ir = 0xFF;
-        if (pcf8574_read(&ir) == ESP_OK && count < max_samples) {
-            samples[count].time_ms  = esp_log_timestamp() - cycle_start;
-            samples[count].raw_byte = ir;
-            samples[count].bit_low  = ((ir & bit_mask) == 0) ? 1 : 0;
-            count++;
-        }
-        vTaskDelay(1);
-    }
-    pca9685_go_home(med_idx);
-    while ((esp_log_timestamp() - cycle_start) < 5500) {
-        uint8_t ir = 0xFF;
-        if (pcf8574_read(&ir) == ESP_OK && count < max_samples) {
-            samples[count].time_ms  = esp_log_timestamp() - cycle_start;
-            samples[count].raw_byte = ir;
-            samples[count].bit_low  = ((ir & bit_mask) == 0) ? 1 : 0;
-            count++;
-        }
-        vTaskDelay(1);
-    }
-
-    xSemaphoreGive(s_dispense_mutex);
-    *out_count = count;
-    ESP_LOGI(TAG, "IR calibrate done: med%d %d samples captured", med_idx + 1, count);
-    return ESP_OK;
-}
-
-// Audit ring: holds dispense/return/edit events for /audit.json AND for
-// the Telegram /log command. Expanded from 32 to 256 (≈ 2-3 months of
-// typical 3-doses/day use) and persisted to NVS so it survives reboots
-// — Google Sheets dependency is dropped, the device is now the source
-// of truth for its own dose history. NVS blob ~3 KB worst case.
+// Audit ring: holds scheduled-dispense events for /audit.json AND for
+// the Telegram /log command. 256 entries (≈ 2-3 months of typical
+// 3-doses/day use) persisted to NVS so it survives reboots — the
+// device is the source of truth for its own dose history. NVS blob
+// ~3 KB worst case.
 //
 // Save strategy: every audit_log() writes the full ring back to NVS.
 // NVS auto-wear-levels and 4-10 doses/day = ~1500-4000 writes/year is
@@ -602,6 +504,19 @@ static uint32_t s_wait_start_ticks = 0;
 static int s_pending_slot_idx = -1;
 static bool s_dispense_approved = false;
 
+/* Forward decl — definition lives further down (after the manual-dispense
+ * task). execute_dispense() uses this flag to gate the servo on a real
+ * paint of the "DISPENSING..." overlay. */
+extern volatile bool g_ui_dispensing_popup_painted;
+
+/* Cross-task signal: after a scheduled dispense, bits set for every
+ * med that didn't release a pill (empty cartridge OR IR saw nothing).
+ * The display loop pops the lowest set bit, navigates to that module's
+ * detail page, and clears the bit — repeated each time the user
+ * returns to standby until the mask is empty. So a 3-empty-meds slot
+ * walks the user through all three in order. */
+volatile uint8_t g_dispense_missed_nav_mask = 0;
+
 // Tick recorded when s_dispense_busy was set true. Used by the watchdog
 // in dispenser_task to detect a stuck busy state (servo hang, I2C
 // wedge, task crash mid-operation) and recover instead of bricking
@@ -621,29 +536,14 @@ static bool dispenser_mark_busy_if_idle(void)
         acquired = true;
     }
     taskEXIT_CRITICAL(&s_dispense_state_mux);
-    if (acquired) {
-        /* Quiesce VL53 polling while we dispense — VL53 ops grab the
-         * shared I2C mutex with retry, which delays the IR poll's
-         * 2 kHz read cadence and makes pill detection misfire. */
-        vl53l0x_multi_pause();
-    }
     return acquired;
 }
 
 static void dispenser_clear_busy(void)
 {
-    bool was_busy = false;
     taskENTER_CRITICAL(&s_dispense_state_mux);
-    was_busy = s_dispense_busy;
     s_dispense_busy = false;
     taskEXIT_CRITICAL(&s_dispense_state_mux);
-    if (was_busy) {
-        vl53l0x_multi_resume();
-        /* Force a fresh VL53 read right now so the cartridge level on
-         * web/Telegram reflects the post-dispense state without waiting
-         * for the next 5 s polling cycle. */
-        vl53l0x_request_refresh();
-    }
 }
 
 static void send_telegram_photo_or_text(const char *msg)
@@ -692,6 +592,26 @@ static const char *telegram_slot_label(int slot_idx)
 {
     if (slot_idx < 0 || slot_idx >= 7) return "-";
     return telegram_lang_is_th() ? TG_SLOT_LABELS_TH[slot_idx] : SLOT_LABELS[slot_idx];
+}
+
+void dispenser_format_slots_to_names(uint8_t slots_mask, char *buf, size_t buf_len)
+{
+    if (!buf || buf_len == 0) return;
+    buf[0] = '\0';
+    if (slots_mask == 0) {
+        snprintf(buf, buf_len, "-");
+        return;
+    }
+    bool th = telegram_lang_is_th();
+    size_t pos = 0;
+    for (int i = 0; i < 7; ++i) {
+        if (!((slots_mask >> i) & 0x01)) continue;
+        const char *name = th ? TG_SLOT_LABELS_TH[i] : SLOT_LABELS[i];
+        int written = snprintf(buf + pos, buf_len - pos,
+                               (pos == 0) ? "%s" : ", %s", name);
+        if (written < 0 || (size_t)written >= buf_len - pos) break;
+        pos += written;
+    }
 }
 
 static const char *telegram_unknown_name(void)
@@ -890,12 +810,6 @@ static void send_stock_adjust_audit(int med_idx, int from_count, int to_count)
     const netpie_shadow_t *sh = netpie_get_shadow();
     if (!sh || med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return;
 
-    /* VL53-sync audit rows ('V') removed 2026-05-12 per user request —
-     * the dispense history should only carry actual dispense outcomes
-     * (success / missed / no-stock), not background sensor reconciliation.
-     * The Telegram alert below still fires so the user knows a stock
-     * change was detected. */
-
     char time_str[16] = "--:--";
     ds3231_get_time_str(time_str, sizeof(time_str));
 
@@ -941,7 +855,36 @@ static void flush_pending_stock_audits(TickType_t now_ticks)
     }
 }
 
-/* ── Execute Dispense Logic (extracted from task) ── */
+/* IR level-stability detection — type definition needs to be visible
+ * to both execute_dispense() (scheduled dose) and manual_dispense_task()
+ * (manual return).  Definitions of the helper functions stay below
+ * with the rest of the dispense machinery. */
+struct ir_lvl_ctx {
+    int  low_streak_ms;
+    int  high_streak_ms;
+    bool armed;
+    int  pills;
+    int  total_samples;
+    int  blocked_samples;
+};
+typedef struct ir_lvl_ctx ir_lvl_ctx_t;
+static void ir_lvl_init(ir_lvl_ctx_t *c, int ch);
+static void ir_count_during_ramp(ir_lvl_ctx_t *c, int ch, int target_angle, uint32_t timeout_ms);
+
+/* ── Execute Dispense Logic (scheduled dose, 2026-05-14 spec) ──
+ *
+ * Called when the scheduler matches a slot time AND the user has tapped
+ * "รับยา" within the grace window (dispenser_confirm_meds set s_dispense_approved).
+ *
+ * For every med whose slot bit is set in this slot:
+ *   - count == 0 → empty_meds (no servo action).
+ *   - count > 0  → 1 servo cycle home→work→home with IR pill confirmation.
+ *     - IR saw pill   → dispensed_meds, count -= 1.
+ *     - IR saw nothing → missed_meds, count forced to 0 (cartridge empty).
+ *
+ * Reuses the same ir_lvl state-machine as the manual return-pill flow
+ * (15 ms continuous LOW = pill confirmed). Summary is sent to Telegram
+ * with photo. */
 static void execute_dispense(int slot_idx)
 {
     if (!dispenser_slot_index_valid(slot_idx)) {
@@ -949,31 +892,48 @@ static void execute_dispense(int slot_idx)
         dispenser_clear_busy();
         return;
     }
-
-    if (!s_dispense_mutex) {
-        ESP_LOGE(TAG, "Dispense mutex is not initialized");
-        dispenser_clear_busy();
-        return;
-    }
-
-    if (xSemaphoreTake(s_dispense_mutex, portMAX_DELAY) != pdTRUE) {
-        ESP_LOGE(TAG, "Failed to take dispense mutex");
+    if (!s_dispense_mutex || xSemaphoreTake(s_dispense_mutex, portMAX_DELAY) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take dispense mutex for scheduled dispense");
         dispenser_clear_busy();
         return;
     }
 
     const netpie_shadow_t *sh = netpie_get_shadow();
     if (!sh) {
-        ESP_LOGE(TAG, "Shadow is unavailable while dispensing");
+        ESP_LOGE(TAG, "Shadow not loaded — aborting scheduled dispense");
         xSemaphoreGive(s_dispense_mutex);
         dispenser_clear_busy();
         return;
     }
 
+    ESP_LOGI(TAG, "Scheduled dispense start: slot=%d (%s)", slot_idx, SLOT_LABELS[slot_idx]);
+
+    /* Wait for the UI to paint the "กำลังจ่ายยา" overlay before the
+     * servo spins. ui_confirm_handle_touch paints it synchronously and
+     * sets g_ui_dispensing_popup_painted = true before signaling, so
+     * this loop usually exits on the first check. The wait is kept as
+     * a safety in case the touch handler was bypassed (NETPIE or test
+     * paths). Min-visible window guarantees the user actually sees the
+     * popup even if the display lagged. */
+    {
+        const uint32_t POPUP_WAIT_MAX_MS    = 2500;
+        const uint32_t POPUP_MIN_VISIBLE_MS = 400;
+        uint32_t t0 = esp_log_timestamp();
+        while (!g_ui_dispensing_popup_painted &&
+               (esp_log_timestamp() - t0) < POPUP_WAIT_MAX_MS) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+        while ((esp_log_timestamp() - t0) < POPUP_MIN_VISIBLE_MS) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+        ESP_LOGI(TAG, "sched-dispense popup wait done in %lums",
+                 (unsigned long)(esp_log_timestamp() - t0));
+    }
+
     enum { MED_LIST_BUF_LEN = 256 };
     char *dispensed_meds = (char *)calloc(1, MED_LIST_BUF_LEN);
-    char *empty_meds = (char *)calloc(1, MED_LIST_BUF_LEN);
-    char *missed_meds = (char *)calloc(1, MED_LIST_BUF_LEN);
+    char *empty_meds     = (char *)calloc(1, MED_LIST_BUF_LEN);
+    char *missed_meds    = (char *)calloc(1, MED_LIST_BUF_LEN);
     if (!dispensed_meds || !empty_meds || !missed_meds) {
         ESP_LOGE(TAG, "Failed to allocate dispense result buffers");
         free(dispensed_meds);
@@ -984,218 +944,122 @@ static void execute_dispense(int slot_idx)
         return;
     }
 
-    for (int i = 0; i < DISPENSER_MED_COUNT; i++) {
-        if (!((sh->med[i].slots >> slot_idx) & 1)) continue;
-        if (sh->med[i].count <= 0) {
-            ESP_LOGW(TAG, "  med%d (%s) empty!", i+1, sh->med[i].name);
-            append_med_name(empty_meds, MED_LIST_BUF_LEN,
-                            sh->med[i].name[0] ? sh->med[i].name : telegram_unknown_name());
-            /* Log a no-stock skip entry — count stays at 0 (allowed for
-             * 'N' source). Lets the /log readout show "ยาหมดไม่จ่าย" for
-             * the affected med and slot. */
-            dispenser_audit_log(i, 0, 0, 'N');
+    const uint32_t RAMP_TIMEOUT_MS = 4500;
+    uint8_t failed_mask = 0;  /* For UI auto-navigation: bit set per
+                                * scheduled med that came up empty or
+                                * had IR miss. Display task walks the
+                                * mask, one module at a time. */
+
+    for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
+        /* Skip meds that don't belong to this slot. */
+        if (!((sh->med[i].slots >> slot_idx) & 0x01)) continue;
+
+        const char *name = sh->med[i].name[0] ? sh->med[i].name : telegram_unknown_name();
+        int old_count = sh->med[i].count;
+
+        if (old_count <= 0) {
+            ESP_LOGW(TAG, "  med%d (%s) empty — skipping", i + 1, name);
+            append_med_name(empty_meds, MED_LIST_BUF_LEN, name);
+            /* Audit-skipped per 2026-05-14 spec: only entries where a pill
+             * actually came out are kept. Empty-cartridge events go to
+             * Telegram only. */
+            failed_mask |= (1u << i);
             continue;
         }
 
-        ESP_LOGI(TAG, "  💊 Dispensing med%d (%s) ch%d", i+1, sh->med[i].name, i);
+        ESP_LOGI(TAG, "  💊 dispensing med%d (%s) count=%d", i + 1, name, old_count);
 
-        bool pill_detected = false;
-        ESP_LOGI(TAG, "      ▶️ [IR SENSOR] Start monitoring pill drop for med%d...", i+1);
+        /* One servo cycle with IR confirmation. */
+        ir_lvl_ctx_t ir_ctx;
+        ir_lvl_init(&ir_ctx, i);
 
-        // Warmup phase before issuing servo command: prime the
-        // PCF8574 bus + let IR sensor stabilize. Without this the
-        // very first cycle of a dispense sometimes returned stale
-        // 0xFF (no pill) for a fast-dropping pill, making the first
-        // pill detection flaky.
-        for (int w = 0; w < 8; w++) {
-            uint8_t junk = 0xFF;
-            (void)pcf8574_read(&junk);
-            vTaskDelay(pdMS_TO_TICKS(10));
-        }
-
-        // Continuous IR polling: from servo work command through home
-        // and 2 s past home. pcf8574_read takes ~3-5 ms via I2C; we
-        // yield (vTaskDelay 1 tick) on EVERY iteration so the UI/touch
-        // task on the same I2C bus gets fair access. Earlier we yielded
-        // only every 8 reads, which held the bus for ~30-40 ms at a
-        // stretch and froze the screen during the 7.5 s IR window
-        // (visible during return-pill / scheduled-dispense). Yielding
-        // every read still gives ~100 Hz IR sampling — well above the
-        // ~20 Hz needed to catch a falling pill (~50 ms beam-break).
-        const uint32_t WORK_MS  = 1500;
-        const uint32_t HOME_MS  = 4000;
-        const uint32_t POST_MS  = 2000;
-        /* Pulse-width detection for a real pill drop, replacing the old
-         * "sustained LOW = pill detected" rule that false-positives on
-         * EMI from servo PWM AND on the cup arm sweeping across the IR
-         * beam during rotation.
-         *
-         * A real pill blocks the beam for ~30..200 ms (gravity drop
-         * through a ~5-10 cm chute). EMI bursts are sub-millisecond per
-         * PWM edge — even sustained supply sag from a long ramp keeps
-         * the beam LOW for the whole ramp (>500 ms). The cup arm, if
-         * it crosses the beam, also keeps the IR LOW for several
-         * hundred ms.
-         *
-         * So we accept a pill only when the LOW pulse meets BOTH a
-         * minimum (≥3 samples, ~30 ms — rejects single-tick EMI) and
-         * a maximum (≤25 samples, ~250 ms — rejects sustained EMI and
-         * arm sweeps). The pulse must also END with a debounced HIGH
-         * (≥3 HIGH samples in a row), proving the beam actually
-         * cleared — not just dropped LOW and stayed. */
-        const int IR_DEBOUNCE_LOW_SAMPLES  = 3;   /* ≥30 ms LOW = beam armed */
-        const int IR_DEBOUNCE_HIGH_SAMPLES = 3;   /* ≥30 ms HIGH = beam clear */
-        const int IR_MAX_LOW_SAMPLES       = 25;  /* >250 ms LOW = not a pill */
-        int consec_low = 0;
-        int consec_high = 0;
-        int armed_low_count = 0;  /* total LOW samples since beam-armed */
-        bool beam_armed = false;
-        uint32_t loop_start = esp_log_timestamp();
-        esp_err_t go_work_err = pca9685_go_work(i);
-        if (go_work_err != ESP_OK) {
-            // Servo command failed — don't waste 7.5 s polling IR for a
-            // pill that can't drop. Log + skip this medication so the
-            // scheduled dispense reports the missed slot instead of
-            // silently passing through with no servo motion.
-            ESP_LOGE(TAG, "      ✗ pca9685_go_work(med%d) failed: %s — skipping IR window",
-                     i + 1, esp_err_to_name(go_work_err));
+        esp_err_t e1 = pca9685_go_work_async(i);
+        if (e1 != ESP_OK) {
+            ESP_LOGE(TAG, "  ✗ go_work_async med%d: %s",
+                     i + 1, esp_err_to_name(e1));
+            append_med_name(missed_meds, MED_LIST_BUF_LEN, name);
+            failed_mask |= (1u << i);
             continue;
         }
-        bool home_issued = false;
-        while (1) {
-            uint32_t elapsed = esp_log_timestamp() - loop_start;
-            if (!home_issued && elapsed >= WORK_MS) {
-                esp_err_t go_home_err = pca9685_go_home(i);
-                if (go_home_err != ESP_OK) {
-                    ESP_LOGE(TAG, "      ✗ pca9685_go_home(med%d) failed: %s — pill cup may be left rotated",
-                             i + 1, esp_err_to_name(go_home_err));
-                }
-                home_issued = true;
-            }
-            if (elapsed >= (WORK_MS + HOME_MS + POST_MS)) break;
+        ir_count_during_ramp(&ir_ctx, i, g_servo[i].work_angle, RAMP_TIMEOUT_MS);
 
-            uint8_t ir_val = 0xFF;
-            if (pcf8574_read(&ir_val) == ESP_OK) {
-                bool beam_blocked = ((ir_val & (1 << i)) == 0);
-                if (beam_blocked) {
-                    consec_high = 0;
-                    consec_low++;
-                    if (beam_armed) armed_low_count++;
-                    if (!beam_armed && consec_low >= IR_DEBOUNCE_LOW_SAMPLES) {
-                        beam_armed = true;
-                        armed_low_count = consec_low;
-                        ESP_LOGI(TAG, "      >> IR ch%d beam ARMED at %lu ms (LOW debounced)",
-                                 i + 1, (unsigned long)elapsed);
-                    }
-                    /* Stuck LOW (cup arm in beam, EMI supply sag, or
-                     * stuck signal) — disarm and ignore. Real pill
-                     * never holds beam this long. */
-                    if (beam_armed && armed_low_count > IR_MAX_LOW_SAMPLES) {
-                        ESP_LOGW(TAG, "      ⚠ IR ch%d beam LOW too long (%d samples >%d) — "
-                                      "disarming (likely arm sweep or EMI, not a pill)",
-                                 i + 1, armed_low_count, IR_MAX_LOW_SAMPLES);
-                        beam_armed = false;
-                        armed_low_count = 0;
-                        consec_low = 0;
-                    }
-                } else {
-                    consec_low = 0;
-                    if (beam_armed) {
-                        consec_high++;
-                        if (consec_high >= IR_DEBOUNCE_HIGH_SAMPLES) {
-                            /* LOW pulse cleared cleanly within the
-                             * allowed width window → real pill passage. */
-                            if (!pill_detected) {
-                                ESP_LOGI(TAG, "      ✓ IR ch%d pill CONFIRMED at %lu ms "
-                                              "(LOW pulse %d samples, then clean HIGH)",
-                                         i + 1, (unsigned long)elapsed, armed_low_count);
-                            }
-                            pill_detected = true;
-                            beam_armed = false;
-                            armed_low_count = 0;
-                            consec_high = 0;
-                        }
-                    } else {
-                        consec_high = 0;
-                    }
-                }
-            }
-            vTaskDelay(1);
+        esp_err_t e2 = pca9685_go_home_async(i);
+        if (e2 != ESP_OK) {
+            ESP_LOGE(TAG, "  ✗ go_home_async med%d: %s",
+                     i + 1, esp_err_to_name(e2));
+            append_med_name(missed_meds, MED_LIST_BUF_LEN, name);
+            failed_mask |= (1u << i);
+            continue;
         }
-        /* End-of-window: if beam is still in an armed-but-not-cleared
-         * state with a reasonable pulse width, count it. Catches the
-         * edge case where the pill is still mid-air at window end. */
-        if (!pill_detected && beam_armed &&
-            armed_low_count >= IR_DEBOUNCE_LOW_SAMPLES &&
-            armed_low_count <= IR_MAX_LOW_SAMPLES) {
-            ESP_LOGI(TAG, "      ✓ IR ch%d pill counted at window-end (armed, %d samples LOW)",
-                     i + 1, armed_low_count);
-            pill_detected = true;
-        }
+        ir_count_during_ramp(&ir_ctx, i, g_servo[i].home_angle, RAMP_TIMEOUT_MS);
 
-        if (!pill_detected) {
-            ESP_LOGW(TAG, "      ❌ [IR SENSOR] MISSED! No pill detected dropping for med%d", i+1);
-            append_med_name(missed_meds, MED_LIST_BUF_LEN,
-                            sh->med[i].name[0] ? sh->med[i].name : telegram_unknown_name());
-        } else {
-            ESP_LOGI(TAG, "      ✅ [IR SENSOR] SUCCESS! Pill drop confirmed for med%d", i+1);
-            append_med_name(dispensed_meds, MED_LIST_BUF_LEN,
-                            sh->med[i].name[0] ? sh->med[i].name : telegram_unknown_name());
-        }
+        bool pill_seen = (ir_ctx.pills > 0);
+        ESP_LOGI(TAG, "  → cycle done, IR pills=%d", ir_ctx.pills);
 
-        vTaskDelay(pdMS_TO_TICKS(500));
-
-        if (pill_detected) {
-            int old_count = sh->med[i].count;
+        if (pill_seen) {
             int new_count = old_count - 1;
             if (new_count < 0) new_count = 0;
             netpie_shadow_update_count(i + 1, new_count);
             dispenser_audit_log(i, old_count, new_count, 'S');
+            append_med_name(dispensed_meds, MED_LIST_BUF_LEN, name);
+            /* Force-publish (in case meds-detail edit-session inhibit
+             * is active). */
+            char force_payload[64];
+            snprintf(force_payload, sizeof(force_payload),
+                     "{\"data\":{\"med%d_count\":%d}}", i + 1, new_count);
+            netpie_publish_shadow_json(force_payload);
             send_low_stock_alert(i, new_count,
                                  "ยาใกล้หมด เหลือ 2 เม็ดสุดท้ายหรือน้อยกว่า",
                                  "Medicine is running low. Two pills or fewer remain.",
                                  false);
         } else {
-            /* Scheduled dose ran but IR saw nothing fall — cartridge is
-             * empty in reality. Force shadow.count = 0 so the on-screen
-             * stock matches reality (manual dispense already does this at
-             * line ~1621). Also resync the UI snapshot so a stray Back
-             * tap from the meds-detail page can't revert it. */
-            int old_count = sh->med[i].count;
-            if (old_count != 0) {
-                netpie_shadow_update_count(i + 1, 0);
-                dispenser_audit_log(i, old_count, 0, 'S');
-                extern void ui_setup_meds_resync_backup_count(int, int);
-                ui_setup_meds_resync_backup_count(i, 0);
-            }
-            send_low_stock_alert(i, 0,
-                                 "มีการยืนยันรับยาแต่ไม่พบยาออกจากช่อง ระบบตั้งยาคงเหลือเป็น 0 แล้ว กรุณาเติมยา",
-                                 "Dose was confirmed but no pill was detected. Stock was set to 0. Please refill.",
-                                 true);
+            /* IR didn't see a pill — assume cartridge is empty. Force
+             * count to 0 + publish. No audit entry: this slot produced
+             * no pill, so it doesn't belong in the "ยาที่จ่ายออกมา"
+             * history (Telegram still reports it). */
+            netpie_shadow_update_count(i + 1, 0);
+            char force_payload[64];
+            snprintf(force_payload, sizeof(force_payload),
+                     "{\"data\":{\"med%d_count\":0}}", i + 1);
+            netpie_publish_shadow_json(force_payload);
+            extern void ui_setup_meds_resync_backup_count(int, int);
+            ui_setup_meds_resync_backup_count(i, 0);
+            append_med_name(missed_meds, MED_LIST_BUF_LEN, name);
+            failed_mask |= (1u << i);
         }
-        vTaskDelay(pdMS_TO_TICKS(200));
+
+        vTaskDelay(pdMS_TO_TICKS(200));   /* small gap between meds */
     }
 
     xSemaphoreGive(s_dispense_mutex);
     dispenser_clear_busy();
 
-    // Result sound for the scheduled dose: at least one pill dropped =
-    // จ่ายยาสำเร็จ; nothing dropped = ไม่พบยา.
-    {
-        extern int g_snd_disp_th, g_snd_disp_en, g_snd_nomeds_th, g_snd_nomeds_en;
-        bool any_dispensed = (dispensed_meds && dispensed_meds[0] != '\0');
-        bool is_th = telegram_lang_is_th();
-        if (any_dispensed) {
-            dfplayer_play_track(is_th ? g_snd_disp_th : g_snd_disp_en);
-        } else {
-            dfplayer_play_track(is_th ? g_snd_nomeds_th : g_snd_nomeds_en);
-        }
-    }
+    /* Result audio. */
+    extern int g_snd_disp_th, g_snd_disp_en, g_snd_nomeds_th, g_snd_nomeds_en;
+    bool any_dispensed = (dispensed_meds[0] != '\0');
+    bool is_th = telegram_lang_is_th();
+    dfplayer_play_track(any_dispensed
+                            ? (is_th ? g_snd_disp_th    : g_snd_disp_en)
+                            : (is_th ? g_snd_nomeds_th  : g_snd_nomeds_en));
 
     send_dispense_result_summary(slot_idx, dispensed_meds, empty_meds, missed_meds);
     free(dispensed_meds);
     free(empty_meds);
     free(missed_meds);
+
+    /* Reset the paint-ack flag for the next dispense flow. The touch
+     * handler will set it true again before signaling. */
+    g_ui_dispensing_popup_painted = false;
+
+    /* If any med was empty / missed, signal the display task to walk
+     * the user through each failed module one at a time. Use atomic
+     * OR so a concurrent bit-clear on the display side can't lose
+     * the newly-queued bits (read-modify-write on volatile alone is
+     * not atomic on RISC-V). */
+    if (failed_mask) {
+        __atomic_fetch_or(&g_dispense_missed_nav_mask, failed_mask, __ATOMIC_SEQ_CST);
+        ESP_LOGI(TAG, "Queuing UI nav for failed mask=0x%02X", failed_mask);
+    }
 }
 
 /* ── Dispenser Task ── */
@@ -1243,19 +1107,10 @@ static void dispenser_task(void *arg)
                 ESP_LOGW(TAG, "User missed medication for slot %d", s_pending_slot_idx);
                 if (dispenser_slot_index_valid(s_pending_slot_idx)) {
                     g_missed_slots_mask |= (1 << s_pending_slot_idx);
-                    /* Audit: one "missed dose" row per med assigned to
-                     * the slot that just timed out. Count is unchanged
-                     * (the dose was never dispensed) so we pass the
-                     * current count for both from/to — 'L' source is
-                     * exempt from the no-op suppression in
-                     * dispenser_audit_log. */
-                    const netpie_shadow_t *sh = netpie_get_shadow();
-                    for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
-                        if ((sh->med[i].slots >> s_pending_slot_idx) & 1) {
-                            dispenser_audit_log(i, sh->med[i].count,
-                                                sh->med[i].count, 'L');
-                        }
-                    }
+                    /* No audit row: 'L' missed-dose events removed per
+                     * 2026-05-14 spec — history keeps only pills that
+                     * actually came out. The miss is still reported to
+                     * Telegram (see dispenser_skip_meds). */
                 }
                 dispenser_skip_meds();
             }
@@ -1361,8 +1216,12 @@ static void dispenser_task(void *arg)
                         if (sh->med[i].count > 0) {
                             has_stock = true; 
                         } else {
-                            if (strlen(empty_meds) > 0) strcat(empty_meds, ", ");
-                            strncat(empty_meds, sh->med[i].name[0] ? sh->med[i].name : "Unknown", sizeof(empty_meds) - strlen(empty_meds) - 1);
+                            size_t cur_len = strlen(empty_meds);
+                            if (cur_len > 0 && cur_len + 2 < sizeof(empty_meds)) {
+                                strncat(empty_meds, ", ", sizeof(empty_meds) - cur_len - 1);
+                            }
+                            strncat(empty_meds, sh->med[i].name[0] ? sh->med[i].name : "Unknown",
+                                    sizeof(empty_meds) - strlen(empty_meds) - 1);
                         }
                     }
                 }
@@ -1411,14 +1270,6 @@ static void dispenser_task(void *arg)
                 s_waiting_confirm = true;
                 s_wait_start_ticks = now_ticks;
                 s_pending_slot_idx = s;
-                /* Pause VL53 polling for the entire 15-min user-tap
-                 * window so the shared I2C bus stays quiet — touch reads
-                 * miss less, and the user's tap registers immediately
-                 * (otherwise VL53 every-5-s polls would occasionally
-                 * stall the touch driver enough that taps got dropped,
-                 * and the system fired the "didn't tap in time" alert
-                 * even though the user actually tapped). */
-                vl53l0x_multi_pause();
                 break; // Stop evaluating other slots
             }
 
@@ -1500,7 +1351,6 @@ void dispenser_scheduler_start(void)
     }
     dispenser_emergency_load_nvs();
     quiet_hours_load_nvs();
-    dispenser_ir_load_nvs();
     dispenser_audit_load_nvs();
     if (s_emergency_stop) {
         ESP_LOGW(TAG, "Dispenser starting with emergency stop ACTIVE — "
@@ -1540,6 +1390,15 @@ void dispenser_reset_slot_refire_guard(int slot_idx)
 }
 bool dispenser_is_empty_warning(void) { return s_empty_stock_warning; }
 
+bool dispenser_is_busy(void)
+{
+    bool busy;
+    taskENTER_CRITICAL(&s_dispense_state_mux);
+    busy = s_dispense_busy || s_dispense_approved;
+    taskEXIT_CRITICAL(&s_dispense_state_mux);
+    return busy;
+}
+
 int dispenser_seconds_left(void) {
     if (!s_waiting_confirm) return 0;
     uint32_t elapsed = (xTaskGetTickCount() - s_wait_start_ticks) * portTICK_PERIOD_MS / 1000;
@@ -1563,10 +1422,6 @@ void dispenser_confirm_meds(void) {
     portEXIT_CRITICAL(&s_dispense_state_mux);
     if (was_waiting) {
         ESP_LOGI(TAG, "User CONFIRMED medication drop.");
-        /* Balance the pause issued when waiting started.
-         * dispenser_mark_busy_if_idle will pause VL53 again before the
-         * dispense actually runs, so VL53 stays quiet end-to-end. */
-        vl53l0x_multi_resume();
     }
 }
 
@@ -1582,10 +1437,6 @@ void dispenser_skip_meds(void) {
     }
     portEXIT_CRITICAL(&s_dispense_state_mux);
     if (!was_waiting) return;
-
-    /* Balance the pause issued when waiting started. Skip path doesn't
-     * dispense, so VL53 just resumes its normal polling cadence. */
-    vl53l0x_multi_resume();
 
     ESP_LOGI(TAG, "User SKIPPED medication drop.");
     if (dispenser_slot_index_valid(slot_idx)) {
@@ -1620,340 +1471,265 @@ typedef struct {
 } manual_disp_args_t;
 
 volatile int ui_manual_disp_status = 0; // 0=Idle, 1=Dropping, 2=Success, 3=Fail
+/* Set to true by ui_setup_meds_detail_render() after the
+ * "กำลังดำเนินการ" popup has been fully painted on screen. The
+ * dispense task uses this as a synchronization signal: don't start
+ * the servo until the user can actually see the popup. */
+volatile bool g_ui_dispensing_popup_painted = false;
+
+/* ── Return-pill task (2026-05-13 spec) ──
+ *
+ *   qty == 100  → คืนยาทั้งหมด: วน cycle ไปเรื่อยๆ จนกว่า IR จะไม่เจอ
+ *                  ยาเลยใน 1 cycle (= ตลับว่าง) → หยุด.
+ *   qty 1..99   → คืน N เม็ด: วนจน IR นับยาผ่านครบ N หรือ
+ *                  มี cycle หนึ่งที่ไม่เจอยาเลย → หยุด.
+ *
+ *   1 cycle = servo home → work → home (async ramp พร้อม poll IR ตลอด).
+ *   IR-edge (blocked→clear) นับเป็น 1 เม็ด ต่อรอบสามารถนับได้หลายเม็ด
+ *   ถ้ายาตกพร้อมกัน. ส่งจำนวนที่ IR นับได้จริงไปที่ Telegram. */
+
+/* Level-stability pill counter.
+ *
+ * Cheap IR comparator modules chatter at high frequency (1-10 kHz),
+ * so edge-counting is hopeless.  Instead we sample the pin level at
+ * 5 ms and use a state machine that requires the beam to stay LOW
+ * for STABLE_LOW_MS continuous milliseconds before counting it as a
+ * real pill, then requires STABLE_HIGH_MS continuous milliseconds of
+ * HIGH before re-arming.
+ *
+ *   sample → if (blocked && low_streak ≥ STABLE_LOW_MS && !armed)
+ *              → count pill, armed=true
+ *            if (!blocked && high_streak ≥ STABLE_HIGH_MS)
+ *              → armed=false (ready for next pill)
+ *
+ * Chatter never sustains a single state long enough → never counts.
+ * A real pill blocks the beam for 30-300 ms → counted exactly once. */
+
+#define IR_SAMPLE_MS        5
+/* Threshold history:
+ *   20 → 15 → 10 ms (latter requested for wider IR detection range).
+ * Anything below 10 ms risks counting sub-millisecond comparator
+ * chatter as pills — don't go lower without re-validating no-pill
+ * tests return 0. */
+#define IR_STABLE_LOW_MS    10
+#define IR_STABLE_HIGH_MS   10
+
+/* struct definition lives at top of file (forward declared) so
+ * execute_dispense can call ir_lvl_init/ir_count_during_ramp too. */
+
+static void ir_lvl_init(ir_lvl_ctx_t *c, int ch)
+{
+    c->low_streak_ms  = 0;
+    c->high_streak_ms = 0;
+    c->armed          = ir_blocked(ch);  /* if pill already in beam at start, skip first count */
+    c->pills          = 0;
+    c->total_samples  = 0;
+    c->blocked_samples= 0;
+}
+
+static void ir_lvl_feed(ir_lvl_ctx_t *c, bool blocked)
+{
+    c->total_samples++;
+    if (blocked) c->blocked_samples++;
+
+    if (blocked) {
+        c->high_streak_ms = 0;
+        c->low_streak_ms += IR_SAMPLE_MS;
+        if (!c->armed && c->low_streak_ms >= IR_STABLE_LOW_MS) {
+            c->armed = true;
+            c->pills++;
+            ESP_LOGI("ir_lvl", "  PILL detected (low %d ms continuous) total=%d",
+                     c->low_streak_ms, c->pills);
+        }
+    } else {
+        c->low_streak_ms = 0;
+        c->high_streak_ms += IR_SAMPLE_MS;
+        if (c->armed && c->high_streak_ms >= IR_STABLE_HIGH_MS) {
+            c->armed = false;   /* re-arm for next pill */
+        }
+    }
+}
+
+static void ir_count_during_ramp(ir_lvl_ctx_t *c, int ch, int target_angle, uint32_t timeout_ms)
+{
+    uint32_t t0 = esp_log_timestamp();
+    while ((esp_log_timestamp() - t0) < timeout_ms) {
+        ir_lvl_feed(c, ir_blocked(ch));
+        if (g_servo[ch].cur_angle == target_angle) break;
+        vTaskDelay(pdMS_TO_TICKS(IR_SAMPLE_MS));
+    }
+    /* Drain 200 ms after the servo reaches target so a pill still
+     * mid-air gets counted. */
+    uint32_t drain_until = esp_log_timestamp() + 200;
+    while (esp_log_timestamp() < drain_until) {
+        ir_lvl_feed(c, ir_blocked(ch));
+        vTaskDelay(pdMS_TO_TICKS(IR_SAMPLE_MS));
+    }
+}
 
 static void manual_dispense_task(void *arg) {
     manual_disp_args_t *args = (manual_disp_args_t *)arg;
     int m_idx = args->med_idx;
-    int qty = args->qty;
-    free(args); // free the transient params
+    int qty   = args->qty;
+    free(args);
 
     if (!s_dispense_mutex) {
         ESP_LOGE(TAG, "Dispense mutex is not initialized");
-        dispenser_clear_busy();
         ui_manual_disp_status = 3;
+        dispenser_clear_busy();
         vTaskDelete(NULL);
         return;
     }
     if (xSemaphoreTake(s_dispense_mutex, portMAX_DELAY) != pdTRUE) {
-        ESP_LOGE(TAG, "Failed to take dispense mutex for manual dispense");
-        dispenser_clear_busy();
+        ESP_LOGE(TAG, "Failed to take dispense mutex");
         ui_manual_disp_status = 3;
+        dispenser_clear_busy();
         vTaskDelete(NULL);
         return;
     }
 
-    ui_manual_disp_status = 1;
-    dfplayer_play_track(32); // Track 32: Processing / Please wait
-    ESP_LOGI(TAG, "Starting manual dispense: med%d, requested q:%d", m_idx + 1, qty);
+    /* status=1 already set by dispenser_manual_dispense() before this
+     * task was spawned. Play the audio cue, then poll millis-style
+     * (esp_log_timestamp = boot time in ms) for the UI to acknowledge
+     * the "กำลังดำเนินการ" popup is on screen. Exits as soon as the
+     * flag flips → no fixed delay, max-snappy response. */
+    dfplayer_play_track(32);   /* "กำลังจ่ายยา / Processing" */
+    {
+        const uint32_t POPUP_WAIT_MAX_MS    = 2500;  /* hard timeout for flag */
+        const uint32_t POPUP_MIN_VISIBLE_MS = 800;  /* popup MUST stay visible
+                                                       * this long before servo
+                                                       * starts — display task
+                                                       * at prio 3 needs CPU
+                                                       * windows to finish the
+                                                       * full state-1 popup
+                                                       * paint without being
+                                                       * preempted */
+        uint32_t t0 = esp_log_timestamp();
+        uint32_t t_flag = 0;
+        while (!g_ui_dispensing_popup_painted &&
+               (esp_log_timestamp() - t0) < POPUP_WAIT_MAX_MS) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+        t_flag = esp_log_timestamp();
+        while ((esp_log_timestamp() - t0) < POPUP_MIN_VISIBLE_MS) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+        ESP_LOGI(TAG, "popup wait: flag=%lums total=%lums",
+                 (unsigned long)(t_flag - t0),
+                 (unsigned long)(esp_log_timestamp() - t0));
+    }
 
-    int actually_dropped = 0;
     bool eject_all = (qty == 100);
-    bool forced_empty = false;
-    int dead_ir_drops = 0;
-    int consecutive_empty_cycles = 0;
-    // Strict IR mode: any cycle where IR doesn't detect a pill stops
-    // the dispense immediately. No retry, no servo-trust fallback for
-    // modules that DO have IR enabled. For modules with no IR sensor
-    // wired, disable IR via /tech/ir (m=N&v=0) so the loop runs in
-    // servo-trust mode from the start.
-    const int EMPTY_CONFIRM_CYCLES = 1;
-    const int EMPTY_MIN_CYCLES_BEFORE_BAIL = 0;
+    int  target_count = eject_all ? DISPENSER_MAX_PILLS : qty;
+    int  pills_counted = 0;
+    int  cycles_run    = 0;
+    bool stopped_empty = false;
 
+    ESP_LOGI(TAG, "Return-pill start: med%d %s (target=%d)",
+             m_idx + 1, eject_all ? "ALL" : "N-pill", target_count);
+
+    /* Generous per-ramp timeout: 1°/20ms × ≤180° = 3.6 s + slack. */
+    const uint32_t RAMP_TIMEOUT_MS = 4500;
+    /* Hard cap on cycles — survive a stuck-IR-blocked scenario where
+     * count never increments and we'd otherwise loop forever. */
+    const int CYCLE_HARD_CAP = DISPENSER_MAX_PILLS * 2;
+
+    while (pills_counted < target_count && cycles_run < CYCLE_HARD_CAP) {
+        cycles_run++;
+
+        ir_lvl_ctx_t ir_ctx;
+        ir_lvl_init(&ir_ctx, m_idx);
+
+        /* WORK ramp (home → work). */
+        uint32_t t_w0 = esp_log_timestamp();
+        ESP_LOGI(TAG, "  → go_work_async med%d (cur=%d → target=%d)",
+                 m_idx + 1, g_servo[m_idx].cur_angle, g_servo[m_idx].work_angle);
+        esp_err_t ew = pca9685_go_work_async(m_idx);
+        if (ew != ESP_OK) {
+            ESP_LOGE(TAG, "  go_work_async med%d failed: %s",
+                     m_idx + 1, esp_err_to_name(ew));
+            break;
+        }
+        ir_count_during_ramp(&ir_ctx, m_idx, g_servo[m_idx].work_angle, RAMP_TIMEOUT_MS);
+        ESP_LOGI(TAG, "  ← work done in %lums (pills-so-far=%d)",
+                 (unsigned long)(esp_log_timestamp() - t_w0), ir_ctx.pills);
+
+        /* HOME ramp (work → home). */
+        uint32_t t_h0 = esp_log_timestamp();
+        ESP_LOGI(TAG, "  → go_home_async med%d (cur=%d → target=%d)",
+                 m_idx + 1, g_servo[m_idx].cur_angle, g_servo[m_idx].home_angle);
+        esp_err_t eh = pca9685_go_home_async(m_idx);
+        if (eh != ESP_OK) {
+            ESP_LOGE(TAG, "  go_home_async med%d failed: %s",
+                     m_idx + 1, esp_err_to_name(eh));
+            break;
+        }
+        ir_count_during_ramp(&ir_ctx, m_idx, g_servo[m_idx].home_angle, RAMP_TIMEOUT_MS);
+        ESP_LOGI(TAG, "  ← home done in %lums (cur=%d)",
+                 (unsigned long)(esp_log_timestamp() - t_h0), g_servo[m_idx].cur_angle);
+
+        int per_cycle = ir_ctx.pills;
+        if (per_cycle > 1) per_cycle = 1;   /* cap: 1 servo cycle = 1 pill */
+        pills_counted += per_cycle;
+        int blocked_pct = ir_ctx.total_samples
+                              ? (100 * ir_ctx.blocked_samples / ir_ctx.total_samples)
+                              : 0;
+        ESP_LOGI(TAG, "  cycle %d: pills=%d (raw=%d, samples=%d blocked=%d%%) | total=%d",
+                 cycles_run, per_cycle, ir_ctx.pills,
+                 ir_ctx.total_samples, blocked_pct, pills_counted);
+
+        if (per_cycle == 0) {
+            stopped_empty = true;
+            ESP_LOGW(TAG, "  cycle %d: no pill seen → cartridge empty, stop", cycles_run);
+            break;
+        }
+    }
+
+    xSemaphoreGive(s_dispense_mutex);
+
+    /* ── Update stock + audit ── */
     const netpie_shadow_t *sh = netpie_get_shadow();
-    if (!sh) {
-        ESP_LOGE(TAG, "Shadow not loaded — aborting manual dispense");
-        ui_manual_disp_status = 3;
-        xSemaphoreGive(s_dispense_mutex);
-        dispenser_clear_busy();
-        vTaskDelete(NULL);
-        return;
+    int new_count = 0;
+    int old_count = (sh ? sh->med[m_idx].count : 0);
+    if (eject_all || stopped_empty || pills_counted == 0) {
+        /* Force count=0 whenever the cartridge is physically empty:
+         *   - eject_all: user asked for everything out.
+         *   - stopped_empty: a cycle returned 0 pills mid-run → empty.
+         *   - pills_counted==0: not a single pill came out → empty.
+         * User spec 2026-05-14: "กดคืนยาแล้วยาหมดไม่มียาออก เคลีย
+         * เม็ดยาให้เป็น 0 ด้วย". */
+        new_count = 0;
+    } else {
+        new_count = old_count - pills_counted;
+        if (new_count < 0) new_count = 0;
     }
-
-    /* Manual / return-pill flow is servo-trust ONLY (no IR check).
-     * Per user spec: "การคืนยา+ir ใช้servoจ่ายไปเลย16ครั้ง โดย irใช้เช็คแค่
-     * ตอนจ่ายยาตามมื้อ". IR sensor is still used during scheduled dispense
-     * (run_dispense_slot_now path) — that path is unchanged. Rationale:
-     * cartridge stock-out is now caught by VL53 polling + low-pill
-     * Telegram alert, so IR's "no pill" detection is redundant for the
-     * manual path which the user can visually verify themselves. */
-    int loops = eject_all ? DISPENSER_MAX_PILLS : qty;
-    char requested_str[16];
-    snprintf(requested_str, sizeof(requested_str), "%s", eject_all ? "ALL" : "");
-    if (!eject_all) snprintf(requested_str, sizeof(requested_str), "%d", qty);
-
-    // Debounce: pill must be seen LOW for at least this many consecutive
-    // polls to count. Bumped 1 → 3 after field reports of phantom pill
-    // detections during return-pill (servo PWM 50 Hz coupling onto
-    // PCF8574 input pins gives single-shot LOW spikes mid-poll). 3
-    // consecutive LOW reads at ~100 Hz = 30 ms minimum dwell — still
-    // catches real pills (beam-break ≥50 ms) but rejects glitches.
-    const int IR_LOW_DEBOUNCE_SAMPLES = 3;
-    // Settle time after servo returns home — let any pill in flight finish
-    // falling past IR. Then sample the beam: if it's clear, the cartridge
-    // is now ready for the next attempt; if it's STILL blocked, something
-    // is jammed in the chute (we don't issue another servo cycle).
-    const int IR_POST_HOME_SETTLE_MS  = 350;
-    const int IR_POST_HOME_SAMPLES    = 8;
-    // Per-cycle IR polling windows. Bumped from 1000/3000 ms after users
-    // reported return-all stopping early on cartridges with slow-falling
-    // pills — give every cycle a fuller chance to see a pill before the
-    // empty-streak logic decides the cartridge is done.
-    const uint32_t IR_WORK_WINDOW_MS  = 1500;
-    const uint32_t IR_HOME_WINDOW_MS  = 4000;
-
-    // Per-session IR availability — taken from the NVS-stored flag.
-    // For modules without IR wired, disable via /tech/ir to put the
-    // loop in servo-trust mode from the start. Strict IR mode otherwise.
-    /* Force IR off for the manual path regardless of per-module config.
-     * Scheduled dispense still uses s_ir_present[m_idx] in its own loop. */
-    bool ir_use = false;
-
-    // Warmup the PCF8574 bus before the first dispense cycle so a
-    // fast-falling first pill isn't missed by a stale read.
-    if (ir_use) {
-        for (int w = 0; w < 8; w++) {
-            uint8_t junk = 0xFF;
-            (void)pcf8574_read(&junk);
-            vTaskDelay(pdMS_TO_TICKS(10));
-        }
-    }
-
-    for (int i = 0; i < loops; i++) {
-        ESP_LOGI(TAG, "  💊 Manual Drop %d/%d for med%d (ir_use=%d)",
-                 i + 1, loops, m_idx + 1, ir_use ? 1 : 0);
-        /* Edge-counted detection: each beam-block→clear transition is
-         * one pill. Old logic was a boolean per cycle which capped each
-         * servo rotation at 1 counted pill — even when multiple pills
-         * physically dropped together (visible as IR LED flashes the
-         * user reported but Telegram undercounted). */
-        int  pills_this_cycle = 0;
-        bool ir_alive = false;        // true if pcf8574_read ever returned ESP_OK
-        int  ok_reads = 0;            // diagnostics
-        int  fail_reads = 0;
-        uint8_t ir_min = 0xFF;        // lowest byte ever observed
-        uint8_t ir_last = 0xFF;
-        int  consecutive_low  = 0;    // debounce counter (beam blocked)
-        int  consecutive_high = 0;    // debounce counter (beam clear)
-        bool beam_armed = false;      // true after a debounced LOW → next debounced HIGH = pill
-        bool ir_present = ir_use;
-        bool post_clear = true;
-
-        // Unified continuous polling: servo work → home → 2s post.
-        // Yield 1 tick after EVERY pcf8574_read so the touch/UI task
-        // on the shared I²C bus isn't starved during the 7.5 s IR
-        // window. Earlier we batched yields every 8 reads, but
-        // pcf8574_read holds g_i2c_mutex for ~3-5 ms, so 8 back-to-back
-        // reads kept the bus busy for ~30-40 ms — long enough to
-        // freeze the screen during return-pill (manual_dispense_task).
-        const uint32_t POST_HOME_EXTRA_MS = 2000;
-        // Servo cycle for the manual / return-pill path. Log the WORK
-        // command result loudly — if pca9685_go_work fails (I²C bus
-        // wedged, PCA9685 not initialized) the servo never moves and
-        // every subsequent IR poll just sees an empty chute. Earlier
-        // we waited 7.5 s before reporting the failure, which made it
-        // look like the firmware was hung when really the servo had
-        // never been driven. Bail immediately on error.
-        ESP_LOGI(TAG, "  → servo WORK med%d (home=%d work=%d)",
-                 m_idx + 1,
-                 g_servo[m_idx].home_angle, g_servo[m_idx].work_angle);
-        esp_err_t err1 = pca9685_go_work(m_idx);
-        if (err1 != ESP_OK) {
-            ESP_LOGE(TAG, "  ✗ pca9685_go_work(med%d) failed: %s — aborting cycle",
-                     m_idx + 1, esp_err_to_name(err1));
-        }
-        uint32_t loop_start = esp_log_timestamp();
-        esp_err_t err2 = ESP_OK;
-        bool home_issued = false;
-        if (err1 != ESP_OK) {
-            // Servo never moved — skip the IR window entirely. Falls
-            // through to the err1 check below which logs + bails.
-            pills_this_cycle = 0;
-        } else if (ir_present) {
-            /* Symmetric debounce: 3 consecutive LOW reads = beam armed,
-             * 3 consecutive HIGH reads = pill counted + beam disarmed.
-             * Same debounce on both edges rejects glitches in both
-             * directions. */
-            const int IR_HIGH_DEBOUNCE_SAMPLES = IR_LOW_DEBOUNCE_SAMPLES;
-            while (1) {
-                uint32_t elapsed = esp_log_timestamp() - loop_start;
-                if (!home_issued && elapsed >= IR_WORK_WINDOW_MS) {
-                    err2 = pca9685_go_home(m_idx);
-                    home_issued = true;
-                }
-                if (elapsed >= (IR_WORK_WINDOW_MS + IR_HOME_WINDOW_MS + POST_HOME_EXTRA_MS)) break;
-
-                uint8_t ir = 0xFF;
-                esp_err_t r = pcf8574_read(&ir);
-                if (r == ESP_OK) {
-                    ir_alive = true;
-                    ok_reads++;
-                    if (ir < ir_min) ir_min = ir;
-                    ir_last = ir;
-                    bool beam_blocked = ((ir & (1 << m_idx)) == 0);
-                    if (beam_blocked) {
-                        consecutive_high = 0;
-                        if (++consecutive_low >= IR_LOW_DEBOUNCE_SAMPLES) {
-                            beam_armed = true;     // pill is currently in beam
-                        }
-                    } else {
-                        consecutive_low = 0;
-                        if (++consecutive_high >= IR_HIGH_DEBOUNCE_SAMPLES) {
-                            /* Beam went clear after being armed = one
-                             * complete pill passage. Count it and disarm
-                             * so we're ready for the next pill in this
-                             * same servo cycle (multiple pills can drop
-                             * from a packed cartridge). */
-                            if (beam_armed) {
-                                pills_this_cycle++;
-                                beam_armed = false;
-                            }
-                        }
-                    }
-                } else {
-                    fail_reads++;
-                }
-                vTaskDelay(1);
-            }
-            /* If the beam is still blocked at end of window, that pill
-             * never finished passing — count it anyway so we don't
-             * undercount the last pill of a fast burst. The post-home
-             * post_clear check below still flags jams separately. */
-            if (beam_armed) pills_this_cycle++;
-            if ((ir_last & (1 << m_idx)) == 0) post_clear = false;
-        } else {
-            /* Servo-trust mode (manual / return-pill, no IR).
-             * Tight dwells — only enough for the pill to physically
-             * drop. Without an IR window to fill we don't need the long
-             * 1.5s / 4s / 2s waits. Total per cycle ≈ servo ramp
-             * (~1.8s × 2) + dwells (~600ms) = ~4.2s. */
-            vTaskDelay(pdMS_TO_TICKS(400));      /* dwell at WORK — pill drops */
-            err2 = pca9685_go_home(m_idx);       /* ramp blocking ~1.8s */
-            vTaskDelay(pdMS_TO_TICKS(200));      /* settle at HOME */
-            pills_this_cycle = 1;                /* trust the servo: 1 pill per cycle */
-        }
-
-        if (ir_present) {
-            ESP_LOGI(TAG, "  Drop %d/%d IR stats: ok=%d fail=%d ir_min=0x%02X ir_last=0x%02X bit%d_low=%d pills=%d post_clear=%d",
-                     i + 1, loops, ok_reads, fail_reads, ir_min, ir_last, m_idx,
-                     (ir_min & (1 << m_idx)) ? 0 : 1, pills_this_cycle, post_clear);
-        } else {
-            ESP_LOGI(TAG, "  Drop %d/%d servo-trust mode (IR off for med%d) — counted as 1 pill",
-                     i + 1, loops, m_idx + 1);
-        }
-
-        // (Auto-fallback removed — user wants strict IR mode.)
-        // For modules with no IR wired, disable via /tech/ir endpoint
-        // so the loop starts in servo-trust mode.
-
-        if (err1 != ESP_OK || err2 != ESP_OK) {
-            ESP_LOGE(TAG, "Hardware I2C failure during dispense. Aborting task.");
-            // Make sure the servo is back at HOME before bailing — otherwise
-            // a cup left at WORK position blocks every future dispense until
-            // the 90 s busy watchdog clears it.
-            (void)pca9685_go_home(m_idx);
-            char med_name[64];
-            const char *nm = (sh && sh->med[m_idx].name[0])
-                               ? sh->med[m_idx].name : telegram_unknown_name();
-            snprintf(med_name, sizeof(med_name), "%s", nm);
-            char time_str[16] = "--:--";
-            ds3231_get_time_str(time_str, sizeof(time_str));
-            char msg[384];
-            if (telegram_lang_is_th()) {
-                snprintf(msg, sizeof(msg),
-                         "คืนยาหรือจ่ายยาแบบแมนนวลไม่สำเร็จ\nเวลา: %s\nโมดูล: %d (%s)\nจำนวนที่สั่ง: %s",
-                         time_str, m_idx + 1, med_name, requested_str);
-            } else {
-                snprintf(msg, sizeof(msg),
-                         "Manual dispense failed\nTime: %s\nModule: %d (%s)\nRequested: %s",
-                         time_str, m_idx + 1, med_name, requested_str);
-            }
-            send_telegram_photo_or_text(msg);
-            ui_manual_disp_status = 3;
-            xSemaphoreGive(s_dispense_mutex);
-            dispenser_clear_busy();
-            vTaskDelete(NULL);
-            return;
-        }
-
-        // Every servo cycle physically pushes one pill (mechanical
-        // guarantee of this dispenser design). Trust the servo: count
-        // every cycle as a drop, then subtract the trailing empty
-        // cycles that prove the cartridge ran out. IR is used only as
-        // the STOP signal, not as the per-pill counter — sub-second
-        // PCF8574 backoff windows kept missing actual pill drops which
-        // produced wildly low Telegram counts (11 dispensed → 6 reported).
-        if (pills_this_cycle > 0) {
-            consecutive_empty_cycles = 0;
-            actually_dropped += pills_this_cycle;
-            int current_count = sh->med[m_idx].count;
-            if (current_count > 0) {
-                int new_count = current_count - pills_this_cycle;
-                if (new_count < 0) new_count = 0;
-                netpie_shadow_update_count(m_idx + 1, new_count);
-                dispenser_audit_log(m_idx, current_count, new_count, 'M');
-                send_low_stock_alert(m_idx, new_count,
-                                     "ยาใกล้หมด เหลือ 2 เม็ดสุดท้ายหรือน้อยกว่า",
-                                     "Medicine is running low. Two pills or fewer remain.",
-                                     false);
-            }
-        } else {
-            // No pill detected this cycle (IR healthy-but-empty OR IR
-            // dead). User wants IR to be the sole counter — don't count
-            // optimistic/blind drops. Bail after EMPTY_CONFIRM_CYCLES
-            // consecutive misses.
-            consecutive_empty_cycles++;
-            if (!ir_alive) dead_ir_drops++;
-            ESP_LOGW(TAG, "Drop %d/%d: no pill seen (ir_alive=%d, empty streak %d/%d)",
-                     i + 1, loops, ir_alive ? 1 : 0,
-                     consecutive_empty_cycles, EMPTY_CONFIRM_CYCLES);
-            if (consecutive_empty_cycles >= EMPTY_CONFIRM_CYCLES &&
-                (i + 1) >= EMPTY_MIN_CYCLES_BEFORE_BAIL) {
-                ESP_LOGW(TAG, "No pill detected — stopping (cartridge empty or pills not falling)");
-                netpie_shadow_update_count(m_idx + 1, 0);
-                /* If the user has this med's detail page open on the TFT,
-                 * push the IR-confirmed value into the BACK-revert
-                 * snapshot too. Without this, pressing Back would revert
-                 * count to the pre-dispense value, forcing the user to
-                 * manually press บันทึก to keep the system-set 0. */
-                extern void ui_setup_meds_resync_backup_count(int, int);
-                ui_setup_meds_resync_backup_count(m_idx, 0);
-                dispenser_audit_log(m_idx, sh->med[m_idx].count, 0, 'M');
-                forced_empty = true;
-                send_low_stock_alert(m_idx, 0,
-                                     "ไม่พบยาผ่านเซนเซอร์ระหว่างคืนยา/จ่ายยา ระบบตั้งค่ายาคงเหลือเป็น 0 แล้ว กรุณาเติมยา",
-                                     "No pill passed the IR sensor during manual dispense/return. Stock was set to 0. Please refill.",
-                                     true);
-                break;
-            }
-        }
-    }
-
-    ESP_LOGI(TAG, "Manual dispense complete. Dropped: %d pills", actually_dropped);
-
-    // Return-all (eject_all): user expects the cartridge to be empty
-    // afterward, so force shadow.count = 0 regardless of how the loop
-    // ended (IR-confirmed bail, loop cap, or auto-empty).
-    if (eject_all) {
-        int curr = sh->med[m_idx].count;
-        if (curr != 0) {
-            netpie_shadow_update_count(m_idx + 1, 0);
-            dispenser_audit_log(m_idx, curr, 0, 'M');
-        }
-        /* Eject-all: shadow count is now 0. Resync the UI snapshot so
-         * a stray Back tap can't revert it. Idempotent — safe even if
-         * the user isn't on the detail page. */
+    if (sh && new_count != old_count) {
+        netpie_shadow_update_count(m_idx + 1, new_count);
+        /* No audit entry for return-pill per 2026-05-14 spec —
+         * history keeps only scheduled "ยาที่จ่ายออกมา" rows.
+         * Telegram still posts a return-complete photo message. */
         extern void ui_setup_meds_resync_backup_count(int, int);
-        ui_setup_meds_resync_backup_count(m_idx, 0);
+        ui_setup_meds_resync_backup_count(m_idx, new_count);
+
+        /* Force-publish to NETPIE bypassing the publish-inhibit gate.
+         * If the user is on the meds-detail page (where +/- edits get
+         * batched until Back/Save), netpie_shadow_update_count's
+         * publish is dropped. We must still push the dispense-induced
+         * count to the cloud — otherwise after a reboot or shadow
+         * sync the old (pre-dispense) value comes back. User
+         * requirement 2026-05-14: "after return, count must be 0
+         * even if user doesn't press save". */
+        char force_payload[64];
+        snprintf(force_payload, sizeof(force_payload),
+                 "{\"data\":{\"med%d_count\":%d}}", m_idx + 1, new_count);
+        netpie_publish_shadow_json(force_payload);
     }
 
-    // Result audio: pick by *what actually happened*, not by forced_empty.
-    //   actually_dropped == 0  → ไม่พบยา (no pill came out at all)
-    //   eject_all (return)     → คืนยาเรียบร้อย (return success, even if last
-    //                             attempt missed — at least one came out)
-    //   manual dispense        → จ่ายยาสำเร็จ
-    extern int g_snd_disp_th, g_snd_disp_en, g_snd_return_th, g_snd_return_en, g_snd_nomeds_th, g_snd_nomeds_en;
+    /* ── Audio ── */
+    extern int g_snd_disp_th, g_snd_disp_en, g_snd_return_th, g_snd_return_en,
+               g_snd_nomeds_th, g_snd_nomeds_en;
     bool is_th = telegram_lang_is_th();
-    if (actually_dropped == 0) {
+    if (pills_counted == 0) {
         dfplayer_play_track(is_th ? g_snd_nomeds_th : g_snd_nomeds_en);
     } else if (eject_all) {
         dfplayer_play_track(is_th ? g_snd_return_th : g_snd_return_en);
@@ -1961,66 +1737,45 @@ static void manual_dispense_task(void *arg) {
         dfplayer_play_track(is_th ? g_snd_disp_th : g_snd_disp_en);
     }
 
+    /* ── Telegram ── */
     char med_name[64];
     snprintf(med_name, sizeof(med_name), "%s",
-             sh->med[m_idx].name[0] ? sh->med[m_idx].name : telegram_unknown_name());
+             (sh && sh->med[m_idx].name[0]) ? sh->med[m_idx].name : telegram_unknown_name());
     char time_str[16] = "--:--";
     ds3231_get_time_str(time_str, sizeof(time_str));
-    int remaining_count = netpie_get_shadow()->med[m_idx].count;
     char msg[512];
-    // Short summary: module / time / count + photo (sent below).
-    // Use IR-confirmed count only — blind/optimistic counts inflated the
-    // total when PCF8574 was intermittent (user reported "12 pills" when
-    // only 3 actually came out). Truthful undercount is better than
-    // inflated count for the user's confirmation message.
     if (telegram_lang_is_th()) {
         if (eject_all) {
             snprintf(msg, sizeof(msg),
-                     "🔄 คืนยาทั้งหมด\nโมดูล: %d (%s)\nเวลา: %s\nจ่ายยาคืนทั้งหมดเรียบร้อย",
-                     m_idx + 1, med_name, time_str);
+                     "🔄 คืนยาทั้งหมด\nโมดูล: %d (%s)\nเวลา: %s\n"
+                     "IR นับยาที่คืนได้: %d เม็ด%s",
+                     m_idx + 1, med_name, time_str, pills_counted,
+                     stopped_empty ? "  (ตลับว่าง)" : "");
         } else {
             snprintf(msg, sizeof(msg),
-                     "💊 จ่ายยาแบบแมนนวล\nโมดูล: %d (%s)\nเวลา: %s\nสั่งจ่าย: %d เม็ด",
-                     m_idx + 1, med_name, time_str, actually_dropped);
+                     "💊 คืนยาแบบระบุจำนวน\nโมดูล: %d (%s)\nเวลา: %s\n"
+                     "สั่งคืน: %d เม็ด • IR นับได้: %d เม็ด%s",
+                     m_idx + 1, med_name, time_str, qty, pills_counted,
+                     stopped_empty ? "  (หยุดเพราะตลับว่าง)" : "");
         }
     } else {
         if (eject_all) {
             snprintf(msg, sizeof(msg),
-                     "🔄 Return all pills\nModule: %d (%s)\nTime: %s\nAll pills returned successfully",
-                     m_idx + 1, med_name, time_str);
+                     "🔄 Return all pills\nModule: %d (%s)\nTime: %s\n"
+                     "IR-counted pills: %d%s",
+                     m_idx + 1, med_name, time_str, pills_counted,
+                     stopped_empty ? "  (cartridge empty)" : "");
         } else {
             snprintf(msg, sizeof(msg),
-                     "💊 Manual dispense\nModule: %d (%s)\nTime: %s\nDispensed: %d pills",
-                     m_idx + 1, med_name, time_str, actually_dropped);
+                     "💊 Return N pills\nModule: %d (%s)\nTime: %s\n"
+                     "Requested: %d • IR-counted: %d%s",
+                     m_idx + 1, med_name, time_str, qty, pills_counted,
+                     stopped_empty ? "  (stopped: empty)" : "");
         }
     }
-    /* Release UI BEFORE the Telegram photo upload — JPEG capture +
-     * HTTPS POST + optional low-stock follow-up can spend 5-15 s on
-     * network I/O, during which the "กำลังจ่ายยา" popup would freeze
-     * with no progress visible to the user. The dispense mutex stays
-     * held until after the network calls finish so a second dispense
-     * can't overlap; the UI just no longer waits on it. */
     ui_manual_disp_status = 2;
-
     send_telegram_photo_or_text(msg);
 
-    if (!eject_all && actually_dropped < qty) {
-        send_low_stock_alert(m_idx, remaining_count,
-                             forced_empty
-                                 ? "จ่ายยาได้ไม่ครบและระบบตรวจว่าช่องยาน่าจะหมดแล้ว กรุณาเติมยา"
-                                 : "จ่ายยาได้ไม่ครบตามจำนวนที่สั่ง กรุณาตรวจสอบและเติมยา",
-                             forced_empty
-                                 ? "Dispense completed incompletely and the compartment appears empty. Please refill."
-                                 : "Dispense completed with fewer pills than requested. Please check and refill.",
-                             true);
-    } else if (eject_all && forced_empty) {
-        send_low_stock_alert(m_idx, remaining_count,
-                             "คืนยาหรือจ่ายยาแบบ ALL จนหมดช่องแล้ว กรุณาเติมยา",
-                             "ALL dispense/return emptied the compartment. Please refill.",
-                             true);
-    }
-
-    xSemaphoreGive(s_dispense_mutex);
     dispenser_clear_busy();
     vTaskDelete(NULL);
 }
@@ -2048,19 +1803,190 @@ void dispenser_manual_dispense(int med_idx, int qty) {
     }
     portEXIT_CRITICAL(&s_dispense_state_mux);
     if (!claim_ok) return;
+
+    /* Flip the UI popup state RIGHT NOW (before spawning the worker
+     * task) so the next render of the meds-detail page paints the
+     * "กำลังจ่ายยา" panel without waiting for the task to schedule,
+     * take the dispense mutex, and update status. Without this the
+     * task can spend 50-200 ms in mutex+log overhead before flipping
+     * the flag, and the UI loop sometimes misses the transition.
+     *
+     * Also clear the paint-acknowledgement flag — the UI will set it
+     * back to true after it actually finishes painting the popup,
+     * which the dispense task waits for before driving any servo. */
+    g_ui_dispensing_popup_painted = false;
+    ui_manual_disp_status = 1;
+
     manual_disp_args_t *args = malloc(sizeof(manual_disp_args_t));
     if (args) {
         args->med_idx = med_idx;
         args->qty = qty;
         // Run completely detached from any UI threads
-        if (xTaskCreate(manual_dispense_task, "man_disp", MANUAL_DISPENSE_TASK_STACK_SIZE, args, 4, NULL) != pdPASS) {
+        /* prio 2 = BELOW display task (prio 3) so the standby/meds-detail
+         * render loop can paint popups without being preempted. The
+         * actual servo I/O happens via pca9685_ramp_task at prio 5,
+         * spawned only after the pre-servo paint sync completes. */
+        if (xTaskCreate(manual_dispense_task, "man_disp", MANUAL_DISPENSE_TASK_STACK_SIZE, args, 2, NULL) != pdPASS) {
             free(args);
+            ui_manual_disp_status = 0;
             dispenser_clear_busy();
             ESP_LOGE(TAG, "Failed to create manual dispense task");
         }
     } else {
+        ui_manual_disp_status = 0;
         dispenser_clear_busy();
     }
+}
+
+/* ── Clear-all task (boot-time safety flush) ──
+ *
+ * Sequentially eject every pill from every module. Used when the user
+ * confirms the "all modules report 0 — clear any leftovers" prompt
+ * on the standby page. Each module gets the same return-all logic as
+ * the manual eject_all path (servo cycles + IR level-stability count)
+ * but driven from one task so the operation is atomic from the user's
+ * perspective. UI polls the live state via dispenser_clear_all_active()
+ * / _current_module() / _pills_total() to update the progress popup. */
+
+static volatile bool s_clear_all_running = false;
+static volatile int  s_clear_all_current = -1;  /* 0..5 = working on i, 6 = done */
+static volatile int  s_clear_all_pills_total = 0;
+/* Running count for the module currently being cleared. clear_one_module
+ * writes after each cycle so the UI popup can show "พบยา N เม็ด" live. */
+static volatile int  s_clear_all_pills_current = 0;
+
+/* Paint-ack flag: clear_all_task waits for the UI to set this true
+ * (signalling the "กำลังล้างยา" popup is on screen) before driving
+ * the servo. Same pattern as g_ui_dispensing_popup_painted. */
+volatile bool g_ui_clear_all_popup_painted = false;
+
+bool dispenser_clear_all_active(void)         { return s_clear_all_running; }
+int  dispenser_clear_all_current_module(void) { return s_clear_all_current; }
+int  dispenser_clear_all_pills_total(void)    { return s_clear_all_pills_total; }
+int  dispenser_clear_all_pills_current(void)  { return s_clear_all_pills_current; }
+
+static int clear_one_module(int m_idx)
+{
+    /* Mirror of the manual_dispense_task eject_all loop, simplified
+     * for the no-UI clear-all path: no popup status flags, no
+     * Telegram (a single summary fires at the end). */
+    int pills = 0;
+    int cycles_run = 0;
+    bool stopped_empty = false;
+    const int CAP = DISPENSER_MAX_PILLS * 2;
+    const uint32_t RAMP_TIMEOUT_MS = 4500;
+
+    s_clear_all_pills_current = 0;   /* live counter for the UI popup */
+
+    while (cycles_run < CAP) {
+        cycles_run++;
+        ir_lvl_ctx_t ctx;
+        ir_lvl_init(&ctx, m_idx);
+
+        if (pca9685_go_work_async(m_idx) != ESP_OK) break;
+        ir_count_during_ramp(&ctx, m_idx, g_servo[m_idx].work_angle, RAMP_TIMEOUT_MS);
+        if (pca9685_go_home_async(m_idx) != ESP_OK) break;
+        ir_count_during_ramp(&ctx, m_idx, g_servo[m_idx].home_angle, RAMP_TIMEOUT_MS);
+
+        int per_cycle = ctx.pills;
+        if (per_cycle > 1) per_cycle = 1;
+        pills += per_cycle;
+        s_clear_all_pills_current = pills;
+        ESP_LOGI(TAG, "clear-all M%d cycle %d: pills=%d", m_idx + 1, cycles_run, per_cycle);
+        if (per_cycle == 0) { stopped_empty = true; break; }
+    }
+    (void)stopped_empty;
+    return pills;
+}
+
+static void clear_all_task(void *arg)
+{
+    (void)arg;
+    if (!s_dispense_mutex || xSemaphoreTake(s_dispense_mutex, portMAX_DELAY) != pdTRUE) {
+        s_clear_all_running = false;
+        s_clear_all_current = -1;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    /* Two-phase wait — popup MUST be on screen long enough for the
+     * user to register it before any servo motion. */
+    {
+        const uint32_t POPUP_WAIT_MAX_MS    = 2500;
+        const uint32_t POPUP_MIN_VISIBLE_MS = 1500;
+        uint32_t t0 = esp_log_timestamp();
+        uint32_t t_flag = 0;
+        while (!g_ui_clear_all_popup_painted &&
+               (esp_log_timestamp() - t0) < POPUP_WAIT_MAX_MS) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+        t_flag = esp_log_timestamp();
+        while ((esp_log_timestamp() - t0) < POPUP_MIN_VISIBLE_MS) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+        ESP_LOGI(TAG, "clear-all popup wait: flag=%lums total=%lums",
+                 (unsigned long)(t_flag - t0),
+                 (unsigned long)(esp_log_timestamp() - t0));
+    }
+
+    s_clear_all_pills_total = 0;
+    for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
+        s_clear_all_current = i;
+        int pills = clear_one_module(i);
+        s_clear_all_pills_total += pills;
+        /* Force shadow count to 0 + force-publish so the cloud reflects
+         * the cleared state regardless of any edit-session inhibits. */
+        netpie_shadow_update_count(i + 1, 0);
+        char force[64];
+        snprintf(force, sizeof(force), "{\"data\":{\"med%d_count\":0}}", i + 1);
+        netpie_publish_shadow_json(force);
+        /* No audit row for clear-all per 2026-05-14 spec — history
+         * keeps only scheduled "ยาที่จ่ายออกมา" rows. */
+    }
+    s_clear_all_current = DISPENSER_MED_COUNT;  /* signals "done" */
+    xSemaphoreGive(s_dispense_mutex);
+
+    /* Single summary to Telegram. */
+    char time_str[16] = "--:--";
+    ds3231_get_time_str(time_str, sizeof(time_str));
+    char msg[256];
+    if (telegram_lang_is_th()) {
+        snprintf(msg, sizeof(msg),
+                 "🧹 ล้างยาทุกตลับเรียบร้อย\nเวลา: %s\nIR นับยาที่คืนรวม: %d เม็ด",
+                 time_str, s_clear_all_pills_total);
+    } else {
+        snprintf(msg, sizeof(msg),
+                 "🧹 All cartridges cleared\nTime: %s\nIR-counted total: %d pills",
+                 time_str, s_clear_all_pills_total);
+    }
+    send_telegram_photo_or_text(msg);
+
+    /* Leave state at "done" for ~2 s so UI has time to paint the
+     * completion message, then reset. */
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    s_clear_all_current = -1;
+    s_clear_all_running = false;
+    vTaskDelete(NULL);
+}
+
+bool dispenser_clear_all_start(void)
+{
+    if (s_clear_all_running) return false;
+    /* Clear the paint-ack flag BEFORE setting running=true so the
+     * UI render loop doesn't latch a stale "painted" from a previous
+     * run that wasn't reset (paranoia — task should set it too). */
+    g_ui_clear_all_popup_painted = false;
+    s_clear_all_running = true;
+    s_clear_all_current = -1;
+    /* prio 2 — see manual_dispense_task creation for rationale. */
+    if (xTaskCreate(clear_all_task, "clear_all", MANUAL_DISPENSE_TASK_STACK_SIZE,
+                    NULL, 2, NULL) != pdPASS) {
+        s_clear_all_running = false;
+        ESP_LOGE(TAG, "Failed to spawn clear_all_task");
+        return false;
+    }
+    ESP_LOGI(TAG, "Clear-all started — will iterate %d modules", DISPENSER_MED_COUNT);
+    return true;
 }
 
 /* Public wrapper around send_telegram_photo_or_text() so other modules
@@ -2071,17 +1997,3 @@ void dispenser_telegram_photo_msg(const char *msg)
     send_telegram_photo_or_text(msg);
 }
 
-void dispenser_audit_stock_adjust(int med_idx, int old_count, int new_count)
-{
-    if (med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return;
-    if (old_count == new_count) return;
-
-    taskENTER_CRITICAL(&s_stock_audit_mux);
-    if (!s_stock_audit[med_idx].pending) {
-        s_stock_audit[med_idx].start_count = old_count;
-    }
-    s_stock_audit[med_idx].last_count = new_count;
-    s_stock_audit[med_idx].last_change_tick = xTaskGetTickCount();
-    s_stock_audit[med_idx].pending = true;
-    taskEXIT_CRITICAL(&s_stock_audit_mux);
-}

@@ -1,5 +1,6 @@
 #pragma once
 #include "esp_err.h"
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -44,8 +45,25 @@ esp_err_t pca9685_go_home(uint8_t channel);
 /** Move channel to work_angle */
 esp_err_t pca9685_go_work(uint8_t channel);
 
+/**
+ * Non-blocking variants — spawn a one-shot task to drive the ramp.
+ * Returns immediately (ESP_OK once the task is queued). Caller is
+ * responsible for waiting any settle time before issuing the next
+ * command. Used by the dispense IR poll loop so the 500 Hz IR sampling
+ * is not frozen during the ~2.7 s ramp.
+ */
+esp_err_t pca9685_go_home_async(uint8_t channel);
+esp_err_t pca9685_go_work_async(uint8_t channel);
+
 /** Save home/work for a channel (in RAM only, no NVS) */
 void pca9685_set_positions(uint8_t channel, int home, int work);
+
+/** Servo-ramp busy flag. Set TRUE while a PWM ramp is driving the bus
+ * (PCA9685 sends a burst of I2C writes per degree). The ft6336u touch
+ * driver checks this and skips a poll cycle, otherwise the touch IC
+ * sees PWM-coupled noise on its own I2C lines and returns garbage. */
+void pca9685_servo_busy_set(bool busy);
+bool pca9685_servo_busy_get(void);
 
 #ifdef __cplusplus
 }

@@ -1,7 +1,8 @@
 #include "ft6336u.h"
 #include "config.h"
 #include "i2c_manager.h"
-#include "pcf8574.h"
+#include "pca9685.h"
+#include "camera_init.h"   /* g_camera_sccb_in_progress */
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -138,6 +139,14 @@ esp_err_t ft6336u_init(void)
 
 esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
 {
+    /* All three output pointers must be non-NULL — every internal write
+     * site below dereferences them unguarded. The previous mix of "some
+     * sites NULL-checked, others not" was a latent crash waiting for a
+     * caller that omits one (status_json_handler is the most likely
+     * culprit if it ever gets a "touch status" extension). Make NULL a
+     * contract violation, fail loudly. */
+    if (!x || !y || !pressed) return ESP_ERR_INVALID_ARG;
+
     static uint32_t s_last_fail_time = 0;
     static uint32_t s_last_read_time = 0;
     static bool s_last_pressed = false;
@@ -158,9 +167,9 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
     // boot would leave the user with a non-touch screen until power
     // cycle.
     if (!s_touch_initialized) {
-        if (pressed) *pressed = false;
-        if (x) *x = 0;
-        if (y) *y = 0;
+        *pressed = false;
+        *x = 0;
+        *y = 0;
         // Re-init runs in the caller's context (clock_task). The full
         // ft6336u_init() can spend 600+ ms in vTaskDelay (3 retries x
         // 200 ms reset pulses). Doing that every 5 s on a stuck chip
@@ -181,14 +190,9 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Backoff after read failure, shortened from 2000 → 100 ms (2026-05-11).
-    // The old 2-second mute combined catastrophically with the 5-second
-    // VL53 poll: every VL53 cycle hogged the I2C mutex past the 500 ms
-    // touch-read timeout, which tripped this branch, which then
-    // suppressed touch for 2 full seconds. Touch ended up dead ~40% of
-    // the time and got worse as sensors got flakier. 100 ms is short
-    // enough that the user doesn't notice, long enough that we don't
-    // hammer a genuinely wedged chip.
+    // Backoff after a read failure. 100 ms is short enough that the
+    // user doesn't notice but long enough that we don't hammer a
+    // genuinely wedged chip.
     if (s_last_fail_time != 0 && (now - s_last_fail_time) < 100) {
         *pressed = false;
         return ESP_FAIL;
@@ -203,6 +207,36 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
         *x = s_last_x;
         *y = s_last_y;
         return ESP_OK;
+    }
+
+    /* Camera SCCB takes priority — back off touch reads during the
+     * ~3 s burst so they don't shred the OV5647 register sequence.
+     * Returns the last cached value so the UI stays alive (just frozen
+     * for those few seconds) without an error path.
+     *
+     * Safety net: bound the skip to 5 s. If camera_init exits via some
+     * unhandled early-return path that leaves the flag true, touch
+     * recovers on its own instead of locking out the user forever.
+     * The first camera SCCB call after this watchdog kicks in still
+     * works because we don't clear the flag here — just override the
+     * skip. */
+    static uint32_t s_sccb_skip_start = 0;
+    if (g_camera_sccb_in_progress) {
+        if (s_sccb_skip_start == 0) s_sccb_skip_start = now ? now : 1;
+        if ((now - s_sccb_skip_start) < 5000) {
+            *pressed = s_last_pressed;
+            *x = s_last_x;
+            *y = s_last_y;
+            return ESP_OK;
+        }
+        /* 5 s exceeded — flag is stuck, log once and stop skipping. */
+        static uint32_t s_last_warn_ms = 0;
+        if ((now - s_last_warn_ms) > 30000) {
+            ESP_LOGW(TAG, "g_camera_sccb_in_progress stuck >5s — bypassing skip to keep touch alive");
+            s_last_warn_ms = now;
+        }
+    } else {
+        s_sccb_skip_start = 0;
     }
     s_last_read_time = now;
 
@@ -225,13 +259,12 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
         s_last_fail_time = (now == 0) ? 1u : now;
 
         /* Distinguish bus-busy (other task holding I2C mutex) from
-         * actual chip failure. ESP_ERR_TIMEOUT here means the mutex
-         * couldn't be acquired in 500 ms — most often during a long
-         * dispense / VL53 poll. The touch chip itself is fine, so
+         * actual chip failure. ESP_ERR_TIMEOUT means the mutex couldn't
+         * be acquired in 500 ms. The touch chip itself is fine, so
          * don't count it toward s_consec_fails (which would trigger
          * the heavy CTP_RST + bus-recovery sequence and leave touch
-         * dead for ~10 s). The shortened 100 ms backoff above will
-         * naturally retry until the bus is free. */
+         * dead for ~10 s). The 100 ms backoff above naturally retries
+         * once the bus is free. */
         if (ret == ESP_ERR_TIMEOUT) {
             return ret;
         }
@@ -243,7 +276,7 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
          * 16-cycle return-pill (≈32 s of servo activity) was racking
          * up enough fails to trip the recovery and leave touch in
          * fallback mode after dispense. */
-        if (pcf8574_is_servo_ramping()) {
+        if (pca9685_servo_busy_get()) {
             return ret;
         }
 
@@ -320,16 +353,11 @@ esp_err_t ft6336u_read_touch(uint16_t *x, uint16_t *y, bool *pressed)
      * so 3-15 means corrupted register read = phantom. */
     if (touches > 2) raw_press = false;
 
-    /* Boot-time touch mute. The first 8 seconds after boot the FT6336U
-     * fallback mode often spits one or two phantom presses (visible as
-     * the standby screen jumping straight to the menu before the user
-     * touches anything). Bumped 3 → 8 s because the I2C bus continues
-     * to settle / stabilize while VL53/camera are bootstrapping in the
-     * background, and phantom touches were observed up to ~5 s after
-     * boot. s_boot_start_ms lives at file scope (above) so the CTP_RST
-     * recovery path can re-arm the mute. */
+    /* Boot-time touch mute (1.5 s). Absorbs phantom presses while the
+     * chip's own register settle finishes — keeps the user from having
+     * to wait long after the splash before taps register. */
     if (s_boot_start_ms == 0) s_boot_start_ms = now;
-    if ((now - s_boot_start_ms) < 8000) {
+    if ((now - s_boot_start_ms) < 1500) {
         raw_press = false;
     }
 

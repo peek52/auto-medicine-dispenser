@@ -12,12 +12,19 @@ esp_err_t camera_init(void);
 
 /** Idempotent lazy-init wrapper. First call runs camera_init(); subsequent
  * calls are no-ops returning the cached result. Use from /capture and
- * /photo handlers so the camera only powers up when actually needed —
- * keeps the I2C bus free for VL53 bootstrap during normal boot. */
+ * /photo handlers so the camera only powers up when actually needed. */
 esp_err_t camera_ensure_initialized(void);
 
 /** True if camera_init() succeeded at least once. */
 bool      camera_is_initialized(void);
+
+/** Set TRUE while the SCCB (OV5647 over I2C0) burst sequence is running
+ *  — typically ~3 s during init / recovery, when 40+ register writes go
+ *  back-to-back. Other I2C consumers on the shared bus (touch poll,
+ *  servo PWM) should check this and back off so they don't fight the
+ *  camera for the mutex and force partial bursts. Volatile single-byte
+ *  read is atomic on RISC-V. */
+extern volatile bool g_camera_sccb_in_progress;
 
 /** Reset lazy-init state so the next camera_ensure_initialized() re-runs
  * camera_init() from scratch. Called by the capture task when MIPI-CSI

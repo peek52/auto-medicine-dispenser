@@ -121,6 +121,12 @@ extern bool s_ip_dirty;
 
 void ui_standby_render(uint32_t now);
 void ui_standby_handle_touch(uint16_t tx_n, uint16_t ty_n);
+/* Tell the standby renderer the next ui_standby_render() is a fresh
+ * (re-)entry — repaint the heavy gradient + card frames. clock_task
+ * calls this on transitions away from standby. Touch handlers that
+ * only flip popup state should NOT call this; the popup-level diff
+ * paints itself without disturbing the chrome. */
+void ui_standby_invalidate_chrome(void);
 
 void ui_menu_render(void);
 void ui_menu_handle_touch(uint16_t tx_n, uint16_t ty_n);
@@ -158,6 +164,11 @@ extern "C" {
  * NETPIE publish inhibit and commits any pending diff. No-op if no
  * edit session is active. */
 void ui_setup_meds_end_edit_session_if_any(void);
+
+/* Arms the refill-or-clear popup on the meds-detail page. Display
+ * task calls this immediately after auto-navigating to a module
+ * whose scheduled dose came up empty / IR-missed. */
+void ui_setup_meds_arm_refill_or_clear(void);
 #ifdef __cplusplus
 }
 #endif
