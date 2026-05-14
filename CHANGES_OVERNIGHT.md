@@ -76,6 +76,38 @@ last hand-verified state.
   calling `clear_one_module`
 - **Risk:** none — purely cosmetic timing tightening
 
+### E. camera_init PSRAM leak on background-retry path
+- **File:** `main/camera_init.c:443-468` (alloc block at function entry)
+- `camera_background_retry_task` calls `camera_ensure_initialized()` →
+  `camera_init()` up to 38 times when first boot init fails. Each call
+  unconditionally `heap_caps_aligned_calloc`'d the 3-buffer ring
+  (~3 MB PSRAM) and the LDO channel — previous attempt's pointers were
+  silently overwritten, leaking ~3 MB per retry
+- **Fix:** at the top of `camera_init()` free any pre-existing
+  `frame_buffers[i]`, `s_square_crop_buf`, and `ldo_mipi_phy` before
+  re-allocating. The teardown path inside `camera_task` already does the
+  same on the recovery cycle — this just covers the boot-retry path too
+- **Risk:** low — freeing a NULL pointer is a no-op; freeing a stale
+  pointer is correct cleanup
+
+### F. PCA9685 per-channel ramp mutex race
+- **File:** `main/pca9685.c:130-148` (pre-create inside `pca9685_init`)
+- `ramp_lock_get()` lazy-created the per-channel mutex on first use.
+  Two near-simultaneous `pca9685_ramp_task` instances for the same
+  channel (back-to-back go_work_async + go_home_async from the dispenser)
+  could both see NULL, both create a mutex, lose the loser's allocation
+- **Fix:** pre-create all 16 mutexes inside `pca9685_init()` so the
+  lazy path in `ramp_lock_get()` only ever sees non-NULL
+- **Risk:** none — one-time alloc at boot
+
+### G. USB mouse interface leak on transfer-alloc failure
+- **File:** `main/usb_mouse.c:111-130`
+- If `usb_host_transfer_alloc` failed AFTER `usb_host_interface_claim`
+  succeeded, the interface stayed claimed forever — next mouse plug-in
+  hit "claim failed" until reboot
+- **Fix:** call `usb_host_interface_release` on the alloc-fail path
+- **Risk:** low — only affects the unhappy alloc-fail path
+
 ## Items deliberately NOT changed
 
 - **`s_dispense_busy` during clear-all** (Audit finding #5): naive fix
