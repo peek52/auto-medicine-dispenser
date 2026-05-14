@@ -1156,17 +1156,18 @@ static void ui_standby_render_modal(uint32_t now)
         }
     }
 
-    /* Boot-time "all modules empty — offer to flush leftovers" check.
-     * Done once per boot, after shadow has been loaded (so we don't
-     * latch on the BSS-zero default). If every count is 0, show the
-     * prompt popup (state 7). Skipped if the user already dismissed
-     * it or clear-all is in progress. */
+    /* Boot-time forced clear-all (user spec 2026-05-15).
+     *
+     * On EVERY boot, after shadow has loaded, show the state-7 prompt
+     * popup. The user MUST press "Clear" before the UI accepts any
+     * other input — the standby touch handler ignores all taps outside
+     * the Clear button while s_popup_state == 7 (see handler below).
+     *
+     * Previous behaviour (only show if every count == 0) was deemed
+     * unsafe: a reboot during partial cartridge state would leave
+     * possibly-fallen pills in the trays without any prompt to flush. */
     if (!s_boot_clear_seen && sh && sh->loaded) {
-        bool all_zero = true;
-        for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
-            if (sh->med[i].count != 0) { all_zero = false; break; }
-        }
-        if (all_zero) s_boot_clear_offered = true;
+        s_boot_clear_offered = true;
         s_boot_clear_seen = true;
     }
 
@@ -1507,11 +1508,9 @@ static void ui_standby_render_modal(uint32_t now)
         return;
     }
 
-    /* Popup state 7: boot-time "all modules empty — flush leftovers"
-     * prompt. Shown once per boot if the all-zero condition is met.
-     * Only ONE button (Clear) — user is forced to acknowledge the
-     * safety flush, no skip path. User spec 2026-05-14: "ห้ามกดข้าม
-     * บังคับให้กดล้างยา". */
+    /* Popup state 7: boot-time forced flush prompt. Shown on every boot
+     * (user spec 2026-05-15). Only ONE button (Clear) — user is forced
+     * to acknowledge the safety flush, no skip path. */
     if (s_boot_clear_offered) {
         if (!s_boot_clear_drawn || is_forced) {
             fill_round_rect_frame(40, 50, 400, 220, 14, THEME_WARN, 0xFFFF);
@@ -1520,15 +1519,15 @@ static void ui_standby_render_modal(uint32_t now)
                 draw_utf8_centered_line_scaled(LCD_W / 2, 75,
                     "เริ่มต้นใช้งาน", 0xFFFF, THEME_WARN, 30);
                 draw_utf8_centered_line_scaled(LCD_W / 2, 130,
-                    "ตลับยาทุกตลับเป็น 0", 0xFFFF, THEME_WARN, 22);
+                    "ต้องล้างยาที่อาจค้างในโมดูล", 0xFFFF, THEME_WARN, 22);
                 draw_utf8_centered_line_scaled(LCD_W / 2, 165,
-                    "ต้องล้างยาที่อาจค้างก่อนใช้งาน", 0xFFFF, THEME_WARN, 22);
+                    "ก่อนเริ่มใช้งานเครื่อง", 0xFFFF, THEME_WARN, 22);
             } else {
                 draw_string_centered(LCD_W / 2, 90, "Startup Check",
                                      0xFFFF, THEME_WARN, &FreeSansBold18pt7b);
-                draw_string_centered(LCD_W / 2, 135, "All cartridges report 0",
+                draw_string_centered(LCD_W / 2, 135, "Flush any leftover pills",
                                      0xFFFF, THEME_WARN, &FreeSans12pt7b);
-                draw_string_centered(LCD_W / 2, 165, "Flush leftover pills before use",
+                draw_string_centered(LCD_W / 2, 165, "in the modules before use",
                                      0xFFFF, THEME_WARN, &FreeSans12pt7b);
             }
             /* Single big "Clear" button centered — no skip. */

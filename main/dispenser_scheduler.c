@@ -1748,27 +1748,27 @@ static void manual_dispense_task(void *arg) {
         if (eject_all) {
             snprintf(msg, sizeof(msg),
                      "🔄 คืนยาทั้งหมด\nโมดูล: %d (%s)\nเวลา: %s\n"
-                     "IR นับยาที่คืนได้: %d เม็ด%s",
+                     "พบยา: %d เม็ด%s",
                      m_idx + 1, med_name, time_str, pills_counted,
-                     stopped_empty ? "  (ตลับว่าง)" : "");
+                     stopped_empty ? "  (โมดูลว่าง)" : "");
         } else {
             snprintf(msg, sizeof(msg),
                      "💊 คืนยาแบบระบุจำนวน\nโมดูล: %d (%s)\nเวลา: %s\n"
-                     "สั่งคืน: %d เม็ด • IR นับได้: %d เม็ด%s",
+                     "สั่งคืน: %d เม็ด • พบยา: %d เม็ด%s",
                      m_idx + 1, med_name, time_str, qty, pills_counted,
-                     stopped_empty ? "  (หยุดเพราะตลับว่าง)" : "");
+                     stopped_empty ? "  (หยุดเพราะโมดูลว่าง)" : "");
         }
     } else {
         if (eject_all) {
             snprintf(msg, sizeof(msg),
                      "🔄 Return all pills\nModule: %d (%s)\nTime: %s\n"
-                     "IR-counted pills: %d%s",
+                     "Found: %d pills%s",
                      m_idx + 1, med_name, time_str, pills_counted,
-                     stopped_empty ? "  (cartridge empty)" : "");
+                     stopped_empty ? "  (module empty)" : "");
         } else {
             snprintf(msg, sizeof(msg),
                      "💊 Return N pills\nModule: %d (%s)\nTime: %s\n"
-                     "Requested: %d • IR-counted: %d%s",
+                     "Requested: %d • Found: %d%s",
                      m_idx + 1, med_name, time_str, qty, pills_counted,
                      stopped_empty ? "  (stopped: empty)" : "");
         }
@@ -1868,8 +1868,9 @@ int  dispenser_clear_all_pills_current(void)  { return s_clear_all_pills_current
 static int clear_one_module(int m_idx)
 {
     /* Mirror of the manual_dispense_task eject_all loop, simplified
-     * for the no-UI clear-all path: no popup status flags, no
-     * Telegram (a single summary fires at the end). */
+     * for the no-UI clear-all path: no popup status flags here. Per
+     * 2026-05-15 spec the caller (clear_all_task) now sends a per-
+     * module Telegram message after each return, plus a final total. */
     int pills = 0;
     int cycles_run = 0;
     bool stopped_empty = false;
@@ -1930,6 +1931,7 @@ static void clear_all_task(void *arg)
     }
 
     s_clear_all_pills_total = 0;
+    const netpie_shadow_t *sh_clear = netpie_get_shadow();
     for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
         s_clear_all_current = i;
         int pills = clear_one_module(i);
@@ -1942,21 +1944,38 @@ static void clear_all_task(void *arg)
         netpie_publish_shadow_json(force);
         /* No audit row for clear-all per 2026-05-14 spec — history
          * keeps only scheduled "ยาที่จ่ายออกมา" rows. */
+
+        /* Per-module Telegram notification (user spec 2026-05-15).
+         * Sent text-only so the operator can see counts arrive one by
+         * one without waiting for the camera snapshot. */
+        const char *mod_name = (sh_clear && sh_clear->med[i].name[0]) ?
+                                sh_clear->med[i].name : telegram_unknown_name();
+        char mod_msg[160];
+        if (telegram_lang_is_th()) {
+            snprintf(mod_msg, sizeof(mod_msg),
+                     "🧹 ล้างโมดูล %d (%s)\nพบยา %d เม็ด",
+                     i + 1, mod_name, pills);
+        } else {
+            snprintf(mod_msg, sizeof(mod_msg),
+                     "🧹 Cleared module %d (%s)\nFound %d pills",
+                     i + 1, mod_name, pills);
+        }
+        telegram_send_text(mod_msg);
     }
     s_clear_all_current = DISPENSER_MED_COUNT;  /* signals "done" */
     xSemaphoreGive(s_dispense_mutex);
 
-    /* Single summary to Telegram. */
+    /* Final summary to Telegram (with photo). */
     char time_str[16] = "--:--";
     ds3231_get_time_str(time_str, sizeof(time_str));
     char msg[256];
     if (telegram_lang_is_th()) {
         snprintf(msg, sizeof(msg),
-                 "🧹 ล้างยาทุกตลับเรียบร้อย\nเวลา: %s\nIR นับยาที่คืนรวม: %d เม็ด",
+                 "🧹 ล้างยาทุกโมดูลเรียบร้อย\nเวลา: %s\nรวมทั้งหมด: %d เม็ด",
                  time_str, s_clear_all_pills_total);
     } else {
         snprintf(msg, sizeof(msg),
-                 "🧹 All cartridges cleared\nTime: %s\nIR-counted total: %d pills",
+                 "🧹 All modules cleared\nTime: %s\nTotal: %d pills",
                  time_str, s_clear_all_pills_total);
     }
     send_telegram_photo_or_text(msg);
