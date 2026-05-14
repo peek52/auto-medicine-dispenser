@@ -134,6 +134,16 @@ esp_err_t pca9685_init(void)
     // saved home/work angles instead of BSS-zero 0/0.
     pca9685_load_cache_only();
 
+    /* Pre-create all per-channel ramp mutexes here so two near-
+     * simultaneous async ramps on the same channel (e.g. back-to-back
+     * go_work_async + go_home_async from the dispenser) can't race the
+     * lazy create in ramp_lock_get() and orphan a semaphore. */
+    for (int ch = 0; ch < PCA9685_NUM_CHANNELS; ++ch) {
+        if (!s_ramp_lock[ch]) {
+            s_ramp_lock[ch] = xSemaphoreCreateMutex();
+        }
+    }
+
     // Reset
     esp_err_t ret = write_reg(PCA9685_MODE1, 0x00);
     if (ret != ESP_OK) {

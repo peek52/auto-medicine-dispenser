@@ -117,7 +117,15 @@ static bool claim_mouse_interface(void)
     size_t pkt = USB_EP_DESC_GET_MPS(ep_intr);
     if (pkt < 4) pkt = 4;
     usb_host_transfer_alloc(pkt, 0, &s_xfer);
-    if (!s_xfer) { ESP_LOGE(TAG, "transfer alloc failed"); return false; }
+    if (!s_xfer) {
+        ESP_LOGE(TAG, "transfer alloc failed");
+        /* Release the interface we just claimed — otherwise the next
+         * mouse plug-in cycle hits "claim failed" forever (USB host
+         * stack thinks interface is still owned by us). */
+        usb_host_interface_release(s_client_hdl, s_dev_hdl, s_intf_num);
+        s_intf_num = 0xFF;
+        return false;
+    }
 
     s_xfer->device_handle = s_dev_hdl;
     s_xfer->bEndpointAddress = ep_intr->bEndpointAddress;

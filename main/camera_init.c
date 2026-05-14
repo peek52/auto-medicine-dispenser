@@ -445,6 +445,28 @@ esp_err_t camera_init(void) {
     if (s_cache_line_size < 64) s_cache_line_size = 64;
     frame_buffer_size = (frame_buffer_size + s_cache_line_size - 1) & ~(s_cache_line_size - 1);
 
+    /* Free any buffers from a prior failed init before re-allocating.
+     * Boot-time background retry (camera_background_retry_task) calls
+     * camera_init() up to 38 times via camera_ensure_initialized(); if
+     * a previous attempt failed AFTER alloc but BEFORE the camera_task
+     * teardown path runs, frame_buffers[] / s_square_crop_buf still
+     * point at live PSRAM. Without this free each retry leaks ~3 MB. */
+    for (int i = 0; i < NUM_BUFFERS; i++) {
+        if (frame_buffers[i]) {
+            heap_caps_free(frame_buffers[i]);
+            frame_buffers[i] = NULL;
+        }
+    }
+    if (s_square_crop_buf) {
+        heap_caps_free(s_square_crop_buf);
+        s_square_crop_buf = NULL;
+        s_square_crop_buf_size = 0;
+    }
+    if (ldo_mipi_phy) {
+        (void)esp_ldo_release_channel(ldo_mipi_phy);
+        ldo_mipi_phy = NULL;
+    }
+
     for (int i = 0; i < NUM_BUFFERS; i++) {
         frame_buffers[i] = heap_caps_aligned_calloc(
             s_cache_line_size, 1, frame_buffer_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
