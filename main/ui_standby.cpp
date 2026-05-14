@@ -51,6 +51,18 @@ static bool s_boot_clear_seen    = false;
 static bool s_boot_clear_drawn   = false;
 static int  s_boot_clear_last_module_drawn = -2;
 
+/* Read by the dispense scheduler so a slot-time match while the
+ * unacknowledged boot-clear modal is up doesn't yank the user to
+ * PAGE_CONFIRM_MEDS and bypass the lock. extern "C" so the symbol
+ * matches the C-linkage declaration in ui_core.h — without it the C
+ * side in dispenser_scheduler.c (which extern-declares the function
+ * locally with C linkage) would fail to link against the C++-mangled
+ * symbol the compiler would otherwise emit. */
+extern "C" bool ui_standby_boot_clear_pending(void)
+{
+    return s_boot_clear_offered;
+}
+
 /* Popup state 9 — "กำลังจ่ายยา" overlay shown on standby while a
  * scheduled dispense is in progress. Painted ONCE per run (the
  * underlying state doesn't change while servos cycle), then cleared

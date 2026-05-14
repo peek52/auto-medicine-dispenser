@@ -127,6 +127,19 @@ void ui_standby_handle_touch(uint16_t tx_n, uint16_t ty_n);
  * only flip popup state should NOT call this; the popup-level diff
  * paints itself without disturbing the chrome. */
 void ui_standby_invalidate_chrome(void);
+/* True while the unconditional boot-clear modal (popup state 7) is
+ * still up — i.e. user hasn't pressed Clear yet. Dispense scheduler
+ * checks this to refuse slot-time matches that would otherwise yank
+ * the user off standby and bypass the lock. Implemented in
+ * ui_standby.cpp; must keep C linkage so dispenser_scheduler.c (C
+ * file) can call it. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+bool ui_standby_boot_clear_pending(void);
+#ifdef __cplusplus
+}
+#endif
 
 void ui_menu_render(void);
 void ui_menu_handle_touch(uint16_t tx_n, uint16_t ty_n);

@@ -43,6 +43,12 @@ static const uint32_t STOCK_AUDIT_IDLE_MS = 2500;
 static const uint32_t DISPENSER_TASK_STACK_SIZE = 8192;
 static const uint32_t MANUAL_DISPENSE_TASK_STACK_SIZE = 6144;
 
+/* Forward decl — clear-all state vars are defined further down (near
+ * clear_all_task) but the scheduler + manual_dispense paths above need
+ * to peek at the running flag to refuse work while clear-all owns the
+ * dispense mutex. */
+static volatile bool s_clear_all_running;
+
 // label แต่ละ slot (ตรงกับ HTML)
 static const char *SLOT_LABELS[7] = {
     "Before Breakfast", "After Breakfast", "Before Lunch", "After Lunch", "Before Dinner", "After Dinner", "Bedtime"
@@ -1179,6 +1185,26 @@ static void dispenser_task(void *arg)
                 continue;
             }
 
+            /* Skip every slot evaluation while the boot-clear modal is
+             * still up. Otherwise a slot whose time matches during the
+             * popup would flip s_waiting_confirm → display_clock yanks
+             * the user to PAGE_CONFIRM_MEDS, bypassing the "must press
+             * Clear" lock entirely. We also skip while a clear-all is
+             * actively running so the scheduler doesn't queue work on
+             * top of the worker that has the dispense mutex. The
+             * 12-hour refire guard inside the slot loop is intentionally
+             * NOT touched here — once boot-clear completes, the slot
+             * still gets to fire if its time/grace window is current.
+             * Declared local-extern (vs #include "ui_core.h") because
+             * ui_core.h drags in Adafruit_GFX C++ deps that don't
+             * compile in this C unit. */
+            extern bool ui_standby_boot_clear_pending(void);
+            if (ui_standby_boot_clear_pending() || s_clear_all_running) {
+                /* Fall through to the pre-alert / quiet-hours loops below
+                 * is fine — those don't trigger dispense, just warnings. */
+                goto skip_slot_eval;
+            }
+
             for (int s = 0; s < 7; s++) {
                 int th, tm;
                 if (!parse_hhmm(sh->slot_time[s], &th, &tm)) continue;
@@ -1272,6 +1298,7 @@ static void dispenser_task(void *arg)
                 s_pending_slot_idx = s;
                 break; // Stop evaluating other slots
             }
+            skip_slot_eval:;
 
             // ── Pre-alerts: warn user at 30, 15, and 5 minutes before each dose ──────────
             for (int s = 0; s < 7; s++) {
@@ -1794,6 +1821,15 @@ void dispenser_manual_dispense(int med_idx, int qty) {
      * — leaving the UI in an inconsistent "dispensing" state when no
      * task is actually running. Combined check + busy-mark closes the
      * race window. */
+    /* Refuse if a clear-all is in progress. Without this guard a
+     * Telegram /dispense issued during clear-all would mark
+     * ui_manual_disp_status=1, spawn manual_dispense_task which then
+     * blocks on s_dispense_mutex (portMAX_DELAY) for tens of seconds
+     * waiting for clear-all to release. During that wait the UI shows
+     * a stuck "กำลังจ่ายยา" popup overlapping the state-8 clear-all
+     * paint. Cleanly decline at the entry point instead. */
+    if (s_clear_all_running) return;
+
     bool claim_ok = false;
     portENTER_CRITICAL(&s_dispense_state_mux);
     if (ui_manual_disp_status == 0 && !s_waiting_confirm && !s_dispense_approved) {
@@ -1931,9 +1967,12 @@ static void clear_all_task(void *arg)
     }
 
     s_clear_all_pills_total = 0;
-    const netpie_shadow_t *sh_clear = netpie_get_shadow();
     for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
         s_clear_all_current = i;
+        s_clear_all_pills_current = 0;   /* zero the live tick before the
+                                          * first cycle increment lands — avoids
+                                          * a brief "Module 2 / Found 7-from-mod-1"
+                                          * flash on the popup. */
         int pills = clear_one_module(i);
         s_clear_all_pills_total += pills;
         /* Force shadow count to 0 + force-publish so the cloud reflects
@@ -1947,9 +1986,21 @@ static void clear_all_task(void *arg)
 
         /* Per-module Telegram notification (user spec 2026-05-15).
          * Sent text-only so the operator can see counts arrive one by
-         * one without waiting for the camera snapshot. */
-        const char *mod_name = (sh_clear && sh_clear->med[i].name[0]) ?
-                                sh_clear->med[i].name : telegram_unknown_name();
+         * one without waiting for the camera snapshot.
+         *
+         * Copy the name into a local INSIDE the loop. The shadow is
+         * double-buffered and a published update during the multi-second
+         * clear-all run can flip the buffer that an outer pointer was
+         * holding — see audit finding #2. Re-fetching per iteration is
+         * cheap (atomic pointer read) and gives a coherent snapshot. */
+        char mod_name[32];
+        {
+            const netpie_shadow_t *sh = netpie_get_shadow();
+            const char *src = (sh && sh->med[i].name[0]) ?
+                              sh->med[i].name : telegram_unknown_name();
+            strncpy(mod_name, src, sizeof(mod_name) - 1);
+            mod_name[sizeof(mod_name) - 1] = '\0';
+        }
         char mod_msg[160];
         if (telegram_lang_is_th()) {
             snprintf(mod_msg, sizeof(mod_msg),
