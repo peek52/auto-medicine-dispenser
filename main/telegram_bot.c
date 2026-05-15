@@ -1415,6 +1415,28 @@ static void handle_telegram_command_safe(const char *cmd_text)
                  telegram_pick("Live snapshot at", "ภาพถ่ายล่าสุดเวลา"),
                  time_str);
         telegram_send_snapshot_reply(caption);
+    } else if (strcmp(cmd, "/approve") == 0) {
+        if (!netpie_pending_active()) {
+            telegram_send_text(telegram_pick(
+                "Nothing pending to approve.",
+                "ไม่มีรายการรออนุมัติ"));
+        } else {
+            netpie_pending_approve();
+            telegram_send_text(telegram_pick(
+                "Approved. NETPIE changes have been saved.",
+                "อนุมัติแล้ว บันทึกการเปลี่ยนแปลงจาก NETPIE เรียบร้อย"));
+        }
+    } else if (strcmp(cmd, "/reject") == 0) {
+        if (!netpie_pending_active()) {
+            telegram_send_text(telegram_pick(
+                "Nothing pending to reject.",
+                "ไม่มีรายการรอปฏิเสธ"));
+        } else {
+            netpie_pending_reject();
+            telegram_send_text(telegram_pick(
+                "Rejected. Cloud values have been reverted.",
+                "ปฏิเสธแล้ว ค่าบน NETPIE ถูกย้อนกลับเป็นค่าเดิม"));
+        }
     } else if (strcmp(cmd, "/help") == 0 || strcmp(cmd, "/start") == 0 ||
                strcmp(cmd, "/menu") == 0 || strcmp(cmd, "/commands") == 0) {
         telegram_send_text_with_keyboard(telegram_pick(
@@ -1424,6 +1446,7 @@ static void handle_telegram_command_safe(const char *cmd_text)
             "- Dose History (/log)\n"
             "- Live Photo (/photo)\n"
             "- Help\n\n"
+            "Pending NETPIE changes: /approve to save, /reject to revert.\n\n"
             "You can still use /lang en or /lang th anytime.",
             "บอทเครื่องจ่ายยาพร้อมใช้งาน\n\n"
             "กดปุ่มเมนูด้านล่างเพื่อใช้งานได้ง่ายที่สุด\n"
@@ -1431,6 +1454,7 @@ static void handle_telegram_command_safe(const char *cmd_text)
             "- ประวัติการจ่ายยา (/log)\n"
             "- ถ่ายภาพล่าสุด (/photo)\n"
             "- Help\n\n"
+            "เมื่อมีการตั้งค่าใหม่จาก NETPIE: /approve เพื่ออนุมัติ /reject เพื่อย้อนกลับ\n\n"
             "ถ้าต้องการเปลี่ยนภาษา ใช้ /lang en หรือ /lang th"));
     } else {
         telegram_send_text(telegram_pick("Unknown command. Type /help to see available commands.",
@@ -1538,7 +1562,31 @@ static void telegram_poll_task(void *pvParameters) {
             esp_http_client_cleanup(client);
             telegram_http_unlock();
         }
-        
+
+        /* Pending NETPIE-approval arrival notice. take_telegram_notify
+         * is one-shot, so this fires exactly once per remote write. The
+         * operator replies /approve or /reject (or uses the touch popup,
+         * which clears the pending state and the next message is no-op). */
+        if (netpie_pending_take_telegram_notify()) {
+            char body[1024];
+            int len = snprintf(body, sizeof(body),
+                "%s\n\n",
+                telegram_pick(
+                    "NETPIE has new pending changes — review required:",
+                    "มีการตั้งค่าใหม่จาก NETPIE รออนุมัติ:"));
+            if (len > 0 && (size_t)len < sizeof(body)) {
+                size_t added = netpie_pending_format_summary_th(
+                    body + len, sizeof(body) - (size_t)len);
+                len += (int)added;
+            }
+            if (len > 0 && (size_t)len < sizeof(body)) {
+                snprintf(body + len, sizeof(body) - (size_t)len, "\n%s",
+                    telegram_pick("Reply /approve to save or /reject to revert.",
+                                  "พิมพ์ /approve เพื่ออนุมัติ หรือ /reject เพื่อย้อนกลับ"));
+            }
+            telegram_send_text(body);
+        }
+
         vTaskDelay(pdMS_TO_TICKS(TELEGRAM_CHECK_INTERVAL));
     }
 }

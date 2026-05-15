@@ -5,6 +5,7 @@ extern "C" {
 #endif
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "config.h"
 
@@ -51,6 +52,53 @@ int dispenser_max_pills(void);
  * web page so the new ceiling is effective immediately without waiting
  * for the MQTT round-trip. */
 void netpie_shadow_update_max_pills(int new_max);
+
+/* ── Pending-approval flow ─────────────────────────────────────────
+ *
+ * Shadow writes that arrive from outside (NETPIE web widget) are held
+ * in a "pending" buffer instead of being applied immediately. The
+ * operator must approve via the touch screen OR Telegram /approve
+ * before the changes commit; /reject (or touch Cancel) republishes
+ * the current shadow back to NETPIE, reverting the cloud state.
+ *
+ * Self-echoes from outbound publishes don't trigger this — they hit
+ * the path where incoming values already match s_shadow exactly, so
+ * no diff = no pending event. */
+
+typedef struct {
+    bool active;                 /* true while waiting for approval */
+    /* Pending values (what the cloud just sent us). */
+    netpie_shadow_t snapshot;
+    /* What actually differs vs current s_shadow — only these fields
+     * will be applied on approve. */
+    bool enabled_diff;
+    bool max_pills_diff;
+    bool slot_time_diff[7];
+    bool med_name_diff[DISPENSER_MED_COUNT];
+    bool med_count_diff[DISPENSER_MED_COUNT];
+    bool med_slots_diff[DISPENSER_MED_COUNT];
+    uint32_t arrived_tick;       /* xTaskGetTickCount() at first arrival */
+} netpie_pending_t;
+
+/* True while pending-review is active. UI / Telegram poll this. */
+bool netpie_pending_active(void);
+/* Atomic copy of the pending state. Returns false if nothing pending. */
+bool netpie_pending_get(netpie_pending_t *out);
+/* Apply pending changes → s_shadow. NOP if nothing pending. */
+void netpie_pending_approve(void);
+/* Discard pending changes + republish current s_shadow so the cloud
+ * reverts. NOP if nothing pending. */
+void netpie_pending_reject(void);
+/* One-shot "pending just activated" notice for the Telegram task.
+ * Returns true exactly once per inactive→active transition (reading
+ * clears the flag). Cleared on approve/reject so a stale notice from
+ * a resolved review never fires. */
+bool netpie_pending_take_telegram_notify(void);
+
+/* Render a Thai-language diff summary of the current pending state
+ * into out. Returns characters written (excluding NUL), or 0 if no
+ * pending review is active. Truncates silently if out is too small. */
+size_t netpie_pending_format_summary_th(char *out, size_t out_cap);
 bool netpie_is_connected(void);
 bool netpie_publish_shadow_json(const char *payload);
 

@@ -5,6 +5,7 @@
 #include "dfplayer.h"
 #include "offline_sync.h"
 #include "wifi_sta.h"
+#include "telegram_bot.h"
 #include "ui_standby_thai_labels.h"
 #include "ui_utf8_text.h"
 #include "esp_log.h"
@@ -79,6 +80,13 @@ extern "C" bool ui_standby_boot_clear_pending(void)
  * underlying state doesn't change while servos cycle), then cleared
  * when dispenser_is_busy() goes false. */
 static bool s_dispensing_popup_drawn = false;
+
+/* Popup state 10 — NETPIE pending approval. Shows when an external
+ * write to the cloud shadow arrived; the operator must approve or
+ * reject via the on-screen buttons (or Telegram /approve /reject).
+ * Repaints only when the diff content changes (or popup state was 0). */
+static bool s_pending_popup_drawn = false;
+static uint32_t s_pending_popup_arrived_tick_last = 0;
 
 /* Boot-time "configured-but-empty" alert. At boot, latch the mask of
  * modules whose name + slots are set but count == 0. Only THOSE modules
@@ -1286,6 +1294,7 @@ static void ui_standby_render_modal(uint32_t now)
         (s_popup_state != 1 && s_popup_state != 2 && s_popup_state != 3 &&
          s_popup_state != 4 && s_popup_state != 5 && s_popup_state != 6 &&
          s_popup_state != 7 && s_popup_state != 8 && s_popup_state != 9 &&
+         s_popup_state != 10 &&
          incomplete_idx < 0 && !s_boot_clear_offered && !clear_all_running &&
          !dispense_running)) {
         draw_standby_page(is_forced, hhmm, ss, date_str, dose_str);
@@ -1589,6 +1598,84 @@ static void ui_standby_render_modal(uint32_t now)
         }
     }
 
+    /* Popup state 10 — NETPIE pending approval. An external write to
+     * the cloud shadow arrived (web widget / another client). Operator
+     * must accept or reject before changes commit. Mandatory: the
+     * popup stays up with NO timeout until /approve|/reject hits via
+     * Telegram OR the operator taps a button below. */
+    if (netpie_pending_active()) {
+        netpie_pending_t pend;
+        bool got = netpie_pending_get(&pend);
+        bool need_paint = !s_pending_popup_drawn || is_forced ||
+                         s_popup_state != 10 ||
+                         (got && pend.arrived_tick != s_pending_popup_arrived_tick_last);
+        if (need_paint) {
+            fill_round_rect_frame(20, 30, 440, 260, 14, THEME_PANEL, 0xFFFF);
+            bool th = (g_ui_language == UI_LANG_TH);
+            if (th) {
+                draw_utf8_centered_line_scaled(LCD_W / 2, 50,
+                    "ตั้งค่าใหม่จาก NETPIE", 0xFFFF, THEME_PANEL, 28);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 92,
+                    "กรุณายืนยันการบันทึก", 0xFFFF, THEME_PANEL, 22);
+            } else {
+                draw_string_centered(LCD_W / 2, 65, "NETPIE Changes Pending",
+                                     0xFFFF, THEME_PANEL, &FreeSansBold18pt7b);
+                draw_string_centered(LCD_W / 2, 100, "Approve to save the update",
+                                     0xFFFF, THEME_PANEL, &FreeSans12pt7b);
+            }
+
+            /* Diff summary — up to a few lines so the operator sees what
+             * actually changed before committing. */
+            char summary[512];
+            size_t slen = netpie_pending_format_summary_th(summary, sizeof(summary));
+            (void)slen;
+            /* Render first ~4 lines below the title at 18 px font. */
+            int y = 130;
+            const char *p = summary;
+            for (int line = 0; line < 4 && *p; ++line) {
+                const char *eol = strchr(p, '\n');
+                char buf[160];
+                size_t n = eol ? (size_t)(eol - p) : strlen(p);
+                if (n >= sizeof(buf)) n = sizeof(buf) - 1;
+                memcpy(buf, p, n);
+                buf[n] = '\0';
+                if (n > 0) {
+                    /* Left-aligned, wrapped to popup width. */
+                    ui_utf8_draw_text_scaled_px(40, y, buf, 0xFFFF, 18);
+                }
+                y += 24;
+                if (!eol) break;
+                p = eol + 1;
+            }
+
+            /* Two buttons: Reject (red, left) / Approve (green, right). */
+            fill_round_rect(40,  236, 180, 44, 10, THEME_BAD);
+            fill_round_rect(260, 236, 180, 44, 10, THEME_OK);
+            if (th) {
+                draw_utf8_centered_line_scaled(130, 248, "ปฏิเสธ",
+                                               0xFFFF, THEME_BAD, 24);
+                draw_utf8_centered_line_scaled(350, 248, "อนุมัติ",
+                                               0xFFFF, THEME_OK, 24);
+            } else {
+                draw_string_centered(130, 264, "Reject",
+                                     0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+                draw_string_centered(350, 264, "Approve",
+                                     0xFFFF, THEME_OK, &FreeSansBold18pt7b);
+            }
+            s_pending_popup_drawn = true;
+            s_popup_state = 10;
+            if (got) s_pending_popup_arrived_tick_last = pend.arrived_tick;
+        }
+        return;
+    } else if (s_popup_state == 10) {
+        /* Pending resolved externally (e.g. Telegram /approve). Clear
+         * the overlay and force the chrome back. */
+        s_pending_popup_drawn = false;
+        s_popup_state = 0;
+        is_forced = true;
+        draw_standby_page(is_forced, hhmm, ss, date_str, dose_str);
+    }
+
     if (s_netpie_sync_popup_until > 0 && now_ms < s_netpie_sync_popup_until) {
         if (s_popup_state != 3 || is_forced) {
             fill_round_rect_frame(60, 100, 360, 120, 15, THEME_OK, 0xFFFF);
@@ -1829,6 +1916,37 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
             return;
         }
         return;  /* tap outside button — ignore, user must press Clear */
+    }
+
+    /* Popup state 10 — NETPIE pending approval. Two button rects:
+     *   Reject:  x[40..220]   y[236..280]
+     *   Approve: x[260..440]  y[236..280]
+     * Tap outside the buttons is ignored — operator must explicitly
+     * choose. Auto-dismisses when netpie_pending_active() goes false
+     * (e.g. Telegram /approve cleared it). */
+    if (s_popup_state == 10 && netpie_pending_active()) {
+        bool on_reject  = (tx_n >=  40 && tx_n <= 220 && ty_n >= 236 && ty_n <= 280);
+        bool on_approve = (tx_n >= 260 && tx_n <= 440 && ty_n >= 236 && ty_n <= 280);
+        if (on_approve) {
+            netpie_pending_approve();
+            telegram_send_text(g_ui_language == UI_LANG_TH
+                ? "ผู้ใช้กดอนุมัติบนหน้าจอแล้ว — บันทึกการตั้งค่าใหม่จาก NETPIE"
+                : "Operator approved on touch screen — NETPIE changes saved");
+            s_pending_popup_drawn = false;
+            s_popup_state = 0;
+            force_redraw = true;
+            dfplayer_play_track(28);
+        } else if (on_reject) {
+            netpie_pending_reject();
+            telegram_send_text(g_ui_language == UI_LANG_TH
+                ? "ผู้ใช้กดปฏิเสธบนหน้าจอแล้ว — ค่าบน NETPIE ถูกย้อนกลับ"
+                : "Operator rejected on touch screen — NETPIE values reverted");
+            s_pending_popup_drawn = false;
+            s_popup_state = 0;
+            force_redraw = true;
+            dfplayer_play_track(g_snd_button);
+        }
+        return;
     }
 
     /* Incomplete-module modal (state 6) — any tap navigates to that

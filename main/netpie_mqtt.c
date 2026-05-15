@@ -12,6 +12,7 @@
 #include "mqtt_client.h"
 #include "nvs.h"
 #include "offline_sync.h"
+#include "telegram_bot.h"
 
 static const char *TAG = "netpie";
 static const char *SHADOW_CACHE_NAMESPACE = "shadow_cache";
@@ -30,6 +31,23 @@ static netpie_shadow_t s_shadow_pub_a = {0};
 static netpie_shadow_t s_shadow_pub_b = {0};
 static netpie_shadow_t * volatile s_shadow_pub = &s_shadow_pub_a;
 static SemaphoreHandle_t s_mutex = NULL;
+
+/* Pending-approval buffer. See netpie_mqtt.h. Protected by s_mutex —
+ * same lock that guards s_shadow since reads/writes are interleaved. */
+static netpie_pending_t s_pending = {0};
+
+/* False until the first MQTT shadow message is parsed after netpie_init.
+ * That first message is the device-side "pull" from cloud (the answer to
+ * netpie_shadow_get) and is applied directly without prompting. Every
+ * subsequent message goes through the pending-approval flow if it
+ * differs from the local shadow. */
+static bool s_shadow_synced_once = false;
+
+/* One-shot notice flag. Set in parse_shadow on the inactive→active
+ * transition, consumed by the Telegram poll task once it has dispatched
+ * the "pending approval" announcement. Volatile because reader and
+ * writer live on different tasks. */
+static volatile bool s_pending_notify_telegram = false;
 // Atomic on RISC-V (32-bit aligned). Read with portMUX-free volatile
 // access — readers only need a coarse "seconds since RX" check.
 static volatile uint32_t s_last_rx_ticks = 0;
@@ -274,9 +292,30 @@ static void parse_shadow(const char *json)
 
     if (!shadow_lock()) return;
 
+    /* Cold-boot pull from cloud applies directly; every subsequent
+     * message goes through the diff/pending-approval path. */
+    bool first_sync = !s_shadow_synced_once;
+
+    /* Start the incoming candidate as a copy of the current shadow so
+     * non-mentioned fields stay untouched, then patch in only the
+     * fields that appear in the JSON. */
+    netpie_shadow_t incoming = s_shadow;
+    bool any_diff = false;
+    bool enabled_diff = false;
+    bool max_pills_diff = false;
+    bool slot_time_diff[7] = {0};
+    bool med_name_diff[DISPENSER_MED_COUNT] = {0};
+    bool med_count_diff[DISPENSER_MED_COUNT] = {0};
+    bool med_slots_diff[DISPENSER_MED_COUNT] = {0};
+
     char tmp[32];
     if (json_get_str(data, "scheduleEnabled", tmp, sizeof(tmp))) {
-        s_shadow.enabled = atoi(tmp) == 1 || strcmp(tmp, "true") == 0;
+        bool new_enabled = (atoi(tmp) == 1 || strcmp(tmp, "true") == 0);
+        if (new_enabled != s_shadow.enabled) {
+            incoming.enabled = new_enabled;
+            enabled_diff = true;
+            any_diff = true;
+        }
     }
 
     /* Per-module pill ceiling from the web/touch UI. Clamp to 1..999 so
@@ -286,13 +325,21 @@ static void parse_shadow(const char *json)
         int mp = atoi(tmp);
         if (mp < 1)   mp = DISPENSER_MAX_PILLS;
         if (mp > 999) mp = 999;
-        s_shadow.max_pills = mp;
+        if (mp != s_shadow.max_pills) {
+            incoming.max_pills = mp;
+            max_pills_diff = true;
+            any_diff = true;
+        }
     }
 
     for (int i = 0; i < 7; i++) {
         char buf[16];
         if (json_get_str(data, s_slot_keys[i], buf, sizeof(buf))) {
-            strlcpy(s_shadow.slot_time[i], buf, sizeof(s_shadow.slot_time[i]));
+            if (strcmp(buf, s_shadow.slot_time[i]) != 0) {
+                strlcpy(incoming.slot_time[i], buf, sizeof(incoming.slot_time[i]));
+                slot_time_diff[i] = true;
+                any_diff = true;
+            }
         }
     }
 
@@ -303,7 +350,11 @@ static void parse_shadow(const char *json)
 
         snprintf(key, sizeof(key), "med%d_name", id);
         if (json_get_str(data, key, val_buf, sizeof(val_buf))) {
-            strlcpy(s_shadow.med[i].name, val_buf, sizeof(s_shadow.med[i].name));
+            if (strcmp(val_buf, s_shadow.med[i].name) != 0) {
+                strlcpy(incoming.med[i].name, val_buf, sizeof(incoming.med[i].name));
+                med_name_diff[i] = true;
+                any_diff = true;
+            }
         }
 
         snprintf(key, sizeof(key), "med%d_count", id);
@@ -312,15 +363,26 @@ static void parse_shadow(const char *json)
             int cap = dispenser_max_pills();
             if (cnt < 0)   cnt = 0;
             if (cnt > cap) cnt = cap;
-            s_shadow.med[i].count = cnt;
+            if (cnt != s_shadow.med[i].count) {
+                incoming.med[i].count = cnt;
+                med_count_diff[i] = true;
+                any_diff = true;
+            }
         }
 
         snprintf(key, sizeof(key), "med%d_slots", id);
         if (json_get_str(data, key, val_buf, sizeof(val_buf))) {
-            s_shadow.med[i].slots = normalize_med_slots_mask((uint8_t)atoi(val_buf));
+            uint8_t sl = normalize_med_slots_mask((uint8_t)atoi(val_buf));
+            if (sl != s_shadow.med[i].slots) {
+                incoming.med[i].slots = sl;
+                med_slots_diff[i] = true;
+                any_diff = true;
+            }
         }
     }
 
+    /* disp_req is a transient command, not a stored config value —
+     * always handle it live, never via the pending-approval buffer. */
     char disp_buf[24];
     if (json_get_str(data, "disp_req", disp_buf, sizeof(disp_buf)) &&
         disp_buf[0] && strcmp(disp_buf, "0,0") != 0 && strcmp(disp_buf, "0") != 0) {
@@ -338,9 +400,40 @@ static void parse_shadow(const char *json)
         }
     }
 
+    if (first_sync) {
+        /* First cloud sync — apply silently. */
+        s_shadow = incoming;
+        s_shadow_synced_once = true;
+        shadow_cache_save_locked();
+    } else if (any_diff) {
+        /* External write detected (web widget). Buffer in s_pending and
+         * leave s_shadow untouched; the touch UI + Telegram will prompt
+         * for approval. If a pending review is already active when a
+         * newer write arrives, latest values win — operator approves
+         * (or rejects) the latest state. Reset arrived_tick only on
+         * the first transition into active so timeouts (if ever added)
+         * track when the operator was first asked. */
+        bool was_active = s_pending.active;
+        s_pending.active = true;
+        s_pending.snapshot = incoming;
+        s_pending.enabled_diff = enabled_diff;
+        s_pending.max_pills_diff = max_pills_diff;
+        memcpy(s_pending.slot_time_diff, slot_time_diff, sizeof(slot_time_diff));
+        memcpy(s_pending.med_name_diff, med_name_diff, sizeof(med_name_diff));
+        memcpy(s_pending.med_count_diff, med_count_diff, sizeof(med_count_diff));
+        memcpy(s_pending.med_slots_diff, med_slots_diff, sizeof(med_slots_diff));
+        if (!was_active) {
+            s_pending.arrived_tick = xTaskGetTickCount();
+            s_pending_notify_telegram = true;
+        }
+        ESP_LOGI(TAG, "NETPIE pending shadow update — awaiting approval");
+    }
+    /* else: self-echo (all incoming fields match current shadow) →
+     * silently drop. Touch UI / web /tech writes already updated
+     * s_shadow before publishing, so the cloud echo finds zero diff. */
+
     s_shadow.loaded = true;
     s_last_rx_ticks = xTaskGetTickCount();
-    shadow_cache_save_locked();
     // shadow_unlock() publishes the snapshot atomically.
     shadow_unlock();
 }
@@ -566,6 +659,180 @@ const netpie_shadow_t *netpie_get_shadow(void)
     // Use netpie_shadow_copy() for callers that must serialize with
     // a parse in flight.
     return s_shadow_pub;
+}
+
+bool netpie_pending_active(void)
+{
+    bool active = false;
+    if (!shadow_lock()) return false;
+    active = s_pending.active;
+    shadow_unlock();
+    return active;
+}
+
+bool netpie_pending_get(netpie_pending_t *out)
+{
+    if (!out) return false;
+    if (!shadow_lock()) return false;
+    if (!s_pending.active) {
+        shadow_unlock();
+        return false;
+    }
+    *out = s_pending;
+    shadow_unlock();
+    return true;
+}
+
+void netpie_pending_approve(void)
+{
+    if (!shadow_lock()) return;
+    if (!s_pending.active) {
+        shadow_unlock();
+        return;
+    }
+
+    /* Apply only the fields the operator was actually asked about. */
+    if (s_pending.enabled_diff) {
+        s_shadow.enabled = s_pending.snapshot.enabled;
+    }
+    if (s_pending.max_pills_diff) {
+        s_shadow.max_pills = s_pending.snapshot.max_pills;
+    }
+    for (int i = 0; i < 7; i++) {
+        if (s_pending.slot_time_diff[i]) {
+            strlcpy(s_shadow.slot_time[i], s_pending.snapshot.slot_time[i],
+                    sizeof(s_shadow.slot_time[i]));
+        }
+    }
+    for (int i = 0; i < DISPENSER_MED_COUNT; i++) {
+        if (s_pending.med_name_diff[i]) {
+            strlcpy(s_shadow.med[i].name, s_pending.snapshot.med[i].name,
+                    sizeof(s_shadow.med[i].name));
+        }
+        if (s_pending.med_count_diff[i]) {
+            s_shadow.med[i].count = s_pending.snapshot.med[i].count;
+        }
+        if (s_pending.med_slots_diff[i]) {
+            s_shadow.med[i].slots = s_pending.snapshot.med[i].slots;
+        }
+    }
+
+    memset(&s_pending, 0, sizeof(s_pending));
+    s_pending_notify_telegram = false;
+    shadow_cache_save_locked();
+    ESP_LOGI(TAG, "NETPIE pending shadow approved + applied");
+    /* Cloud already has these values (it sent them to us), so no
+     * republish needed. shadow_unlock() publishes the local snapshot. */
+    shadow_unlock();
+}
+
+void netpie_pending_reject(void)
+{
+    /* Snapshot the current shadow inside the lock so the republish
+     * below uses a consistent state even if a concurrent touch update
+     * mutates s_shadow afterwards. */
+    netpie_shadow_t snap = {0};
+    bool had_pending = false;
+
+    if (!shadow_lock()) return;
+    if (s_pending.active) {
+        had_pending = true;
+        snap = s_shadow;
+        memset(&s_pending, 0, sizeof(s_pending));
+        s_pending_notify_telegram = false;
+    }
+    shadow_unlock();
+
+    if (!had_pending) return;
+
+    ESP_LOGI(TAG, "NETPIE pending shadow rejected — reverting cloud state");
+
+    /* Republish every scalar so the cloud snaps back to local state.
+     * Each republish triggers a NETPIE echo that re-enters parse_shadow,
+     * where the diff check finds zero changes vs s_shadow and silently
+     * drops it — no new pending event. */
+    publish_shadow_payload(build_shadow_payload_int("scheduleEnabled",
+                                                   snap.enabled ? 1 : 0));
+    publish_shadow_payload(build_shadow_payload_int("max_pills", snap.max_pills));
+    for (int i = 0; i < 7; i++) {
+        publish_shadow_payload(build_shadow_payload_string(s_slot_keys[i],
+                                                           snap.slot_time[i]));
+    }
+    for (int i = 0; i < DISPENSER_MED_COUNT; i++) {
+        char key[24];
+        int id = i + 1;
+        snprintf(key, sizeof(key), "med%d_name", id);
+        publish_shadow_payload(build_shadow_payload_string(key, snap.med[i].name));
+        snprintf(key, sizeof(key), "med%d_count", id);
+        publish_shadow_payload(build_shadow_payload_int(key, snap.med[i].count));
+        snprintf(key, sizeof(key), "med%d_slots", id);
+        publish_shadow_payload(build_shadow_payload_int(key, snap.med[i].slots));
+    }
+}
+
+bool netpie_pending_take_telegram_notify(void)
+{
+    /* Single-consumer read-and-clear. The flag goes true only on the
+     * inactive→active transition in parse_shadow, so we don't need a
+     * compare-and-swap — at worst we miss one stale read. */
+    if (!s_pending_notify_telegram) return false;
+    s_pending_notify_telegram = false;
+    return true;
+}
+
+/* Format the diff in Thai. Returns length written (excluding NUL) or 0
+ * if no pending. Truncates silently if out is too small. */
+size_t netpie_pending_format_summary_th(char *out, size_t out_cap)
+{
+    if (!out || out_cap == 0) return 0;
+    out[0] = '\0';
+
+    netpie_pending_t p;
+    if (!netpie_pending_get(&p)) return 0;
+
+    netpie_shadow_t cur;
+    if (!netpie_shadow_copy(&cur)) return 0;
+
+    size_t len = 0;
+    #define APPEND(...) do { \
+        if (len < out_cap - 1) { \
+            int w = snprintf(out + len, out_cap - len, __VA_ARGS__); \
+            if (w > 0) len += (size_t)w; \
+            if (len >= out_cap) len = out_cap - 1; \
+        } \
+    } while (0)
+
+    if (p.enabled_diff) {
+        APPEND("• ตารางจ่ายยา: %s → %s\n",
+               cur.enabled ? "เปิด" : "ปิด",
+               p.snapshot.enabled ? "เปิด" : "ปิด");
+    }
+    if (p.max_pills_diff) {
+        APPEND("• ยาสูงสุด/โมดูล: %d → %d\n",
+               cur.max_pills, p.snapshot.max_pills);
+    }
+    for (int i = 0; i < 7; i++) {
+        if (p.slot_time_diff[i]) {
+            APPEND("• มื้อ %d: %s → %s\n",
+                   i + 1, cur.slot_time[i], p.snapshot.slot_time[i]);
+        }
+    }
+    for (int i = 0; i < DISPENSER_MED_COUNT; i++) {
+        if (p.med_name_diff[i]) {
+            APPEND("• โมดูล %d ชื่อ: \"%s\" → \"%s\"\n",
+                   i + 1, cur.med[i].name, p.snapshot.med[i].name);
+        }
+        if (p.med_count_diff[i]) {
+            APPEND("• โมดูล %d จำนวน: %d → %d\n",
+                   i + 1, cur.med[i].count, p.snapshot.med[i].count);
+        }
+        if (p.med_slots_diff[i]) {
+            APPEND("• โมดูล %d มื้อ(bitmask): 0x%02X → 0x%02X\n",
+                   i + 1, cur.med[i].slots, p.snapshot.med[i].slots);
+        }
+    }
+    #undef APPEND
+    return len;
 }
 
 bool netpie_is_connected(void)
