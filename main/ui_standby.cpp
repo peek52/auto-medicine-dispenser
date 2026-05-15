@@ -46,15 +46,19 @@ static bool s_incomplete_pill_drawn = false;
  *   s_boot_clear_seen     latched on first render after shadow loaded
  *                         so we only check the all-zero condition
  *                         once per boot. */
-/* Initialize both to TRUE so the boot-clear lock is active from the
- * very first frame after power-on, BEFORE the shadow loads from NVS.
- * Previously offered=false until shadow loaded (~tens of ms); the user
- * could tap during that window and navigate to MENU before the popup
- * ever rendered — bypassing the force-clear rule. seen=true matches so
- * the shadow-load gate in ui_standby_render_modal doesn't try to
- * re-offer the popup after the user dismisses it with Clear. */
-static bool s_boot_clear_offered = true;
-static bool s_boot_clear_seen    = true;
+/* Both default to FALSE. The shadow-load gate in ui_standby_render_modal
+ * decides whether to offer the boot-clear popup based on the actual
+ * configured medication state (user 2026-05-15: "เช็คในระบบแล้วใช่ไหม
+ * ว่ามีรายการยารอจ่ายอยู่หรือเปล่า — ไม่ใช่บังคับให้ล้าง"):
+ *   - any med has slots configured → offered stays false (don't disturb
+ *     a working schedule), seen=true to skip re-evaluation
+ *   - all meds have empty slots → offered=true so user is forced through
+ *     a clean-start flush before any further interaction
+ * Window between boot and first shadow-load is tiny; if user manages to
+ * tap during it they land in normal standby — acceptable because the
+ * decision to lock or not is data-driven, not unconditional. */
+static bool s_boot_clear_offered = false;
+static bool s_boot_clear_seen    = false;
 static bool s_boot_clear_drawn   = false;
 static int  s_boot_clear_last_module_drawn = -2;
 
@@ -1175,18 +1179,24 @@ static void ui_standby_render_modal(uint32_t now)
         }
     }
 
-    /* Boot-time forced clear-all (user spec 2026-05-15).
+    /* Boot-time forced clear-all (user spec 2026-05-15, revised).
      *
-     * On EVERY boot, after shadow has loaded, show the state-7 prompt
-     * popup. The user MUST press "Clear" before the UI accepts any
-     * other input — the standby touch handler ignores all taps outside
-     * the Clear button while s_popup_state == 7 (see handler below).
+     * Only offer the lock popup when NO medication is actually queued
+     * for dispense — i.e. every module has slots == 0. The intent is
+     * "first-use / fully-empty system" cleanup, not disrupting a working
+     * schedule. If at least one med has slots configured the operator
+     * already set things up and an unconditional flush would throw away
+     * their setup.
      *
-     * Previous behaviour (only show if every count == 0) was deemed
-     * unsafe: a reboot during partial cartridge state would leave
-     * possibly-fallen pills in the trays without any prompt to flush. */
+     * Either way we latch s_boot_clear_seen so this only fires once per
+     * boot — subsequent shadow updates (e.g. NETPIE writes mid-session)
+     * don't re-trigger the popup. */
     if (!s_boot_clear_seen && sh && sh->loaded) {
-        s_boot_clear_offered = true;
+        bool any_scheduled = false;
+        for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
+            if (sh->med[i].slots != 0) { any_scheduled = true; break; }
+        }
+        s_boot_clear_offered = !any_scheduled;
         s_boot_clear_seen = true;
     }
 

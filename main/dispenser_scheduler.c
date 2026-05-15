@@ -2028,6 +2028,32 @@ static void clear_all_task(void *arg)
         telegram_send_text(mod_msg);
     }
     s_clear_all_current = DISPENSER_MED_COUNT;  /* signals "done" */
+
+    /* Suppress scheduled-dose firing for the next 12 h on ALL slots.
+     *
+     * Without this, a user who reboots in the morning and runs the
+     * boot-clear at e.g. 09:15 immediately sees a scheduled Confirm
+     * popup for the 08:00 dose (its grace window is still open) — but
+     * the cartridges were just emptied, so there's no medication to
+     * dispense and the popup is just noise. User report 2026-05-15:
+     * "เปิดเครื่องมาแล้วกดล้างยาเสร็จมีการแจ้งเตือนให้กดรับยาด้วย".
+     *
+     * Stamping all 7 slots with "fired now" sets the 12-h refire guard
+     * (SLOT_REFIRE_GUARD_SEC) for each, so today's remaining doses are
+     * silently skipped. Tomorrow's same-time slots fire normally. Saves
+     * to NVS so a fast reboot right after clear doesn't lose the guard. */
+    {
+        time_t now_epoch = time(NULL);
+        for (int s = 0; s < 7; ++s) s_slot_last_fire[s] = now_epoch;
+        nvs_handle_t h;
+        if (nvs_open("dispenser", NVS_READWRITE, &h) == ESP_OK) {
+            nvs_set_blob(h, "slot_lastfire",
+                         s_slot_last_fire, sizeof(s_slot_last_fire));
+            nvs_commit(h);
+            nvs_close(h);
+        }
+    }
+
     xSemaphoreGive(s_dispense_mutex);
 
     /* Final summary to Telegram (with photo). */
