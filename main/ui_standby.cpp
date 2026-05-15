@@ -46,8 +46,15 @@ static bool s_incomplete_pill_drawn = false;
  *   s_boot_clear_seen     latched on first render after shadow loaded
  *                         so we only check the all-zero condition
  *                         once per boot. */
-static bool s_boot_clear_offered = false;
-static bool s_boot_clear_seen    = false;
+/* Initialize both to TRUE so the boot-clear lock is active from the
+ * very first frame after power-on, BEFORE the shadow loads from NVS.
+ * Previously offered=false until shadow loaded (~tens of ms); the user
+ * could tap during that window and navigate to MENU before the popup
+ * ever rendered — bypassing the force-clear rule. seen=true matches so
+ * the shadow-load gate in ui_standby_render_modal doesn't try to
+ * re-offer the popup after the user dismisses it with Clear. */
+static bool s_boot_clear_offered = true;
+static bool s_boot_clear_seen    = true;
 static bool s_boot_clear_drawn   = false;
 static int  s_boot_clear_last_module_drawn = -2;
 
@@ -1787,10 +1794,14 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
         return;
     }
 
-    /* Popup state 7 = boot-time forced clear-all. Only one button
-     * ("Clear Now") — no skip option per user spec 2026-05-14
-     * "ห้ามกดข้าม บังคับให้กดล้างยา". */
-    if (s_popup_state == 7 && s_boot_clear_offered) {
+    /* Boot-time forced clear-all (user spec 2026-05-14 + 2026-05-15).
+     * Gate ONLY on s_boot_clear_offered — not also on s_popup_state==7.
+     * The popup-state flag is set inside the render function on first
+     * paint; gating the touch handler on it would let the user tap
+     * BEFORE render fires, hitting some other touch path and navigating
+     * away. With offered=true initialised at file scope, this branch
+     * blocks taps from the very first standby touch after boot. */
+    if (s_boot_clear_offered) {
         bool in_btn = (tx_n >= 140 && tx_n <= 340 && ty_n >= 205 && ty_n <= 255);
         if (in_btn) {
             s_boot_clear_offered = false;
