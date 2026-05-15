@@ -1647,7 +1647,12 @@ static void manual_dispense_task(void *arg) {
     }
 
     bool eject_all = (qty == 100);
-    int  target_count = eject_all ? DISPENSER_MAX_PILLS : qty;
+    /* For eject_all, target is the user-configured ceiling so a module
+     * loaded above the default 16 still flushes completely. The hard
+     * cycle cap stays based on DISPENSER_MAX_PILLS×2 so a truly stuck
+     * IR sensor can't loop forever even if the user set max_pills very
+     * high. */
+    int  target_count = eject_all ? dispenser_max_pills() : qty;
     int  pills_counted = 0;
     int  cycles_run    = 0;
     bool stopped_empty = false;
@@ -1658,8 +1663,9 @@ static void manual_dispense_task(void *arg) {
     /* Generous per-ramp timeout: 1°/20ms × ≤180° = 3.6 s + slack. */
     const uint32_t RAMP_TIMEOUT_MS = 4500;
     /* Hard cap on cycles — survive a stuck-IR-blocked scenario where
-     * count never increments and we'd otherwise loop forever. */
-    const int CYCLE_HARD_CAP = DISPENSER_MAX_PILLS * 2;
+     * count never increments and we'd otherwise loop forever. Sized off
+     * the user-config max so the cap scales with what they configured. */
+    const int CYCLE_HARD_CAP = dispenser_max_pills() * 2;
 
     while (pills_counted < target_count && cycles_run < CYCLE_HARD_CAP) {
         cycles_run++;
@@ -1910,7 +1916,9 @@ static int clear_one_module(int m_idx)
     int pills = 0;
     int cycles_run = 0;
     bool stopped_empty = false;
-    const int CAP = DISPENSER_MAX_PILLS * 2;
+    /* Cycle cap scales with the configurable max so a module loaded
+     * above the default 16 can still be fully flushed. */
+    const int CAP = dispenser_max_pills() * 2;
     const uint32_t RAMP_TIMEOUT_MS = 4500;
 
     s_clear_all_pills_current = 0;   /* live counter for the UI popup */

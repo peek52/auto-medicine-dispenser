@@ -3,36 +3,45 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#2563eb" />
   <title>ตั้งค่าระบบจ่ายยา</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
+      /* Surface */
       --bg-1: #f8fafc;
       --bg-2: #eef2ff;
+      --surface: #ffffff;
+      --surface-alt: #f8fafc;
+      --surface-warm: #fefce8;
 
+      /* Ink */
       --ink: #0f172a;
       --ink-2: #334155;
       --muted: #64748b;
       --muted-2: #94a3b8;
 
+      /* Lines */
       --line: #e2e8f0;
       --line-2: #f1f5f9;
-      --surface: #ffffff;
-      --surface-alt: #f8fafc;
 
+      /* Brand */
       --pri: #2563eb;
       --pri-soft: #dbeafe;
       --pri-ink: #1e40af;
 
+      /* Status */
       --ok: #16a34a;
       --ok-soft: #dcfce7;
       --warn: #d97706;
+      --warn-soft: #fef3c7;
       --bad: #dc2626;
       --bad-soft: #fee2e2;
 
+      /* Meal accents */
       --accent-morn-1: #f59e0b;
       --accent-morn-2: #fb923c;
       --accent-noon-1: #0ea5e9;
@@ -42,11 +51,13 @@
       --accent-bed-1:  #0f766e;
       --accent-bed-2:  #14b8a6;
 
+      /* Radius */
       --r-sm: 10px;
       --r-md: 14px;
       --r-lg: 20px;
       --r-xl: 26px;
 
+      /* Shadow */
       --shadow-1: 0 1px 2px rgba(15,23,42,.04), 0 1px 1px rgba(15,23,42,.03);
       --shadow-2: 0 4px 12px rgba(15,23,42,.06), 0 2px 4px rgba(15,23,42,.04);
       --shadow-3: 0 12px 28px rgba(15,23,42,.10), 0 4px 8px rgba(15,23,42,.05);
@@ -54,18 +65,28 @@
 
       --max: 760px;
       --ease: cubic-bezier(.4,0,.2,1);
+
+      /* Typography scale */
+      --fs-xs: 12px;
+      --fs-sm: 13px;
+      --fs-base: 15px;
+      --fs-md: 16px;
+      --fs-lg: 18px;
+      --fs-xl: 22px;
+      --fs-2xl: 26px;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; }
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
     body {
       font-family: 'IBM Plex Sans Thai', 'Inter', 'Segoe UI', sans-serif;
       color: var(--ink);
       padding: 24px 16px 140px;
       min-height: 100vh;
-      -webkit-text-size-adjust: 100%;
-      text-size-adjust: 100%;
+      font-size: var(--fs-base);
+      line-height: 1.5;
       background:
         radial-gradient(1200px 600px at 8% -8%, rgba(37,99,235,.10), transparent 55%),
         radial-gradient(900px 480px at 95% 0%, rgba(14,165,233,.10), transparent 50%),
@@ -90,26 +111,26 @@
       padding: 0 4px;
     }
     .app-mark {
-      width: 44px; height: 44px; border-radius: 13px;
+      width: 48px; height: 48px; border-radius: 14px;
       display: grid; place-items: center;
       background: linear-gradient(135deg, var(--pri) 0%, #38bdf8 100%);
       box-shadow: var(--shadow-pri);
-      color: #fff; font-size: 22px;
+      color: #fff; font-size: 24px;
       flex-shrink: 0;
     }
     .app-meta { flex: 1; min-width: 0; }
     .app-meta h1 {
-      font-size: 20px; font-weight: 700; color: var(--ink);
-      letter-spacing: -.01em; line-height: 1.25;
+      font-size: var(--fs-xl); font-weight: 700; color: var(--ink);
+      letter-spacing: -.015em; line-height: 1.2;
     }
     .app-meta p {
-      margin-top: 3px; font-size: 13px; color: var(--muted); font-weight: 500;
+      margin-top: 4px; font-size: var(--fs-sm); color: var(--muted); font-weight: 500;
     }
     .app-status {
       display: flex; align-items: center; gap: 8px;
-      padding: 7px 12px;
+      padding: 8px 14px;
       border-radius: 999px;
-      font-size: 12px; font-weight: 600;
+      font-size: var(--fs-xs); font-weight: 600;
       background: var(--surface);
       border: 1px solid var(--line);
       color: var(--muted-2);
@@ -117,7 +138,7 @@
       flex-shrink: 0;
     }
     .app-status .dot {
-      width: 7px; height: 7px; border-radius: 999px;
+      width: 8px; height: 8px; border-radius: 999px;
       background: var(--muted-2);
     }
     .app-status.online { color: var(--ok); border-color: var(--ok-soft); background: var(--ok-soft); }
@@ -129,6 +150,44 @@
       0%, 100% { box-shadow: 0 0 0 4px rgba(22,163,74,.16); }
       50%      { box-shadow: 0 0 0 8px rgba(22,163,74,.04); }
     }
+
+    /* ===== Summary bar (above cards) ===== */
+    .quick-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      padding: 14px 16px;
+      box-shadow: var(--shadow-1);
+    }
+    .stat-label {
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 4px;
+    }
+    .stat-value {
+      font-size: var(--fs-xl);
+      font-weight: 800;
+      color: var(--ink);
+      letter-spacing: -.02em;
+      line-height: 1;
+    }
+    .stat-value .unit {
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      color: var(--muted);
+      margin-left: 4px;
+    }
+    .stat.warn .stat-value { color: var(--warn); }
+    .stat.ok .stat-value { color: var(--ok); }
 
     /* ===== Card primitives ===== */
     .card {
@@ -150,20 +209,20 @@
     }
     .head-left { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1; }
     .head-ico {
-      width: 40px; height: 40px; border-radius: var(--r-md);
+      width: 42px; height: 42px; border-radius: var(--r-md);
       display: grid; place-items: center;
       background: var(--pri-soft); color: var(--pri-ink);
-      font-size: 18px; flex-shrink: 0;
+      font-size: 20px; flex-shrink: 0;
     }
     .head-title { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
-    .head-title b { font-size: 15px; font-weight: 700; color: var(--ink); letter-spacing: -.005em; line-height: 1.3; }
-    .head-title span { font-size: 12.5px; color: var(--muted); font-weight: 500; line-height: 1.4; }
+    .head-title b { font-size: var(--fs-md); font-weight: 700; color: var(--ink); letter-spacing: -.01em; line-height: 1.3; }
+    .head-title span { font-size: var(--fs-sm); color: var(--muted); font-weight: 500; line-height: 1.4; }
 
     .head-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-    .content { padding: 18px 22px 22px; }
+    .content { padding: 20px 22px 22px; }
 
     /* ===== Toggle ===== */
-    .toggle { position: relative; width: 46px; height: 26px; flex-shrink: 0; }
+    .toggle { position: relative; width: 52px; height: 30px; flex-shrink: 0; }
     .toggle input { opacity: 0; width: 0; height: 0; }
     .slider {
       position: absolute; inset: 0; cursor: pointer;
@@ -173,38 +232,70 @@
     }
     .slider:before {
       content: ""; position: absolute;
-      width: 20px; height: 20px; left: 3px; top: 3px;
+      width: 24px; height: 24px; left: 3px; top: 3px;
       border-radius: 999px; background: #fff;
       box-shadow: 0 2px 4px rgba(15,23,42,.20);
       transition: transform .2s var(--ease);
     }
     input:checked + .slider { background: var(--pri); }
-    input:checked + .slider:before { transform: translateX(20px); }
+    input:checked + .slider:before { transform: translateX(22px); }
 
-    .master-stack { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-    .master-copy { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
-    .master-copy b { font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; }
-    .master-copy span { font-size: 11px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+    .master-stack { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .master-copy { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+    .master-copy b { font-size: var(--fs-sm); font-weight: 700; color: var(--ink); white-space: nowrap; }
+    .master-copy span { font-size: var(--fs-xs); color: var(--muted); font-weight: 500; white-space: nowrap; }
 
-    /* ===== Schedule summary ===== */
+    /* ===== Schedule summary chips ===== */
     .schedule-summary {
       display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
     }
     .summary-chip {
-      padding: 12px 14px; border-radius: var(--r-md);
+      padding: 14px 16px; border-radius: var(--r-md);
       background: var(--surface-alt);
       border: 1px solid var(--line-2);
     }
     .summary-chip b {
-      display: block; font-size: 11px;
-      font-weight: 600; color: var(--muted-2);
+      display: block; font-size: var(--fs-xs);
+      font-weight: 600; color: var(--muted);
       text-transform: uppercase; letter-spacing: .05em;
-      margin-bottom: 4px;
+      margin-bottom: 5px;
     }
     .summary-chip span {
-      display: block; font-size: 13.5px;
+      display: block; font-size: var(--fs-sm);
       font-weight: 600; color: var(--ink); line-height: 1.4;
     }
+
+    /* ===== Limits row (max pills) ===== */
+    .limits-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 14px;
+      padding: 14px 16px;
+      border-radius: var(--r-md);
+      background: var(--surface-alt);
+      border: 1px solid var(--line-2);
+      margin-top: 12px;
+    }
+    .limits-copy { display: flex; flex-direction: column; min-width: 0; gap: 3px; }
+    .limits-copy b { font-size: var(--fs-sm); font-weight: 700; color: var(--ink); }
+    .limits-copy span { font-size: var(--fs-xs); color: var(--muted); font-weight: 500; }
+    .limits-input-wrap {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px; border-radius: 12px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+    .limits-input-wrap .qty-btn { width: 36px; height: 36px; font-size: var(--fs-md); }
+    #max-pills {
+      width: 64px; height: 36px; padding: 0;
+      border: none; background: transparent;
+      font-family: inherit; font-size: var(--fs-md); font-weight: 700;
+      text-align: center; color: var(--ink);
+      outline: none;
+    }
+    #max-pills::-webkit-outer-spin-button,
+    #max-pills::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    #max-pills { -moz-appearance: textfield; appearance: textfield; }
 
     /* ===== Dose grid (time slots) ===== */
     .dose-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
@@ -240,20 +331,20 @@
     }
     .dose-head-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
     .dose-icon {
-      width: 38px; height: 38px; border-radius: 11px;
+      width: 40px; height: 40px; border-radius: 12px;
       display: grid; place-items: center;
-      font-size: 18px;
+      font-size: 20px;
       background: var(--surface-alt);
       flex-shrink: 0;
     }
     .dose-copy { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
-    .dose-label { font-size: 14px; font-weight: 600; color: var(--ink); line-height: 1.25; letter-spacing: -.005em; }
-    .dose-help { font-size: 11.5px; font-weight: 500; color: var(--muted); line-height: 1.4; }
+    .dose-label { font-size: var(--fs-md); font-weight: 700; color: var(--ink); line-height: 1.25; letter-spacing: -.005em; }
+    .dose-help { font-size: var(--fs-xs); font-weight: 500; color: var(--muted); line-height: 1.4; }
     .dose-badge {
-      padding: 5px 10px; border-radius: 999px;
+      padding: 6px 12px; border-radius: 999px;
       background: var(--surface-alt);
       color: var(--muted);
-      font-size: 11px; font-weight: 600;
+      font-size: var(--fs-xs); font-weight: 700;
       letter-spacing: .03em;
       white-space: nowrap;
       border: 1px solid var(--line-2);
@@ -262,29 +353,29 @@
     .dose-field {
       display: grid; grid-template-columns: 1fr auto;
       align-items: center; gap: 12px;
-      padding: 10px 0;
+      padding: 12px 0;
       border-bottom: 1px dashed var(--line-2);
     }
     .dose-field:last-child { border-bottom: none; padding-bottom: 0; }
     .dose-field:first-of-type { padding-top: 0; }
-    .field-copy { display: flex; flex-direction: column; gap: 2px; }
-    .field-label { font-size: 13px; font-weight: 600; color: var(--ink); }
-    .field-sub { font-size: 11px; font-weight: 500; color: var(--muted-2); letter-spacing: .01em; }
+    .field-copy { display: flex; flex-direction: column; gap: 3px; }
+    .field-label { font-size: var(--fs-sm); font-weight: 600; color: var(--ink); }
+    .field-sub { font-size: var(--fs-xs); font-weight: 500; color: var(--muted-2); letter-spacing: .01em; }
 
     /* ===== Inputs ===== */
     input[type="time"], input[type="text"], input[type="number"] {
       font-family: inherit;
-      font-size: 16px;
     }
 
     input[type="time"] {
-      width: 130px; height: 40px;
-      padding: 0 12px;
+      width: 140px; height: 44px;
+      padding: 0 14px;
       border-radius: 10px;
       border: 1px solid var(--line);
       background: var(--surface);
       color: var(--ink);
-      font-weight: 600; text-align: center;
+      font-size: var(--fs-md);
+      font-weight: 700; text-align: center;
       outline: none;
       transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
     }
@@ -297,7 +388,7 @@
     /* ===== Modules ===== */
     .module-summary {
       display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
-      margin-bottom: 16px;
+      margin-bottom: 18px;
     }
     .module-grid {
       display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
@@ -317,11 +408,19 @@
       width: 4px;
       background: linear-gradient(180deg, var(--pri) 0%, #38bdf8 100%);
     }
+    .mod-item.empty {
+      background: var(--surface-warm);
+      border-color: #fde68a;
+    }
+    .mod-item.empty:before {
+      background: linear-gradient(180deg, var(--warn) 0%, #fb923c 100%);
+    }
     .mod-item:hover {
       transform: translateY(-2px);
       box-shadow: var(--shadow-3);
       border-color: var(--pri-soft);
     }
+    .mod-item.empty:hover { border-color: #fcd34d; }
 
     .mod-header-row {
       display: flex; justify-content: space-between; align-items: center;
@@ -329,29 +428,31 @@
       padding-bottom: 14px; margin-bottom: 14px;
       border-bottom: 1px solid var(--line-2);
     }
-    .mod-title-wrap { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .mod-title { font-size: 14px; font-weight: 700; color: var(--ink); letter-spacing: -.005em; }
-    .mod-sub { font-size: 11.5px; font-weight: 500; color: var(--muted); line-height: 1.35; }
+    .mod-title-wrap { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .mod-title { font-size: var(--fs-md); font-weight: 700; color: var(--ink); letter-spacing: -.005em; }
+    .mod-sub { font-size: var(--fs-xs); font-weight: 500; color: var(--muted); line-height: 1.35; }
     .mod-badge {
-      padding: 5px 10px; border-radius: 999px;
+      padding: 6px 12px; border-radius: 999px;
       background: var(--pri-soft); color: var(--pri-ink);
-      font-size: 11px; font-weight: 600;
+      font-size: var(--fs-xs); font-weight: 700;
       white-space: nowrap;
     }
     .mod-badge.idle { background: var(--surface-alt); color: var(--muted); border: 1px solid var(--line-2); }
+    .mod-badge.warn { background: var(--warn-soft); color: var(--warn); }
 
     .mod-name-wrap { margin-bottom: 14px; }
     .mod-field-label {
-      display: block; font-size: 11px; font-weight: 600;
+      display: block; font-size: var(--fs-xs); font-weight: 600;
       color: var(--muted-2);
       text-transform: uppercase; letter-spacing: .05em;
-      margin-bottom: 7px;
+      margin-bottom: 8px;
     }
     .mod-name-input {
-      width: 100%; height: 42px; padding: 0 12px;
+      width: 100%; height: 46px; padding: 0 14px;
       border-radius: 10px;
       border: 1px solid var(--line);
       background: var(--surface);
+      font-size: var(--fs-md);
       font-weight: 500; color: var(--ink);
       outline: none;
       transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
@@ -368,31 +469,33 @@
       gap: 14px;
       margin-bottom: 14px;
     }
-    .qty-wrap { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+    .qty-wrap { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
     .qty-control {
       display: inline-flex; align-items: center; gap: 4px;
-      padding: 4px;
+      padding: 5px;
       border-radius: 12px;
       border: 1px solid var(--line);
       background: var(--surface-alt);
     }
     .qty-btn {
-      width: 32px; height: 32px;
+      width: 38px; height: 38px;
       border: none; background: var(--surface);
       border-radius: 8px;
-      color: var(--pri-ink); font-weight: 700; font-size: 16px;
+      color: var(--pri-ink); font-weight: 800; font-size: var(--fs-lg);
       cursor: pointer;
       transition: background .12s var(--ease), transform .08s var(--ease);
       box-shadow: var(--shadow-1);
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
+      font-family: inherit;
     }
     .qty-btn:hover { background: var(--pri-soft); }
-    .qty-btn:active { transform: scale(.93); }
+    .qty-btn:active { transform: scale(.92); }
+    .qty-btn:disabled { opacity: .4; cursor: not-allowed; }
     .qty-input {
-      width: 52px; height: 32px;
+      width: 60px; height: 38px;
       border: none; background: transparent;
-      font-weight: 700; font-size: 16px;
+      font-weight: 800; font-size: var(--fs-lg);
       text-align: center; color: var(--ink);
       outline: none;
       font-family: inherit;
@@ -403,15 +506,15 @@
     .qty-input { -moz-appearance: textfield; appearance: textfield; }
 
     /* ===== Slot pills ===== */
-    .slots-wrap { display: flex; flex-direction: column; gap: 8px; }
-    .slots-row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .slots-wrap { display: flex; flex-direction: column; gap: 10px; }
+    .slots-row { display: flex; flex-wrap: wrap; gap: 7px; }
     .slot-pill {
-      padding: 7px 12px;
+      padding: 8px 14px;
       border-radius: 999px;
       border: 1px solid var(--line);
       background: var(--surface);
       color: var(--ink-2);
-      font-size: 12px; font-weight: 600;
+      font-size: var(--fs-sm); font-weight: 600;
       cursor: pointer; user-select: none;
       transition: all .15s var(--ease);
       touch-action: manipulation;
@@ -437,23 +540,26 @@
       width: calc(100% - 32px); max-width: 580px;
       z-index: 200;
       border-radius: var(--r-xl);
-      padding: 12px 14px;
+      padding: 14px 16px;
       border: 1px solid var(--line);
-      background: rgba(255,255,255,.85);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
+      background: rgba(255,255,255,.88);
+      backdrop-filter: blur(24px) saturate(1.2);
+      -webkit-backdrop-filter: blur(24px) saturate(1.2);
       box-shadow: var(--shadow-3);
       display: flex; gap: 14px; align-items: center; justify-content: space-between;
     }
     .savehint { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-    .savehint b { font-size: 13.5px; font-weight: 700; color: var(--ink); letter-spacing: -.005em; }
-    .savehint span { font-size: 11.5px; color: var(--muted); font-weight: 500; }
+    .savehint b { font-size: var(--fs-md); font-weight: 700; color: var(--ink); letter-spacing: -.005em; }
+    .savehint span { font-size: var(--fs-xs); color: var(--muted); font-weight: 500; }
+    .savehint.dirty b::after {
+      content: "•"; color: var(--warn); margin-left: 6px; font-size: 18px; vertical-align: middle;
+    }
     .btn-save {
-      height: 44px; padding: 0 22px;
-      border-radius: 12px; border: none; cursor: pointer;
+      height: 48px; padding: 0 24px;
+      border-radius: 14px; border: none; cursor: pointer;
       color: #fff;
       font-family: inherit;
-      font-size: 14px; font-weight: 700; letter-spacing: .005em;
+      font-size: var(--fs-md); font-weight: 700; letter-spacing: .005em;
       background: linear-gradient(135deg, var(--pri) 0%, #38bdf8 100%);
       box-shadow: var(--shadow-pri);
       display: flex; align-items: center; gap: 8px;
@@ -465,76 +571,69 @@
     .btn-save:active { transform: scale(.97); }
     .btn-save.success { background: linear-gradient(135deg, var(--ok) 0%, #4ade80 100%); box-shadow: 0 14px 32px rgba(22,163,74,.30); }
     .btn-save.error { background: linear-gradient(135deg, var(--bad) 0%, #f87171 100%); box-shadow: 0 14px 32px rgba(220,38,38,.30); }
+    .btn-save:disabled { opacity: .6; cursor: not-allowed; transform: none; }
 
-    /* ===== Responsive ===== */
+    /* ===== Responsive — mobile-first font sizing ===== */
     @media (max-width: 720px) {
+      :root {
+        --fs-xs: 13px;
+        --fs-sm: 14px;
+        --fs-base: 16px;
+        --fs-md: 17px;
+        --fs-lg: 19px;
+        --fs-xl: 22px;
+        --fs-2xl: 26px;
+      }
       body { padding: 18px 14px 132px; }
-      .app-meta h1 { font-size: 18px; }
+      .quick-stats { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .stat { padding: 12px 14px; }
       .schedule-summary { grid-template-columns: 1fr; }
       .module-summary { grid-template-columns: 1fr; }
       .dose-grid, .module-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 540px) {
-      body { padding: 14px 12px 128px; }
+      :root {
+        --fs-xs: 13px;
+        --fs-sm: 15px;
+        --fs-base: 16px;
+        --fs-md: 17px;
+        --fs-lg: 20px;
+        --fs-xl: 23px;
+      }
+      body { padding: 14px 12px 132px; }
       .app-head { gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
-      .app-status { order: 3; width: 100%; justify-content: center; }
-      .card-head { padding: 16px 18px 14px; }
-      .content { padding: 16px 18px 18px; }
+      .app-status { order: 3; width: 100%; justify-content: center; padding: 9px 14px; }
+      .quick-stats { gap: 8px; }
+      .stat { padding: 12px; }
+      .stat-value { font-size: 19px; }
+      .card-head { padding: 18px 18px 14px; }
+      .content { padding: 18px 18px 20px; }
       .dose-card, .mod-item { padding: 16px; }
-      .dose-field { grid-template-columns: 1fr; gap: 6px; }
-      input[type="time"] { width: 100%; }
-      .savebar { width: calc(100% - 24px); bottom: 12px; padding: 10px 12px; }
-      .savehint b { font-size: 13px; }
-      .savehint span { font-size: 11px; }
-      .btn-save { height: 40px; padding: 0 18px; font-size: 13px; }
+      .dose-field { grid-template-columns: 1fr; gap: 8px; padding: 10px 0; }
+      input[type="time"] { width: 100%; height: 48px; font-size: 17px; }
+      .mod-name-input { height: 48px; font-size: 17px; }
+      .qty-btn { width: 42px; height: 42px; font-size: 20px; }
+      .qty-input { width: 64px; height: 42px; font-size: 20px; }
+      .slot-pill { padding: 10px 14px; font-size: 14px; }
+      .savebar { width: calc(100% - 24px); bottom: 12px; padding: 12px 14px; }
+      .btn-save { height: 46px; padding: 0 20px; font-size: 15px; }
+      .limits-row { flex-direction: column; align-items: stretch; gap: 12px; }
+      .limits-input-wrap { align-self: flex-end; }
     }
     @media (max-width: 380px) {
-      .qty-input { width: 44px; }
-      .qty-btn { width: 30px; height: 30px; }
       .mod-controls { flex-direction: column; align-items: stretch; gap: 12px; }
       .mod-badge { align-self: flex-start; }
+      .quick-stats { grid-template-columns: 1fr 1fr; }
+      .quick-stats .stat:nth-child(3) { grid-column: 1 / -1; }
     }
 
-    /* ===== VL53 fill-level row (level-only, no numeric mm) ===== */
-    .sensor-row {
-      display: flex; flex-direction: column;
-      gap: 8px;
-      padding: 12px;
-      margin-bottom: 12px;
-      background: var(--surface-alt);
-      border: 1px solid var(--line-2);
-      border-radius: 12px;
+    /* Reduce-motion respect */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0ms !important;
+        transition-duration: 0ms !important;
+      }
     }
-    .sensor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .sensor-label { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--muted); }
-    .sensor-chip {
-      font-size: 11.5px; font-weight: 700;
-      padding: 4px 11px;
-      border-radius: 999px;
-      background: var(--surface);
-      border: 1px solid var(--line);
-      color: var(--ink);
-      white-space: nowrap;
-    }
-    .sensor-chip.full   { background:#dcfce7; border-color:#bbf7d0; color:#15803d; }
-    .sensor-chip.ok     { background:#dcfce7; border-color:#bbf7d0; color:#16a34a; }
-    .sensor-chip.mid    { background:#fef3c7; border-color:#fde68a; color:#a16207; }
-    .sensor-chip.low    { background:#ffedd5; border-color:#fed7aa; color:#c2410c; }
-    .sensor-chip.empty  { background:#fee2e2; border-color:#fecaca; color:#b91c1c; }
-    .sensor-chip.na     { color: var(--muted-2); }
-
-    .fill-bar { display: flex; gap: 3px; height: 14px; }
-    .fill-seg {
-      flex: 1;
-      background: var(--line);
-      border-radius: 3px;
-      transition: background .25s var(--ease);
-    }
-    .fill-seg.on.full  { background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%); }
-    .fill-seg.on.ok    { background: linear-gradient(180deg, #4ade80 0%, #22c55e 100%); }
-    .fill-seg.on.mid   { background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%); }
-    .fill-seg.on.low   { background: linear-gradient(180deg, #fb923c 0%, #ea580c 100%); }
-    .fill-seg.on.empty { background: linear-gradient(180deg, #f87171 0%, #dc2626 100%); }
   </style>
 </head>
 
@@ -553,6 +652,22 @@
       </div>
     </div>
 
+    <!-- Quick stats -->
+    <div class="quick-stats">
+      <div class="stat">
+        <div class="stat-label">โมดูลใช้งาน</div>
+        <div class="stat-value" id="stat-active">0<span class="unit">/6</span></div>
+      </div>
+      <div class="stat" id="stat-total-wrap">
+        <div class="stat-label">ยาคงเหลือรวม</div>
+        <div class="stat-value" id="stat-total">0<span class="unit">เม็ด</span></div>
+      </div>
+      <div class="stat" id="stat-empty-wrap">
+        <div class="stat-label">โมดูลที่ต้องเติม</div>
+        <div class="stat-value" id="stat-empty">0<span class="unit">ช่อง</span></div>
+      </div>
+    </div>
+
     <!-- CARD 1: SCHEDULE CONTROL -->
     <div class="card">
       <div class="card-head">
@@ -560,7 +675,7 @@
           <div class="head-ico">🗓</div>
           <div class="head-title">
             <b>ควบคุมตารางจ่ายยา</b>
-            <span>เปิด/ปิดระบบ และดูภาพรวมการตั้งค่า</span>
+            <span>เปิด/ปิดระบบ และตั้งค่าขีดจำกัด</span>
           </div>
         </div>
         <div class="head-right">
@@ -589,6 +704,19 @@
           <div class="summary-chip">
             <b>การบันทึก</b>
             <span>NETPIE Shadow Sync</span>
+          </div>
+        </div>
+
+        <!-- NEW: configurable max-pills limit -->
+        <div class="limits-row">
+          <div class="limits-copy">
+            <b>จำนวนยาสูงสุดต่อโมดูล</b>
+            <span>เครื่องและหน้าเว็บจะไม่ให้เกินค่านี้</span>
+          </div>
+          <div class="limits-input-wrap">
+            <button class="qty-btn" onclick="stepMax(-1)" aria-label="ลดค่าสูงสุด">−</button>
+            <input type="number" id="max-pills" inputmode="numeric" min="1" max="999" value="16" oninput="onMaxPillsInput()">
+            <button class="qty-btn" onclick="stepMax(1)" aria-label="เพิ่มค่าสูงสุด">+</button>
           </div>
         </div>
       </div>
@@ -623,14 +751,14 @@
                 <span class="field-label">ก่อนอาหาร</span>
                 <span class="field-sub">Pre-meal</span>
               </div>
-              <input type="time" id="t_morn_pre" value="08:00" />
+              <input type="time" id="t_morn_pre" value="08:00" onchange="markDirty()" />
             </div>
             <div class="dose-field">
               <div class="field-copy">
                 <span class="field-label">หลังอาหาร</span>
                 <span class="field-sub">Post-meal</span>
               </div>
-              <input type="time" id="t_morn_post" value="08:30" />
+              <input type="time" id="t_morn_post" value="08:30" onchange="markDirty()" />
             </div>
           </div>
 
@@ -650,14 +778,14 @@
                 <span class="field-label">ก่อนอาหาร</span>
                 <span class="field-sub">Pre-meal</span>
               </div>
-              <input type="time" id="t_noon_pre" value="12:00" />
+              <input type="time" id="t_noon_pre" value="12:00" onchange="markDirty()" />
             </div>
             <div class="dose-field">
               <div class="field-copy">
                 <span class="field-label">หลังอาหาร</span>
                 <span class="field-sub">Post-meal</span>
               </div>
-              <input type="time" id="t_noon_post" value="12:30" />
+              <input type="time" id="t_noon_post" value="12:30" onchange="markDirty()" />
             </div>
           </div>
 
@@ -677,14 +805,14 @@
                 <span class="field-label">ก่อนอาหาร</span>
                 <span class="field-sub">Pre-meal</span>
               </div>
-              <input type="time" id="t_eve_pre" value="17:00" />
+              <input type="time" id="t_eve_pre" value="17:00" onchange="markDirty()" />
             </div>
             <div class="dose-field">
               <div class="field-copy">
                 <span class="field-label">หลังอาหาร</span>
                 <span class="field-sub">Post-meal</span>
               </div>
-              <input type="time" id="t_eve_post" value="17:30" />
+              <input type="time" id="t_eve_post" value="17:30" onchange="markDirty()" />
             </div>
           </div>
 
@@ -704,7 +832,7 @@
                 <span class="field-label">เวลาจ่ายยา</span>
                 <span class="field-sub">Bedtime</span>
               </div>
-              <input type="time" id="t_bed" value="21:00" />
+              <input type="time" id="t_bed" value="21:00" onchange="markDirty()" />
             </div>
           </div>
         </div>
@@ -725,12 +853,12 @@
       <div class="content">
         <div class="module-summary">
           <div class="summary-chip">
-            <b>จำนวนตลับ</b>
+            <b>จำนวนโมดูล</b>
             <span>6 ช่องบรรจุยา</span>
           </div>
           <div class="summary-chip">
             <b>การเลือกเวลา</b>
-            <span>แตะเลือกช่วงเวลา</span>
+            <span>แตะเลือกช่วงเวลาแต่ละมื้อ</span>
           </div>
         </div>
         <div class="module-grid" id="module-container"></div>
@@ -740,9 +868,9 @@
 
   <!-- SAVE FLOATING BAR -->
   <div class="savebar">
-    <div class="savehint">
+    <div class="savehint" id="savehint">
       <b>บันทึกการตั้งค่า</b>
-      <span>เขียนค่าไปที่ NETPIE Shadow ทันที</span>
+      <span id="savesub">เขียนค่าไปที่ NETPIE Shadow ทันที</span>
     </div>
     <button class="btn-save" id="save-btn" onclick="saveData()">
       <span id="save-ico">💾</span>
@@ -756,6 +884,7 @@
   <script>
     window._sh = {};
     window._sh.scheduleEnabled = "${#["esp32cam_dispenser"]["shadow"]["scheduleEnabled"]}";
+    window._sh.max_pills       = "${#["esp32cam_dispenser"]["shadow"]["max_pills"]}";
     window._sh.t_morn_pre  = "${#["esp32cam_dispenser"]["shadow"]["t_morn_pre"]}";
     window._sh.t_morn_post = "${#["esp32cam_dispenser"]["shadow"]["t_morn_post"]}";
     window._sh.t_noon_pre  = "${#["esp32cam_dispenser"]["shadow"]["t_noon_pre"]}";
@@ -800,43 +929,21 @@
     window._sh.med6_count = "${#["esp32cam_dispenser"]["shadow"]["med6_count"]}";
     window._sh.med6_slots = "${#["esp32cam_dispenser"]["shadow"]["med6_slots"]}";
   </script>
-  <script>
-    window._sh = window._sh || {};
-    window._sh.med1_dist  = "${#["esp32cam_dispenser"]["shadow"]["med1_dist"]}";
-    window._sh.med2_dist  = "${#["esp32cam_dispenser"]["shadow"]["med2_dist"]}";
-    window._sh.med3_dist  = "${#["esp32cam_dispenser"]["shadow"]["med3_dist"]}";
-    window._sh.med4_dist  = "${#["esp32cam_dispenser"]["shadow"]["med4_dist"]}";
-    window._sh.med5_dist  = "${#["esp32cam_dispenser"]["shadow"]["med5_dist"]}";
-    window._sh.med6_dist  = "${#["esp32cam_dispenser"]["shadow"]["med6_dist"]}";
-    window._sh.med1_pills = "${#["esp32cam_dispenser"]["shadow"]["med1_pills"]}";
-    window._sh.med2_pills = "${#["esp32cam_dispenser"]["shadow"]["med2_pills"]}";
-    window._sh.med3_pills = "${#["esp32cam_dispenser"]["shadow"]["med3_pills"]}";
-    window._sh.med4_pills = "${#["esp32cam_dispenser"]["shadow"]["med4_pills"]}";
-    window._sh.med5_pills = "${#["esp32cam_dispenser"]["shadow"]["med5_pills"]}";
-    window._sh.med6_pills = "${#["esp32cam_dispenser"]["shadow"]["med6_pills"]}";
-  </script>
 
   <!-- ============================================================ -->
   <!-- SCRIPT 2: Main logic                                         -->
-  <!-- Uses NETPIE built-in #[device].writeShadow() for save.       -->
   <!-- ============================================================ -->
   <script>
     var TIME_KEYS = ["t_morn_pre","t_morn_post","t_noon_pre","t_noon_post","t_eve_pre","t_eve_post","t_bed"];
     var SLOT_LABELS = ["เช้า-ก่อน","เช้า-หลัง","เที่ยง-ก่อน","เที่ยง-หลัง","เย็น-ก่อน","เย็น-หลัง","ก่อนนอน"];
-    var MAX_PILLS = 16;
-
-    /* --- VL53 → ระดับยา (ไม่แสดงตัวเลข mm) ---
-       หลอดทึบแสง: ยาว 260 mm, ตลับสูง 15 mm, เต็ม 15 ตลับ
-       แปลงระยะ → จำนวนตลับ: pills = round((TUBE_LEN - d) / PILL_H)
-       หลังจากนั้นแบ่งเป็น 5 ระดับสำหรับการแสดงผลภาพรวม */
-    var TUBE_LENGTH_MM   = 260;  // ระยะอ้างอิงเมื่อหลอดว่าง
-    var PILL_HEIGHT_MM   = 15;   // ความสูงต่อ 1 ตลับ
-    var FULL_DIST_MM     = 38;   // ≤ 38 mm → เต็ม 15 ตลับ
-    var EMPTY_DIST_MM    = 248;  // ≥ 248 mm → ยาหมด
-    var MAX_PILLS_IN_TUBE = 15;
+    var DEFAULT_MAX_PILLS = 16;
+    var ABS_MAX_PILLS = 999;
+    var MAX_PILLS = DEFAULT_MAX_PILLS;
 
     var modules = [];
-    for (var i = 0; i < 6; i++) modules.push({ id: i+1, name: "", count: 0, slots: 0, dist: null, pills: null });
+    for (var i = 0; i < 6; i++) modules.push({ id: i+1, name: "", count: 0, slots: 0 });
+
+    var dirty = false;
 
     function safeStr(v){ if(v===undefined||v===null||v==="undefined"||v==="null"||v==="")return ""; return String(v); }
     function safeInt(v){ var n=parseInt(v,10); return isNaN(n)?0:n; }
@@ -858,9 +965,77 @@
       else  { el.classList.remove('online');  el.classList.add('offline'); t.innerText="ออฟไลน์"; }
     }
 
+    function markDirty(){
+      dirty = true;
+      var sh = document.getElementById('savehint');
+      var sub = document.getElementById('savesub');
+      if (sh) sh.classList.add('dirty');
+      if (sub) sub.innerText = "ยังไม่บันทึก — แตะปุ่มเพื่อยืนยัน";
+    }
+
+    function clearDirty(){
+      dirty = false;
+      var sh = document.getElementById('savehint');
+      var sub = document.getElementById('savesub');
+      if (sh) sh.classList.remove('dirty');
+      if (sub) sub.innerText = "เขียนค่าไปที่ NETPIE Shadow ทันที";
+    }
+
+    function updateStats(){
+      var active = 0, total = 0, empty = 0;
+      for (var i = 0; i < modules.length; i++) {
+        var m = modules[i];
+        if (m.slots) active++;
+        total += m.count;
+        if (m.slots && m.count === 0) empty++;
+      }
+      document.getElementById('stat-active').innerHTML = active + '<span class="unit">/6</span>';
+      document.getElementById('stat-total').innerHTML  = total + '<span class="unit">เม็ด</span>';
+      document.getElementById('stat-empty').innerHTML  = empty + '<span class="unit">ช่อง</span>';
+
+      var emptyWrap = document.getElementById('stat-empty-wrap');
+      var totalWrap = document.getElementById('stat-total-wrap');
+      emptyWrap.classList.toggle('warn', empty > 0);
+      totalWrap.classList.toggle('ok', total > 0);
+    }
+
+    function onMaxPillsInput(){
+      var el = document.getElementById('max-pills');
+      if (!el) return;
+      var v = clamp(el.value, 1, ABS_MAX_PILLS);
+      MAX_PILLS = v;
+      // Clamp existing module counts down if new max is lower.
+      for (var i = 0; i < modules.length; i++) {
+        if (modules[i].count > MAX_PILLS) {
+          modules[i].count = MAX_PILLS;
+          var q = document.getElementById('q-'+modules[i].id);
+          if (q) q.value = MAX_PILLS;
+        }
+      }
+      // Update +/− max attribute on every qty input.
+      var ins = document.querySelectorAll('.qty-input');
+      for (var k = 0; k < ins.length; k++) ins[k].max = MAX_PILLS;
+      updateStats();
+      markDirty();
+    }
+
+    function stepMax(d){
+      var el = document.getElementById('max-pills');
+      if (!el) return;
+      var v = clamp((parseInt(el.value, 10) || 0) + d, 1, ABS_MAX_PILLS);
+      el.value = v;
+      onMaxPillsInput();
+    }
+
     function initFromShadow(){
       var sh = window._sh || {};
       document.getElementById('master').checked = (safeInt(sh.scheduleEnabled)==1);
+
+      var mp = safeInt(sh.max_pills);
+      if (mp < 1 || mp > ABS_MAX_PILLS) mp = DEFAULT_MAX_PILLS;
+      MAX_PILLS = mp;
+      var mpEl = document.getElementById('max-pills');
+      if (mpEl) mpEl.value = mp;
 
       var d = {
         t_morn_pre:"08:00", t_morn_post:"08:30",
@@ -881,47 +1056,7 @@
         modules[i].name  = safeStr(sh["med"+idx+"_name"]);
         modules[i].count = clamp(sh["med"+idx+"_count"], 0, MAX_PILLS);
         modules[i].slots = normalizeSlotsMask(sh["med"+idx+"_slots"]);
-        modules[i].dist  = parseNum(sh["med"+idx+"_dist"]);
-        modules[i].pills = parseNum(sh["med"+idx+"_pills"]);
       }
-    }
-
-    function parseNum(v){
-      var s = safeStr(v);
-      if (s === "" || s === "null") return null;
-      var n = parseInt(s, 10);
-      if (isNaN(n) || n < 0) return null;
-      return n;
-    }
-
-    /* แปลงระยะ (mm) → จำนวนตลับยาประมาณ (0..15) */
-    function distToPills(d){
-      if (d === null || d === undefined) return null;
-      if (d <= FULL_DIST_MM)  return MAX_PILLS_IN_TUBE;
-      if (d >= EMPTY_DIST_MM) return 0;
-      var p = Math.round((TUBE_LENGTH_MM - d) / PILL_HEIGHT_MM);
-      if (p < 0) p = 0;
-      if (p > MAX_PILLS_IN_TUBE) p = MAX_PILLS_IN_TUBE;
-      return p;
-    }
-
-    /* แบ่งระดับเป็น 5 ขั้น (ไม่แสดงตัวเลข mm/ตลับ) */
-    function pillsToLevel(p){
-      if (p === null || p === undefined) return { label: "ไม่พบเซ็นเซอร์", cls: "na",    fillCount: 0 };
-      if (p === 0)                       return { label: "ยาหมด",          cls: "empty", fillCount: 0 };
-      if (p <= 3)                        return { label: "ใกล้หมด",        cls: "low",   fillCount: p };
-      if (p <= 7)                        return { label: "เหลือน้อย",      cls: "mid",   fillCount: p };
-      if (p <= 11)                       return { label: "เหลือพอใช้",      cls: "ok",    fillCount: p };
-      return                                    { label: "เต็มหลอด",        cls: "full",  fillCount: p };
-    }
-
-    function buildFillBar(segCls, fillCount){
-      var s = '<div class="fill-bar">';
-      for (var i = 0; i < MAX_PILLS_IN_TUBE; i++) {
-        s += '<div class="fill-seg' + (i < fillCount ? ' on ' + segCls : '') + '"></div>';
-      }
-      s += '</div>';
-      return s;
     }
 
     function renderModules(){
@@ -929,33 +1064,32 @@
       for (var i=0; i<modules.length; i++) {
         var m = modules[i];
         var sc = countBits(m.slots);
-        var sl = sc ? (sc + " ช่วงเวลา") : "ยังไม่เลือก";
-        var badgeCls = sc ? "mod-badge" : "mod-badge idle";
+        var isEmpty = (sc > 0 && m.count === 0);
+        var badgeText, badgeCls;
+        if (sc === 0) {
+          badgeText = "ยังไม่เลือก";
+          badgeCls = "mod-badge idle";
+        } else if (isEmpty) {
+          badgeText = "ต้องเติมยา";
+          badgeCls = "mod-badge warn";
+        } else {
+          badgeText = sc + " ช่วงเวลา";
+          badgeCls = "mod-badge";
+        }
+        var itemCls = "mod-item" + (isEmpty ? " empty" : "");
 
-        html += '<div class="mod-item">';
+        html += '<div class="'+itemCls+'">';
         html += '  <div class="mod-header-row">';
         html += '    <div class="mod-title-wrap">';
-        html += '      <span class="mod-title">ตลับที่ '+m.id+'</span>';
+        html += '      <span class="mod-title">โมดูลที่ '+m.id+'</span>';
         html += '      <span class="mod-sub">ชื่อยา · จำนวน · เวลา</span>';
         html += '    </div>';
-        html += '    <span id="slot-badge-'+m.id+'" class="'+badgeCls+'">'+sl+'</span>';
-        html += '  </div>';
-
-        /* prefer firmware-computed pill count (NETPIE shadow medN_pills);
-           fall back to JS distance→pills only if firmware hasn't published yet */
-        var pills = (m.pills !== null) ? m.pills : distToPills(m.dist);
-        var lvl   = pillsToLevel(pills);
-        html += '  <div class="sensor-row">';
-        html += '    <div class="sensor-head">';
-        html += '      <span class="sensor-label">💊 ปริมาณยาในหลอด</span>';
-        html += '      <span id="lvl-'+m.id+'" class="sensor-chip '+lvl.cls+'">'+lvl.label+'</span>';
-        html += '    </div>';
-        html += '    <div id="bar-'+m.id+'">'+buildFillBar(lvl.cls, lvl.fillCount)+'</div>';
+        html += '    <span id="slot-badge-'+m.id+'" class="'+badgeCls+'">'+badgeText+'</span>';
         html += '  </div>';
 
         html += '  <div class="mod-name-wrap">';
         html += '    <label class="mod-field-label" for="n-'+m.id+'">ชื่อยา</label>';
-        html += '    <input type="text" id="n-'+m.id+'" class="mod-name-input" placeholder="เช่น Vitamin C" value="'+escapeHtml(m.name)+'" onchange="upd('+m.id+')">';
+        html += '    <input type="text" id="n-'+m.id+'" class="mod-name-input" placeholder="เช่น Vitamin C" value="'+escapeHtml(m.name)+'" oninput="upd('+m.id+');markDirty()">';
         html += '  </div>';
 
         html += '  <div class="mod-controls">';
@@ -963,7 +1097,7 @@
         html += '      <span class="mod-field-label">จำนวนคงเหลือ</span>';
         html += '      <div class="qty-control">';
         html += '        <button class="qty-btn" onclick="step('+m.id+',-1)" aria-label="ลดจำนวน">−</button>';
-        html += '        <input class="qty-input" type="number" inputmode="numeric" min="0" max="'+MAX_PILLS+'" id="q-'+m.id+'" value="'+m.count+'" oninput="setQty('+m.id+')">';
+        html += '        <input class="qty-input" type="number" inputmode="numeric" min="0" max="'+MAX_PILLS+'" id="q-'+m.id+'" value="'+m.count+'" oninput="setQty('+m.id+');markDirty()">';
         html += '        <button class="qty-btn" onclick="step('+m.id+',1)" aria-label="เพิ่มจำนวน">+</button>';
         html += '      </div>';
         html += '    </div>';
@@ -981,6 +1115,7 @@
         html += '</div>';
       }
       document.getElementById('module-container').innerHTML = html;
+      updateStats();
     }
 
     function step(id, d){
@@ -988,6 +1123,8 @@
       m.count = clamp(m.count + d, 0, MAX_PILLS);
       var q = document.getElementById('q-'+id);
       if (q) q.value = m.count;
+      updateStats();
+      markDirty();
     }
 
     function setQty(id){
@@ -996,6 +1133,7 @@
       var v = clamp(q.value, 0, MAX_PILLS);
       q.value = v;
       modules[id-1].count = v;
+      updateStats();
     }
 
     function normalizeSlotsMask(mask){
@@ -1034,10 +1172,16 @@
       }
       var sc = countBits(m.slots);
       var sb = document.getElementById('slot-badge-'+id);
+      var item = sb ? sb.closest('.mod-item') : null;
+      var isEmpty = (sc > 0 && m.count === 0);
       if (sb) {
-        sb.innerText = sc ? (sc + " ช่วงเวลา") : "ยังไม่เลือก";
-        sb.className = sc ? "mod-badge" : "mod-badge idle";
+        if (sc === 0)      { sb.innerText = "ยังไม่เลือก"; sb.className = "mod-badge idle"; }
+        else if (isEmpty)  { sb.innerText = "ต้องเติมยา"; sb.className = "mod-badge warn"; }
+        else               { sb.innerText = sc + " ช่วงเวลา"; sb.className = "mod-badge"; }
       }
+      if (item) item.classList.toggle('empty', isEmpty);
+      updateStats();
+      markDirty();
     }
 
     function upd(id){
@@ -1052,11 +1196,15 @@
       var origIco = ico.innerText;
       txt.innerText = "กำลังบันทึก…";
       ico.innerText = "⏳";
+      btn.disabled = true;
       btn.classList.remove('success','error');
 
       try {
         var p = {};
         p.scheduleEnabled = document.getElementById('master').checked ? 1 : 0;
+
+        var mp = clamp(document.getElementById('max-pills').value, 1, ABS_MAX_PILLS);
+        p.max_pills = mp;
 
         for (var t=0; t<TIME_KEYS.length; t++) {
           var el = document.getElementById(TIME_KEYS[t]);
@@ -1067,7 +1215,7 @@
           upd(modules[i].id);
           setQty(modules[i].id);
           p["med"+modules[i].id+"_name"]  = modules[i].name;
-          p["med"+modules[i].id+"_count"] = clamp(modules[i].count, 0, MAX_PILLS);
+          p["med"+modules[i].id+"_count"] = clamp(modules[i].count, 0, mp);
           p["med"+modules[i].id+"_slots"] = normalizeSlotsMask(modules[i].slots);
         }
 
@@ -1078,10 +1226,12 @@
         txt.innerText = "บันทึกแล้ว";
         ico.innerText = "✓";
         btn.classList.add('success');
+        clearDirty();
         setTimeout(function(){
           txt.innerText = origTxt;
           ico.innerText = origIco;
           btn.classList.remove('success');
+          btn.disabled = false;
         }, 2200);
       } catch (e) {
         txt.innerText = "ผิดพลาด";
@@ -1092,9 +1242,15 @@
           txt.innerText = origTxt;
           ico.innerText = origIco;
           btn.classList.remove('error');
+          btn.disabled = false;
         }, 3000);
       }
     }
+
+    // Prompt before closing if there are unsaved changes.
+    window.addEventListener('beforeunload', function(e){
+      if (dirty) { e.preventDefault(); e.returnValue = ""; }
+    });
 
     // --- RUN ---
     renderModules();

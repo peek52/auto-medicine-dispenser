@@ -20,6 +20,12 @@ typedef struct {
     bool enabled;
     char slot_time[7][6];
     netpie_med_t med[DISPENSER_MED_COUNT];
+    int  max_pills;     /* Per-module pill ceiling. Set via web/touch UI,
+                         * persisted to NVS through the shadow. Falls back
+                         * to compile-time DISPENSER_MAX_PILLS when shadow
+                         * hasn't loaded yet or the saved value is bogus
+                         * (<= 0 or > 999). Both the touch UI (+/- step)
+                         * and the MQTT count-update clamper read this. */
     bool loaded;
 } netpie_shadow_t;
 
@@ -33,6 +39,12 @@ void netpie_shadow_update_enabled(bool enabled);
 
 bool netpie_shadow_copy(netpie_shadow_t *out_shadow);
 const netpie_shadow_t *netpie_get_shadow(void);
+
+/* Effective per-module pill ceiling. Returns the shadow's max_pills
+ * field if loaded + sane (1..999), else falls back to the compile-time
+ * DISPENSER_MAX_PILLS. Safe to call from any task; reads a volatile
+ * scalar so no locking needed. */
+int dispenser_max_pills(void);
 bool netpie_is_connected(void);
 bool netpie_publish_shadow_json(const char *payload);
 

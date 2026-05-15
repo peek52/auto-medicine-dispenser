@@ -102,10 +102,22 @@ static void shadow_set_defaults_locked(void)
 
     memset(&s_shadow, 0, sizeof(s_shadow));
     s_shadow.enabled = true;
+    s_shadow.max_pills = DISPENSER_MAX_PILLS;    /* default ceiling */
     s_shadow.loaded = true;
     for (int i = 0; i < 7; i++) {
         strlcpy(s_shadow.slot_time[i], defaults[i], sizeof(s_shadow.slot_time[i]));
     }
+}
+
+int dispenser_max_pills(void)
+{
+    /* Shadow load happens early in boot; if a caller hits this before
+     * load_default_shadow runs or before the NVS cache is restored,
+     * s_shadow.max_pills could be 0 → fall back to the compile-time
+     * constant rather than clamping every count to 0. */
+    int v = s_shadow.max_pills;
+    if (v <= 0 || v > 999) return DISPENSER_MAX_PILLS;
+    return v;
 }
 
 static void shadow_cache_save_locked(void)
@@ -267,6 +279,16 @@ static void parse_shadow(const char *json)
         s_shadow.enabled = atoi(tmp) == 1 || strcmp(tmp, "true") == 0;
     }
 
+    /* Per-module pill ceiling from the web/touch UI. Clamp to 1..999 so
+     * a stale / corrupted shadow value doesn't lock the dispenser into
+     * 0 or wrap-around state. */
+    if (json_get_str(data, "max_pills", tmp, sizeof(tmp))) {
+        int mp = atoi(tmp);
+        if (mp < 1)   mp = DISPENSER_MAX_PILLS;
+        if (mp > 999) mp = 999;
+        s_shadow.max_pills = mp;
+    }
+
     for (int i = 0; i < 7; i++) {
         char buf[16];
         if (json_get_str(data, s_slot_keys[i], buf, sizeof(buf))) {
@@ -287,8 +309,9 @@ static void parse_shadow(const char *json)
         snprintf(key, sizeof(key), "med%d_count", id);
         if (json_get_str(data, key, val_buf, sizeof(val_buf))) {
             int cnt = atoi(val_buf);
-            if (cnt < 0) cnt = 0;
-            if (cnt > DISPENSER_MAX_PILLS) cnt = DISPENSER_MAX_PILLS;
+            int cap = dispenser_max_pills();
+            if (cnt < 0)   cnt = 0;
+            if (cnt > cap) cnt = cap;
             s_shadow.med[i].count = cnt;
         }
 
@@ -413,7 +436,8 @@ void netpie_shadow_update_count(int med_id, int new_count)
 {
     if (med_id < 1 || med_id > DISPENSER_MED_COUNT) return;
     if (new_count < 0) new_count = 0;
-    if (new_count > DISPENSER_MAX_PILLS) new_count = DISPENSER_MAX_PILLS;
+    int cap = dispenser_max_pills();
+    if (new_count > cap) new_count = cap;
 
     if (shadow_lock()) {
         s_shadow.med[med_id - 1].count = new_count;

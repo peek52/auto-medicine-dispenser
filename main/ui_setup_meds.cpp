@@ -1330,7 +1330,11 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
                     netpie_shadow_update_count(med_idx + 1, current_stock - 1);
                 }
             } else if (tx_n >= 382 && tx_n <= 432) { // [+] stock
-                int max_pills = DISPENSER_MAX_PILLS;
+                /* User-configurable ceiling — set via NETPIE web widget,
+                 * persisted to NVS through the shadow. Falls back to the
+                 * compile-time DISPENSER_MAX_PILLS when shadow hasn't
+                 * loaded or the saved value is invalid. */
+                int max_pills = dispenser_max_pills();
                 if (current_stock < max_pills) {
                     netpie_shadow_update_count(med_idx + 1, current_stock + 1);
                     /* User actually refilled — the "I'll refill" promise
