@@ -2029,28 +2029,48 @@ static void clear_all_task(void *arg)
     }
     s_clear_all_current = DISPENSER_MED_COUNT;  /* signals "done" */
 
-    /* Suppress scheduled-dose firing for the next 12 h on ALL slots.
+    /* Suppress the immediate post-clear "confirm to receive medicine"
+     * popup. User report 2026-05-15: "เปิดเครื่องมาแล้วกดล้างยาเสร็จ
+     * มีการแจ้งเตือนให้กดรับยาด้วย" — if boot-clear happens during an
+     * open grace window (e.g. clear at 08:12 with 08:00 dose, grace 15
+     * min), the scheduler would still fire the Confirm popup right
+     * after clear-all finished.
      *
-     * Without this, a user who reboots in the morning and runs the
-     * boot-clear at e.g. 09:15 immediately sees a scheduled Confirm
-     * popup for the 08:00 dose (its grace window is still open) — but
-     * the cartridges were just emptied, so there's no medication to
-     * dispense and the popup is just noise. User report 2026-05-15:
-     * "เปิดเครื่องมาแล้วกดล้างยาเสร็จมีการแจ้งเตือนให้กดรับยาด้วย".
+     * Narrow fix: only stamp slots whose current grace window is OPEN
+     * right now (slot_time ≤ now ≤ slot_time + grace). Slots whose grace
+     * already expired wouldn't fire anyway; slots in the future stay
+     * un-stamped so a user who refills after clearing still gets their
+     * later-today doses to dispense normally.
      *
-     * Stamping all 7 slots with "fired now" sets the 12-h refire guard
-     * (SLOT_REFIRE_GUARD_SEC) for each, so today's remaining doses are
-     * silently skipped. Tomorrow's same-time slots fire normally. Saves
-     * to NVS so a fast reboot right after clear doesn't lose the guard. */
+     * The 12-h refire guard (SLOT_REFIRE_GUARD_SEC) handles the rest:
+     * once a slot is stamped here, it can't refire until tomorrow.
+     * NVS-persisted so a fast reboot right after clear keeps the guard. */
     {
         time_t now_epoch = time(NULL);
-        for (int s = 0; s < 7; ++s) s_slot_last_fire[s] = now_epoch;
-        nvs_handle_t h;
-        if (nvs_open("dispenser", NVS_READWRITE, &h) == ESP_OK) {
-            nvs_set_blob(h, "slot_lastfire",
-                         s_slot_last_fire, sizeof(s_slot_last_fire));
-            nvs_commit(h);
-            nvs_close(h);
+        struct tm lt;
+        localtime_r(&now_epoch, &lt);
+        int now_min = lt.tm_hour * 60 + lt.tm_min;
+
+        const netpie_shadow_t *sh_now = netpie_get_shadow();
+        bool stamped_any = false;
+        for (int s = 0; s < 7; ++s) {
+            int sh_h, sh_m;
+            if (!sh_now || !parse_hhmm(sh_now->slot_time[s], &sh_h, &sh_m)) continue;
+            int slot_min = sh_h * 60 + sh_m;
+            int delta = now_min - slot_min;
+            if (delta >= 0 && delta <= SLOT_GRACE_MIN) {
+                s_slot_last_fire[s] = now_epoch;
+                stamped_any = true;
+            }
+        }
+        if (stamped_any) {
+            nvs_handle_t h;
+            if (nvs_open("dispenser", NVS_READWRITE, &h) == ESP_OK) {
+                nvs_set_blob(h, "slot_lastfire",
+                             s_slot_last_fire, sizeof(s_slot_last_fire));
+                nvs_commit(h);
+                nvs_close(h);
+            }
         }
     }
 
