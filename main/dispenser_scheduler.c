@@ -855,7 +855,13 @@ static void flush_pending_stock_audits(TickType_t now_ticks)
         taskEXIT_CRITICAL(&s_stock_audit_mux);
 
         if (should_send && from_count != to_count) {
-            send_stock_adjust_audit(i, from_count, to_count);
+            /* Stock-adjust Telegram suppressed 2026-05-15 (user spec
+             * "กดบันทึกอย่างเดียวก็พอ"). The audit ledger / count change
+             * still flows to the cloud via the normal shadow publish;
+             * the summary message fires once when the user hits Save on
+             * the meds-detail page. Refill-detection still runs so the
+             * low-stock-alert latch resets correctly. */
+            (void)send_stock_adjust_audit;   /* keep symbol for any future call */
             reset_low_stock_alert_if_restocked(i, to_count);
         }
     }

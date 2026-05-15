@@ -1083,40 +1083,70 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
             return;
         }
         if (in_right) {
-            /* SAVE — same path as the explicit Save button. Commit +
-             * photo + Telegram + leave. */
+            /* SAVE — diff the post-edit shadow against the on-entry
+             * backup, then send a single Telegram message summarising
+             * what actually changed during this edit session. User spec
+             * 2026-05-15: "กดบันทึกอย่างเดียวก็พอ ว่าทำอะไรไป". */
             const netpie_shadow_t *sh_check = netpie_get_shadow();
             netpie_publish_inhibit_pop();
             netpie_shadow_commit_med_diff(med_idx + 1, &s_med_backup);
             dfplayer_play_track(14);
             s_save_confirm_popup = false;
+
+            /* Take the snapshot needed for diff BEFORE clearing the flag. */
+            const netpie_med_t *now = &sh_check->med[med_idx];
+            const netpie_med_t *was = &s_med_backup;
+            bool name_changed  = strcmp(was->name, now->name) != 0;
+            bool count_changed = was->count != now->count;
+            bool slots_changed = was->slots != now->slots;
             s_med_snapshot_saved = false;
 
-            char med_name[64];
-            snprintf(med_name, sizeof(med_name), "%s", sh_check->med[med_idx].name);
             char time_str[16] = "--:--";
             ds3231_get_time_str(time_str, sizeof(time_str));
-            char slot_names[160];
-            dispenser_format_slots_to_names(sh_check->med[med_idx].slots,
-                                            slot_names, sizeof(slot_names));
-            char msg[512];
-            if (g_ui_language == UI_LANG_TH) {
-                snprintf(msg, sizeof(msg),
-                         "📋 บันทึกข้อมูลยา\nเวลา: %s\nโมดูล: %d (%s)\n"
-                         "จำนวนยา: %d เม็ด\nมื้อจ่าย: %s",
-                         time_str, med_idx + 1, med_name,
-                         sh_check->med[med_idx].count,
-                         slot_names);
-            } else {
-                snprintf(msg, sizeof(msg),
-                         "📋 Medication setup saved\nTime: %s\nModule: %d (%s)\n"
-                         "Count: %d pills\nSlots: %s",
-                         time_str, med_idx + 1, med_name,
-                         sh_check->med[med_idx].count,
-                         slot_names);
+            bool th = (g_ui_language == UI_LANG_TH);
+
+            /* Build the change list. If nothing actually changed (user
+             * pressed Save without edits), skip the Telegram entirely —
+             * spam-prevention. */
+            if (name_changed || count_changed || slots_changed) {
+                char old_slots[120] = "", new_slots[120] = "";
+                if (slots_changed) {
+                    dispenser_format_slots_to_names(was->slots, old_slots, sizeof(old_slots));
+                    dispenser_format_slots_to_names(now->slots, new_slots, sizeof(new_slots));
+                }
+
+                char msg[600];
+                int off = 0;
+                const char *disp_name = now->name[0] ? now->name :
+                                        (was->name[0] ? was->name : (th ? "ไม่มีชื่อ" : "Unnamed"));
+
+                off += snprintf(msg + off, sizeof(msg) - off,
+                    th ? "📋 บันทึกข้อมูลยา\nเวลา: %s\nโมดูล: %d (%s)\n"
+                       : "📋 Medication setup saved\nTime: %s\nModule: %d (%s)\n",
+                    time_str, med_idx + 1, disp_name);
+
+                if (name_changed) {
+                    const char *o = was->name[0] ? was->name : (th ? "(ว่าง)" : "(empty)");
+                    const char *n = now->name[0] ? now->name : (th ? "(ว่าง)" : "(empty)");
+                    off += snprintf(msg + off, sizeof(msg) - off,
+                        th ? "• ชื่อยา: %s → %s\n" : "• Name: %s → %s\n", o, n);
+                }
+                if (count_changed) {
+                    off += snprintf(msg + off, sizeof(msg) - off,
+                        th ? "• จำนวน: %d → %d เม็ด (%+d)\n"
+                           : "• Count: %d → %d pills (%+d)\n",
+                        was->count, now->count, now->count - was->count);
+                }
+                if (slots_changed) {
+                    const char *o = old_slots[0] ? old_slots : "-";
+                    const char *n = new_slots[0] ? new_slots : "-";
+                    off += snprintf(msg + off, sizeof(msg) - off,
+                        th ? "• มื้อจ่าย: %s → %s\n" : "• Slots: %s → %s\n", o, n);
+                }
+
+                extern void dispenser_telegram_photo_msg(const char *msg);
+                dispenser_telegram_photo_msg(msg);
             }
-            extern void dispenser_telegram_photo_msg(const char *msg);
-            dispenser_telegram_photo_msg(msg);
 
             pending_page = PAGE_SETUP_MEDS;
             force_redraw = true;
@@ -1234,43 +1264,68 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
             return;
         }
 
-        /* Validated OK — commit, log, photo, leave. */
+        /* Validated OK — commit + diff-summary Telegram + leave. */
         netpie_publish_inhibit_pop();
         netpie_shadow_commit_med_diff(med_idx + 1, &s_med_backup);
         dfplayer_play_track(14);
         s_validation_popup = false;
-        s_med_snapshot_saved = false; // Reset for next entry
         s_refill_pending = false;     // Save committed fulfills the promise
 
-        /* Camera + Telegram on Save (replaces the old +/-/idle photo
-         * trigger). Snapshot captures the user's final state — name,
-         * slot mask, count — so the caregiver sees what was set up. */
+        /* Diff-summary: compare current state against on-entry backup,
+         * report only what changed. User spec 2026-05-15
+         * "กดบันทึกอย่างเดียวก็พอ ว่าทำอะไรไป". Capture diff fields
+         * before clearing s_med_snapshot_saved. */
         {
-            char med_name[64];
-            snprintf(med_name, sizeof(med_name), "%s", sh_check->med[med_idx].name);
-            char time_str[16] = "--:--";
-            ds3231_get_time_str(time_str, sizeof(time_str));
-            char slot_names[160];
-            dispenser_format_slots_to_names(sh_check->med[med_idx].slots,
-                                            slot_names, sizeof(slot_names));
-            char msg[512];
-            if (g_ui_language == UI_LANG_TH) {
-                snprintf(msg, sizeof(msg),
-                         "📋 บันทึกข้อมูลยา\nเวลา: %s\nโมดูล: %d (%s)\n"
-                         "จำนวนยา: %d เม็ด\nมื้อจ่าย: %s",
-                         time_str, med_idx + 1, med_name,
-                         sh_check->med[med_idx].count,
-                         slot_names);
-            } else {
-                snprintf(msg, sizeof(msg),
-                         "📋 Medication setup saved\nTime: %s\nModule: %d (%s)\n"
-                         "Count: %d pills\nSlots: %s",
-                         time_str, med_idx + 1, med_name,
-                         sh_check->med[med_idx].count,
-                         slot_names);
+            const netpie_med_t *now = &sh_check->med[med_idx];
+            const netpie_med_t *was = &s_med_backup;
+            bool name_changed  = strcmp(was->name, now->name) != 0;
+            bool count_changed = was->count != now->count;
+            bool slots_changed = was->slots != now->slots;
+            s_med_snapshot_saved = false;
+
+            if (name_changed || count_changed || slots_changed) {
+                char time_str[16] = "--:--";
+                ds3231_get_time_str(time_str, sizeof(time_str));
+                bool th = (g_ui_language == UI_LANG_TH);
+
+                char old_slots[120] = "", new_slots[120] = "";
+                if (slots_changed) {
+                    dispenser_format_slots_to_names(was->slots, old_slots, sizeof(old_slots));
+                    dispenser_format_slots_to_names(now->slots, new_slots, sizeof(new_slots));
+                }
+
+                char msg[600];
+                int off = 0;
+                const char *disp_name = now->name[0] ? now->name :
+                                        (was->name[0] ? was->name : (th ? "ไม่มีชื่อ" : "Unnamed"));
+
+                off += snprintf(msg + off, sizeof(msg) - off,
+                    th ? "📋 บันทึกข้อมูลยา\nเวลา: %s\nโมดูล: %d (%s)\n"
+                       : "📋 Medication setup saved\nTime: %s\nModule: %d (%s)\n",
+                    time_str, med_idx + 1, disp_name);
+
+                if (name_changed) {
+                    const char *o = was->name[0] ? was->name : (th ? "(ว่าง)" : "(empty)");
+                    const char *n = now->name[0] ? now->name : (th ? "(ว่าง)" : "(empty)");
+                    off += snprintf(msg + off, sizeof(msg) - off,
+                        th ? "• ชื่อยา: %s → %s\n" : "• Name: %s → %s\n", o, n);
+                }
+                if (count_changed) {
+                    off += snprintf(msg + off, sizeof(msg) - off,
+                        th ? "• จำนวน: %d → %d เม็ด (%+d)\n"
+                           : "• Count: %d → %d pills (%+d)\n",
+                        was->count, now->count, now->count - was->count);
+                }
+                if (slots_changed) {
+                    const char *o = old_slots[0] ? old_slots : "-";
+                    const char *n = new_slots[0] ? new_slots : "-";
+                    off += snprintf(msg + off, sizeof(msg) - off,
+                        th ? "• มื้อจ่าย: %s → %s\n" : "• Slots: %s → %s\n", o, n);
+                }
+
+                extern void dispenser_telegram_photo_msg(const char *msg);
+                dispenser_telegram_photo_msg(msg);
             }
-            extern void dispenser_telegram_photo_msg(const char *msg);
-            dispenser_telegram_photo_msg(msg);
         }
 
         pending_page = PAGE_SETUP_MEDS;

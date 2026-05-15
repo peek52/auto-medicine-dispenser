@@ -2,187 +2,726 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#2563eb" />
+  <title>ตารางจ่ายยาวันนี้</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --bg-1: #f8fafc;
+      --bg-2: #eef2ff;
+      --surface: #ffffff;
+      --surface-alt: #f8fafc;
+      --surface-warm: #fefce8;
+      --surface-cool: #f0f9ff;
+
+      --ink: #0f172a;
+      --ink-2: #334155;
+      --muted: #64748b;
+      --muted-2: #94a3b8;
+
+      --line: #e2e8f0;
+      --line-2: #f1f5f9;
+
+      --pri: #2563eb;
+      --pri-soft: #dbeafe;
+      --pri-ink: #1e40af;
+
+      --ok: #16a34a;
+      --ok-soft: #dcfce7;
+      --warn: #d97706;
+      --warn-soft: #fef3c7;
+      --bad: #dc2626;
+      --bad-soft: #fee2e2;
+
+      --accent-morn-1: #f59e0b;
+      --accent-morn-2: #fb923c;
+      --accent-noon-1: #0ea5e9;
+      --accent-noon-2: #2563eb;
+      --accent-eve-1:  #8b5cf6;
+      --accent-eve-2:  #6366f1;
+      --accent-bed-1:  #0f766e;
+      --accent-bed-2:  #14b8a6;
+
+      --r-sm: 10px;
+      --r-md: 14px;
+      --r-lg: 20px;
+      --r-xl: 26px;
+
+      --shadow-1: 0 1px 2px rgba(15,23,42,.04), 0 1px 1px rgba(15,23,42,.03);
+      --shadow-2: 0 4px 12px rgba(15,23,42,.06), 0 2px 4px rgba(15,23,42,.04);
+      --shadow-3: 0 12px 28px rgba(15,23,42,.10), 0 4px 8px rgba(15,23,42,.05);
+      --shadow-pri: 0 14px 32px rgba(37,99,235,.28);
+
+      --max: 760px;
+      --ease: cubic-bezier(.4,0,.2,1);
+
+      --fs-xs: 12px;
+      --fs-sm: 13px;
+      --fs-base: 15px;
+      --fs-md: 16px;
+      --fs-lg: 18px;
+      --fs-xl: 22px;
+      --fs-2xl: 28px;
+      --fs-clock: 44px;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: "Segoe UI", Tahoma, sans-serif; color: #0b1220; padding: 12px; min-height: 100vh; background: linear-gradient(135deg, #f4f8ff, #e7f0ff); }
-    .wrap { max-width: 880px; margin: 0 auto; }
-    .card { background: #fff; border-radius: 20px; box-shadow: 0 12px 28px rgba(15,23,42,.1); overflow: hidden; }
-    .hd { padding: 14px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid rgba(11,18,32,.08); background: rgba(56,189,248,.08); position: relative; }
-    .hd:before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: linear-gradient(180deg, #1d4ed8, #38bdf8); }
-    .hdI { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; font-size: 20px; background: #fff; border: 1px solid rgba(11,18,32,.06); }
-    .hdT b { font-size: 17px; font-weight: 900; display: block; }
-    .hdT span { font-size: 12px; color: #5b6b82; font-weight: 700; }
-    .ct { padding: 14px; }
-    .hr { display: grid; grid-template-columns: 1.3fr .95fr; gap: 12px; margin-bottom: 12px; }
-    .hp { background: #f8fafc; border: 1px solid rgba(11,18,32,.06); border-radius: 16px; padding: 14px; }
-    .hp h3 { font-size: 12px; color: #5b6b82; font-weight: 900; margin-bottom: 6px; }
-    .bt { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 6px; }
-    .bt b { font-size: 50px; line-height: .9; font-weight: 900; letter-spacing: -2px; color: #1d4ed8; }
-    .bt span { font-size: 14px; font-weight: 900; color: #5b6b82; margin-bottom: 6px; }
-    .hp p { font-size: 12px; color: #5b6b82; font-weight: 700; line-height: 1.4; }
-    .sg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .sb { background: #fff; border: 1px solid rgba(11,18,32,.06); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 3px; min-height: 88px; }
-    .sb .l { font-size: 10px; font-weight: 900; color: #5b6b82; }
-    .sb .v { font-size: 32px; line-height: 1; font-weight: 900; }
-    .sb .s { font-size: 11px; color: #5b6b82; font-weight: 800; }
-    .mg { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
-    .mc { position: relative; background: #fff; border: 1px solid rgba(11,18,32,.08); border-radius: 16px; padding: 14px; overflow: hidden; }
-    .mc:before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--a, #1d4ed8); }
-    .mc.ok { --a: #10b981; }
-    .mc.wn { --a: #f59e0b; }
-    .mc.bd { --a: #ef4444; }
-    .mt { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
-    .mi { font-size: 11px; font-weight: 900; color: #0b4aa8; margin-bottom: 3px; }
-    .mn { font-size: 18px; font-weight: 900; word-break: break-word; }
-    .ms { padding: 6px 9px; border-radius: 999px; font-size: 10px; font-weight: 900; white-space: nowrap; background: #fff; color: #5b6b82; border: 1px solid rgba(11,18,32,.08); }
-    .ok .ms { color: #0f5132; background: #dcfce7; }
-    .wn .ms { color: #9a6700; background: #fef3c7; }
-    .bd .ms { color: #7f1d1d; background: #fee2e2; }
-    .sr { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 10px; background: #f8fafc; border: 1px solid rgba(11,18,32,.06); border-radius: 12px; }
-    .sl { font-size: 11px; font-weight: 900; color: #5b6b82; }
-    .sp { padding: 5px 11px; border-radius: 999px; font-size: 11px; font-weight: 900; display: inline-flex; align-items: center; gap: 5px; border: 1px solid transparent; }
-    .sp .d { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
-    .sp.has { color: #047857; background: #dcfce7; border-color: #bbf7d0; }
-    .sp.mid { color: #b45309; background: #fef3c7; border-color: #fde68a; }
-    .sp.em { color: #b91c1c; background: #fee2e2; border-color: #fecaca; }
-    .sp.na { color: #475569; background: #f1f5f9; border-color: #cbd5e1; }
-    .cr { display: flex; align-items: flex-end; gap: 6px; margin-bottom: 8px; }
-    .cn { font-size: 46px; line-height: .9; font-weight: 900; letter-spacing: -2px; }
-    .cm { font-size: 13px; font-weight: 900; color: #5b6b82; margin-bottom: 6px; }
-    .ok .cn { color: #10b981; }
-    .wn .cn { color: #f59e0b; }
-    .bd .cn { color: #ef4444; }
-    .pr { height: 9px; border-radius: 999px; background: #e2e8f0; overflow: hidden; margin-bottom: 10px; }
-    .pf { height: 100%; border-radius: 999px; background: #1d4ed8; }
-    .ok .pf { background: #10b981; }
-    .wn .pf { background: #f59e0b; }
-    .bd .pf { background: #ef4444; }
-    .ll { font-size: 10px; font-weight: 900; color: #5b6b82; margin-bottom: 6px; }
-    .sw { display: flex; flex-wrap: wrap; gap: 6px; }
-    .tg { padding: 6px 9px; border-radius: 999px; background: #dbeafe; border: 1px solid #bfdbfe; color: #24416a; font-size: 10px; font-weight: 900; }
-    .tg.no { background: transparent; border-color: #e2e8f0; color: #94a3b8; }
-    @media(max-width:760px) { .hr { grid-template-columns: 1fr; } .mg { grid-template-columns: 1fr; } }
-    @media(max-width:420px) { .sg { grid-template-columns: 1fr; } .bt b { font-size: 40px; } .cn { font-size: 38px; } }
+    html, body { height: 100%; }
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+    body {
+      font-family: 'IBM Plex Sans Thai', 'Inter', 'Segoe UI', sans-serif;
+      color: var(--ink);
+      padding: 24px 16px 32px;
+      min-height: 100vh;
+      font-size: var(--fs-base);
+      line-height: 1.5;
+      background:
+        radial-gradient(1200px 600px at 8% -8%, rgba(37,99,235,.10), transparent 55%),
+        radial-gradient(900px 480px at 95% 0%, rgba(14,165,233,.10), transparent 50%),
+        linear-gradient(180deg, var(--bg-1) 0%, var(--bg-2) 100%);
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      letter-spacing: 0;
+    }
+
+    .wrap { max-width: var(--max); margin: 0 auto; width: 100%; }
+
+    /* ===== Hero "วันนี้" header ===== */
+    .hero {
+      background: var(--surface);
+      border-radius: var(--r-xl);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-2);
+      padding: 22px 24px;
+      margin-bottom: 18px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 18px;
+      align-items: center;
+    }
+    .hero-ico {
+      width: 56px; height: 56px;
+      border-radius: 18px;
+      display: grid; place-items: center;
+      background: linear-gradient(135deg, var(--pri) 0%, #38bdf8 100%);
+      color: #fff;
+      font-size: 28px;
+      box-shadow: var(--shadow-pri);
+    }
+    .hero-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .hero-title {
+      font-size: var(--fs-xl);
+      font-weight: 800;
+      color: var(--ink);
+      letter-spacing: -.02em;
+      line-height: 1.1;
+    }
+    .hero-date {
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .hero-clock {
+      font-family: 'Inter', sans-serif;
+      font-size: var(--fs-clock);
+      font-weight: 800;
+      color: var(--pri-ink);
+      letter-spacing: -.04em;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .hero-clock-sub {
+      font-size: var(--fs-xs);
+      font-weight: 700;
+      color: var(--muted-2);
+      text-align: right;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-top: 4px;
+    }
+
+    /* ===== Stats strip ===== */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      padding: 13px 16px;
+      box-shadow: var(--shadow-1);
+    }
+    .stat .l {
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 4px;
+    }
+    .stat .v {
+      font-size: var(--fs-xl);
+      font-weight: 800;
+      color: var(--ink);
+      letter-spacing: -.02em;
+      line-height: 1;
+    }
+    .stat .v .u {
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      color: var(--muted);
+      margin-left: 4px;
+    }
+    .stat.ok  .v { color: var(--ok); }
+    .stat.warn .v { color: var(--warn); }
+    .stat.bad .v { color: var(--bad); }
+
+    /* ===== Schedule-off banner ===== */
+    .off-banner {
+      background: var(--warn-soft);
+      border: 1px solid #fde68a;
+      border-radius: var(--r-lg);
+      padding: 14px 18px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .off-banner-ico { font-size: 22px; }
+    .off-banner-text { font-size: var(--fs-sm); font-weight: 700; color: #92400e; }
+
+    /* ===== Dose list ===== */
+    .empty {
+      background: var(--surface);
+      border: 1px dashed var(--line);
+      border-radius: var(--r-xl);
+      padding: 60px 24px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .empty .ico { font-size: 48px; margin-bottom: 14px; }
+    .empty .ti { font-size: var(--fs-md); font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+    .empty .su { font-size: var(--fs-sm); color: var(--muted); }
+
+    .dose-list { display: flex; flex-direction: column; gap: 12px; }
+
+    .dose {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--r-xl);
+      padding: 18px 20px 18px 24px;
+      box-shadow: var(--shadow-2);
+      transition: transform .15s var(--ease), box-shadow .15s var(--ease), border-color .15s var(--ease);
+      overflow: hidden;
+    }
+    .dose:before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 6px;
+      background: var(--accent, linear-gradient(180deg, var(--pri) 0%, #38bdf8 100%));
+    }
+    .dose:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-3);
+    }
+
+    .dose.morning  { --accent: linear-gradient(180deg, var(--accent-morn-1) 0%, var(--accent-morn-2) 100%); }
+    .dose.noon     { --accent: linear-gradient(180deg, var(--accent-noon-1) 0%, var(--accent-noon-2) 100%); }
+    .dose.evening  { --accent: linear-gradient(180deg, var(--accent-eve-1)  0%, var(--accent-eve-2)  100%); }
+    .dose.bed      { --accent: linear-gradient(180deg, var(--accent-bed-1)  0%, var(--accent-bed-2)  100%); }
+
+    .dose.past {
+      opacity: .65;
+      background: var(--surface-alt);
+    }
+    .dose.now {
+      border-color: var(--pri);
+      box-shadow: 0 0 0 3px rgba(37,99,235,.16), var(--shadow-3);
+      background: var(--surface-cool);
+    }
+    .dose.now:before { width: 8px; }
+
+    .dose-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 18px;
+      align-items: center;
+    }
+
+    .dose-time-col { display: flex; flex-direction: column; min-width: 92px; }
+    .dose-time {
+      font-family: 'Inter', sans-serif;
+      font-size: var(--fs-2xl);
+      font-weight: 800;
+      color: var(--ink);
+      letter-spacing: -.03em;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .dose.past .dose-time { color: var(--muted); }
+    .dose.now .dose-time { color: var(--pri-ink); }
+
+    .dose-slot {
+      margin-top: 6px;
+      font-size: var(--fs-xs);
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .dose-slot .em { font-size: 14px; }
+
+    .dose-meds-col { min-width: 0; }
+    .dose-meds-label {
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      color: var(--muted-2);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 7px;
+    }
+    .dose-meds {
+      display: flex; flex-wrap: wrap; gap: 7px;
+    }
+    .med-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: var(--surface-alt);
+      border: 1px solid var(--line-2);
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      color: var(--ink-2);
+    }
+    .med-pill .dot {
+      width: 8px; height: 8px; border-radius: 999px;
+      background: var(--mc, var(--pri));
+    }
+    .dose.past .med-pill { opacity: .8; }
+
+    .dose-status-col { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+    .dose-badge {
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: var(--fs-xs);
+      font-weight: 800;
+      letter-spacing: .03em;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dose-badge.past { background: var(--surface-alt); color: var(--muted); border: 1px solid var(--line-2); }
+    .dose-badge.now {
+      background: var(--pri); color: #fff;
+      box-shadow: 0 6px 14px rgba(37,99,235,.36);
+    }
+    .dose-badge.now .pulse {
+      width: 8px; height: 8px; border-radius: 999px;
+      background: #fff;
+      animation: blink 1.4s ease-in-out infinite;
+    }
+    .dose-badge.upcoming { background: var(--pri-soft); color: var(--pri-ink); }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .3; }
+    }
+
+    .dose-tta {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    /* ===== Footer ===== */
+    .foot {
+      margin-top: 18px;
+      text-align: center;
+      font-size: var(--fs-xs);
+      color: var(--muted-2);
+      font-weight: 500;
+    }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 720px) {
+      :root {
+        --fs-xs: 13px;
+        --fs-sm: 14px;
+        --fs-base: 16px;
+        --fs-md: 17px;
+        --fs-lg: 19px;
+        --fs-xl: 23px;
+        --fs-2xl: 26px;
+        --fs-clock: 38px;
+      }
+      body { padding: 18px 14px 28px; }
+      .hero { grid-template-columns: auto 1fr; padding: 18px 18px; gap: 14px; }
+      .hero-clock { font-size: var(--fs-clock); grid-column: 1 / -1; text-align: center; }
+      .hero-clock-sub { text-align: center; }
+    }
+    @media (max-width: 540px) {
+      :root {
+        --fs-2xl: 28px;
+        --fs-clock: 36px;
+      }
+      .hero { padding: 16px; gap: 12px; }
+      .hero-ico { width: 50px; height: 50px; font-size: 24px; border-radius: 16px; }
+      .hero-title { font-size: 20px; }
+      .stats { grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+      .stat { padding: 11px 12px; }
+      .stat .v { font-size: 20px; }
+      .dose { padding: 16px 16px 16px 22px; }
+      .dose-row {
+        grid-template-columns: auto 1fr;
+        gap: 14px;
+      }
+      .dose-status-col {
+        grid-column: 1 / -1;
+        align-items: flex-start;
+        margin-top: 4px;
+        flex-direction: row;
+        justify-content: space-between;
+        width: 100%;
+      }
+      .dose-time { font-size: 26px; }
+      .med-pill { padding: 6px 11px; font-size: 13px; }
+    }
+    @media (max-width: 380px) {
+      .stats { grid-template-columns: 1fr 1fr; }
+      .stats .stat:nth-child(3) { grid-column: 1 / -1; }
+      .dose-time-col { min-width: 78px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0ms !important;
+        transition-duration: 0ms !important;
+      }
+    }
   </style>
 </head>
 
 <body>
   <div class="wrap">
-    <div class="card">
-      <div class="hd">
-        <div class="hdI">💊</div>
-        <div class="hdT">
-          <b>มอนิเตอร์สถานะตลับยา</b>
-          <span>ดูจำนวนยาคงเหลือพร้อมแจ้งเตือนยาใกล้หมด</span>
-        </div>
+    <!-- HERO -->
+    <div class="hero">
+      <div class="hero-ico">📅</div>
+      <div class="hero-meta">
+        <div class="hero-title">ตารางจ่ายยาวันนี้</div>
+        <div class="hero-date" id="hero-date">—</div>
       </div>
-      <div class="ct">
-        <div id="mc" class="mg"></div>
+      <div>
+        <div class="hero-clock" id="hero-clock">--:--</div>
+        <div class="hero-clock-sub">ตอนนี้</div>
       </div>
     </div>
+
+    <!-- STATS -->
+    <div class="stats">
+      <div class="stat">
+        <div class="l">มื้อทั้งหมด</div>
+        <div class="v" id="s-total">0<span class="u">มื้อ</span></div>
+      </div>
+      <div class="stat ok">
+        <div class="l">ผ่านแล้ว</div>
+        <div class="v" id="s-past">0<span class="u">มื้อ</span></div>
+      </div>
+      <div class="stat warn">
+        <div class="l">เหลืออีก</div>
+        <div class="v" id="s-left">0<span class="u">มื้อ</span></div>
+      </div>
+    </div>
+
+    <!-- DISABLED banner -->
+    <div class="off-banner" id="off-banner" style="display:none">
+      <div class="off-banner-ico">⏸️</div>
+      <div class="off-banner-text">
+        ระบบจ่ายยาอัตโนมัติถูกปิดอยู่ &middot; แม้ถึงเวลาก็จะไม่จ่ายยาให้
+      </div>
+    </div>
+
+    <!-- DOSE LIST -->
+    <div id="dose-container"></div>
+
+    <div class="foot">อัปเดตอัตโนมัติทุก 30 วินาที</div>
   </div>
 
+  <!-- ============================================================ -->
+  <!-- SCRIPT 1: Read shadow                                        -->
+  <!-- ============================================================ -->
   <script>
-    window._s = window._s || {};
-    window._s.m1n = "${#["esp32cam_dispenser"]["shadow"]["med1_name"]}";
-    window._s.m1c = "${#["esp32cam_dispenser"]["shadow"]["med1_count"]}";
-    window._s.m1s = "${#["esp32cam_dispenser"]["shadow"]["med1_slots"]}";
-    window._s.m1p = "${#["esp32cam_dispenser"]["shadow"]["med1_pills"]}";
+    window._sh = {};
+    window._sh.scheduleEnabled = "${#["esp32cam_dispenser"]["shadow"]["scheduleEnabled"]}";
+    window._sh.t_morn_pre  = "${#["esp32cam_dispenser"]["shadow"]["t_morn_pre"]}";
+    window._sh.t_morn_post = "${#["esp32cam_dispenser"]["shadow"]["t_morn_post"]}";
+    window._sh.t_noon_pre  = "${#["esp32cam_dispenser"]["shadow"]["t_noon_pre"]}";
+    window._sh.t_noon_post = "${#["esp32cam_dispenser"]["shadow"]["t_noon_post"]}";
+    window._sh.t_eve_pre   = "${#["esp32cam_dispenser"]["shadow"]["t_eve_pre"]}";
+    window._sh.t_eve_post  = "${#["esp32cam_dispenser"]["shadow"]["t_eve_post"]}";
+    window._sh.t_bed       = "${#["esp32cam_dispenser"]["shadow"]["t_bed"]}";
   </script>
   <script>
-    window._s = window._s || {};
-    window._s.m2n = "${#["esp32cam_dispenser"]["shadow"]["med2_name"]}";
-    window._s.m2c = "${#["esp32cam_dispenser"]["shadow"]["med2_count"]}";
-    window._s.m2s = "${#["esp32cam_dispenser"]["shadow"]["med2_slots"]}";
-    window._s.m2p = "${#["esp32cam_dispenser"]["shadow"]["med2_pills"]}";
+    window._sh = window._sh || {};
+    window._sh.med1_name  = "${#["esp32cam_dispenser"]["shadow"]["med1_name"]}";
+    window._sh.med1_count = "${#["esp32cam_dispenser"]["shadow"]["med1_count"]}";
+    window._sh.med1_slots = "${#["esp32cam_dispenser"]["shadow"]["med1_slots"]}";
   </script>
   <script>
-    window._s = window._s || {};
-    window._s.m3n = "${#["esp32cam_dispenser"]["shadow"]["med3_name"]}";
-    window._s.m3c = "${#["esp32cam_dispenser"]["shadow"]["med3_count"]}";
-    window._s.m3s = "${#["esp32cam_dispenser"]["shadow"]["med3_slots"]}";
-    window._s.m3p = "${#["esp32cam_dispenser"]["shadow"]["med3_pills"]}";
+    window._sh = window._sh || {};
+    window._sh.med2_name  = "${#["esp32cam_dispenser"]["shadow"]["med2_name"]}";
+    window._sh.med2_count = "${#["esp32cam_dispenser"]["shadow"]["med2_count"]}";
+    window._sh.med2_slots = "${#["esp32cam_dispenser"]["shadow"]["med2_slots"]}";
   </script>
   <script>
-    window._s = window._s || {};
-    window._s.m4n = "${#["esp32cam_dispenser"]["shadow"]["med4_name"]}";
-    window._s.m4c = "${#["esp32cam_dispenser"]["shadow"]["med4_count"]}";
-    window._s.m4s = "${#["esp32cam_dispenser"]["shadow"]["med4_slots"]}";
-    window._s.m4p = "${#["esp32cam_dispenser"]["shadow"]["med4_pills"]}";
+    window._sh = window._sh || {};
+    window._sh.med3_name  = "${#["esp32cam_dispenser"]["shadow"]["med3_name"]}";
+    window._sh.med3_count = "${#["esp32cam_dispenser"]["shadow"]["med3_count"]}";
+    window._sh.med3_slots = "${#["esp32cam_dispenser"]["shadow"]["med3_slots"]}";
   </script>
   <script>
-    window._s = window._s || {};
-    window._s.m5n = "${#["esp32cam_dispenser"]["shadow"]["med5_name"]}";
-    window._s.m5c = "${#["esp32cam_dispenser"]["shadow"]["med5_count"]}";
-    window._s.m5s = "${#["esp32cam_dispenser"]["shadow"]["med5_slots"]}";
-    window._s.m5p = "${#["esp32cam_dispenser"]["shadow"]["med5_pills"]}";
+    window._sh = window._sh || {};
+    window._sh.med4_name  = "${#["esp32cam_dispenser"]["shadow"]["med4_name"]}";
+    window._sh.med4_count = "${#["esp32cam_dispenser"]["shadow"]["med4_count"]}";
+    window._sh.med4_slots = "${#["esp32cam_dispenser"]["shadow"]["med4_slots"]}";
   </script>
   <script>
-    window._s = window._s || {};
-    window._s.m6n = "${#["esp32cam_dispenser"]["shadow"]["med6_name"]}";
-    window._s.m6c = "${#["esp32cam_dispenser"]["shadow"]["med6_count"]}";
-    window._s.m6s = "${#["esp32cam_dispenser"]["shadow"]["med6_slots"]}";
-    window._s.m6p = "${#["esp32cam_dispenser"]["shadow"]["med6_pills"]}";
+    window._sh = window._sh || {};
+    window._sh.med5_name  = "${#["esp32cam_dispenser"]["shadow"]["med5_name"]}";
+    window._sh.med5_count = "${#["esp32cam_dispenser"]["shadow"]["med5_count"]}";
+    window._sh.med5_slots = "${#["esp32cam_dispenser"]["shadow"]["med5_slots"]}";
+  </script>
+  <script>
+    window._sh = window._sh || {};
+    window._sh.med6_name  = "${#["esp32cam_dispenser"]["shadow"]["med6_name"]}";
+    window._sh.med6_count = "${#["esp32cam_dispenser"]["shadow"]["med6_count"]}";
+    window._sh.med6_slots = "${#["esp32cam_dispenser"]["shadow"]["med6_slots"]}";
   </script>
 
+  <!-- ============================================================ -->
+  <!-- SCRIPT 2: Render today's schedule                            -->
+  <!-- ============================================================ -->
   <script>
-    var SL = ["เช้า-ก่อน","เช้า-หลัง","เที่ยง-ก่อน","เที่ยง-หลัง","เย็น-ก่อน","เย็น-หลัง","ก่อนนอน"];
-    var LO = 3, MX = 16;
-    var sh = window._s || {};
+    var SLOT_DEFS = [
+      { idx: 0, key: 't_morn_pre',  label: 'มื้อเช้า · ก่อนอาหาร',    ico: '🌅', meal: 'morning' },
+      { idx: 1, key: 't_morn_post', label: 'มื้อเช้า · หลังอาหาร',    ico: '🌅', meal: 'morning' },
+      { idx: 2, key: 't_noon_pre',  label: 'มื้อกลางวัน · ก่อนอาหาร', ico: '☀️', meal: 'noon' },
+      { idx: 3, key: 't_noon_post', label: 'มื้อกลางวัน · หลังอาหาร', ico: '☀️', meal: 'noon' },
+      { idx: 4, key: 't_eve_pre',   label: 'มื้อเย็น · ก่อนอาหาร',    ico: '🌆', meal: 'evening' },
+      { idx: 5, key: 't_eve_post',  label: 'มื้อเย็น · หลังอาหาร',    ico: '🌆', meal: 'evening' },
+      { idx: 6, key: 't_bed',       label: 'ก่อนนอน',                 ico: '🌙', meal: 'bed' }
+    ];
 
-    function R(v) {
-      if (v == null) return "";
+    /* "Now" window: ±15 minutes around the slot time = currently due. */
+    var NOW_WINDOW_MIN = 15;
+    /* After this many minutes past, the dose drops to "past". */
+    var PAST_GRACE_MIN = 60;
+
+    /* Per-module colors so the same med looks consistent across widgets. */
+    var MED_COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#0ea5e9'];
+
+    function safeStr(v) {
+      if (v == null) return '';
       v = String(v);
-      if (v === "null" || v === "undefined") return "";
+      if (v === 'null' || v === 'undefined') return '';
       return v;
     }
-    function I(v) { var n = parseInt(R(v), 10); return isNaN(n) ? 0 : n; }
-    function CL(v, a, b) { var n = I(v); return Math.max(a, Math.min(b, n)); }
-    function MI(v) { var s = R(v); if (s === "") return null; var n = parseInt(s, 10); return (isNaN(n) || n < 0) ? null : n; }
-    function E(s) { return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
-    function ST(c) { if (c <= 0) return { k: "bd", l: "ยาหมด" }; if (c <= LO) return { k: "wn", l: "ใกล้หมด" }; return { k: "ok", l: "พร้อมจ่าย" }; }
-    /* 3-tier sensor status from VL53 pill count:
-       0      → ยาหมด (red)
-       1-7    → ปานกลาง (yellow)
-       8-15   → มียา (green)
-       null   → ไม่พบเซ็นเซอร์ (gray) */
-    function SP(s) {
-      if (s === "has") return { c: "has", l: "มียา" };
-      if (s === "mid") return { c: "mid", l: "ปานกลาง" };
-      if (s === "em")  return { c: "em",  l: "ยาหมด" };
-      return                  { c: "na",  l: "ไม่พบเซ็นเซอร์" };
+    function safeInt(v) { var n = parseInt(safeStr(v), 10); return isNaN(n) ? 0 : n; }
+    function escapeHtml(v) {
+      return safeStr(v)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
-    function pillsToTier(vp) {
-      if (vp === null) return "na";
-      if (vp === 0)    return "em";
-      if (vp <= 7)     return "mid";
-      return                "has";
+    function pad2(n) { return (n < 10 ? '0' : '') + n; }
+    function parseHHMM(s) {
+      s = safeStr(s);
+      if (!s || s.indexOf(':') === -1) return null;
+      var p = s.split(':');
+      var h = parseInt(p[0], 10), m = parseInt(p[1], 10);
+      if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
+      return h * 60 + m;
     }
 
-    var H = "", T = 0, Re = 0, L = 0;
-    for (var i = 1; i <= 6; i++) {
-      var nm = R(sh["m" + i + "n"]);
-      var cn = CL(sh["m" + i + "c"], 0, MX);
-      var sl = I(sh["m" + i + "s"]);
-      var vp = MI(sh["m" + i + "p"]);
-      var ss = pillsToTier(vp);
-      var st = ST(cn), sp = SP(ss);
-      var pc = Math.min(100, Math.round(cn / MX * 100));
-      T += cn;
-      if (cn > 0) Re++;
-      if (cn > 0 && cn <= LO) L++;
-      H += '<div class="mc ' + st.k + '">';
-      H += '<div class="mt"><div><div class="mi">ตลับที่ ' + i + '</div><div class="mn">' + (E(nm) || "— ยังไม่ได้ตั้งชื่อยา —") + '</div></div><div class="ms">' + st.l + '</div></div>';
-      H += '<div class="cr"><div class="cn">' + cn + '</div><div class="cm">/ ' + MX + ' เม็ด</div></div>';
-      H += '<div class="pr"><div class="pf" style="width:' + pc + '%"></div></div>';
-      H += '<div class="ll">รอบที่ต้องจ่ายยา</div><div class="sw">';
-      var hs = false;
-      for (var j = 0; j < 7; j++) if (sl & (1 << j)) { H += '<div class="tg">' + SL[j] + '</div>'; hs = true; }
-      if (!hs) H += '<div class="tg no">ไม่มีรอบจ่าย</div>';
-      H += '</div></div>';
+    var TH_DAYS   = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+    var TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    function thaiDate(d) {
+      return 'วัน' + TH_DAYS[d.getDay()] + ' ที่ ' + d.getDate() + ' ' + TH_MONTHS[d.getMonth()] + ' ' + (d.getFullYear() + 543);
     }
-    document.getElementById("mc").innerHTML = H;
+
+    function tickClock() {
+      var now = new Date();
+      var hc = document.getElementById('hero-clock');
+      var hd = document.getElementById('hero-date');
+      if (hc) hc.textContent = pad2(now.getHours()) + ':' + pad2(now.getMinutes());
+      if (hd) hd.textContent = thaiDate(now);
+    }
+
+    function getMeds() {
+      var sh = window._sh || {};
+      var out = [];
+      for (var i = 1; i <= 6; i++) {
+        out.push({
+          id: i,
+          name:  safeStr(sh['med' + i + '_name']),
+          count: safeInt(sh['med' + i + '_count']),
+          slots: safeInt(sh['med' + i + '_slots']) & 0x7F,
+          color: MED_COLORS[i - 1]
+        });
+      }
+      return out;
+    }
+
+    function medsForSlot(meds, slotIdx) {
+      var bit = 1 << slotIdx;
+      var hit = [];
+      for (var i = 0; i < meds.length; i++) {
+        if (meds[i].slots & bit) hit.push(meds[i]);
+      }
+      return hit;
+    }
+
+    function formatTTA(slotMin, nowMin) {
+      var diff = slotMin - nowMin;
+      if (diff < 0) {
+        var ago = -diff;
+        if (ago < 60) return 'ผ่านมา ' + ago + ' นาที';
+        return 'ผ่านมา ' + Math.floor(ago / 60) + ' ชม. ' + (ago % 60) + ' นาที';
+      }
+      if (diff === 0) return 'ถึงเวลาตอนนี้';
+      if (diff < 60) return 'อีก ' + diff + ' นาที';
+      return 'อีก ' + Math.floor(diff / 60) + ' ชม. ' + (diff % 60) + ' นาที';
+    }
+
+    function render() {
+      var sh = window._sh || {};
+      var enabled = safeInt(sh.scheduleEnabled) === 1;
+
+      var off = document.getElementById('off-banner');
+      if (off) off.style.display = enabled ? 'none' : 'flex';
+
+      var meds = getMeds();
+      var now = new Date();
+      var nowMin = now.getHours() * 60 + now.getMinutes();
+
+      /* Build doses: keep only slots that have BOTH a valid time AND at
+       * least one med assigned. A slot with a time but no meds isn't a
+       * dose, and a slot with meds but no time can't be scheduled. */
+      var doses = [];
+      for (var s = 0; s < SLOT_DEFS.length; s++) {
+        var def = SLOT_DEFS[s];
+        var t = parseHHMM(sh[def.key]);
+        if (t == null) continue;
+        var sm = medsForSlot(meds, def.idx);
+        if (sm.length === 0) continue;
+        doses.push({ def: def, time: t, meds: sm });
+      }
+      doses.sort(function(a, b) { return a.time - b.time; });
+
+      var past = 0, left = 0;
+      for (var i = 0; i < doses.length; i++) {
+        if (doses[i].time + PAST_GRACE_MIN <= nowMin) past++;
+        else left++;
+      }
+
+      document.getElementById('s-total').innerHTML = doses.length + '<span class="u">มื้อ</span>';
+      document.getElementById('s-past').innerHTML  = past + '<span class="u">มื้อ</span>';
+      document.getElementById('s-left').innerHTML  = left + '<span class="u">มื้อ</span>';
+
+      var cont = document.getElementById('dose-container');
+      if (!cont) return;
+
+      if (doses.length === 0) {
+        cont.innerHTML =
+          '<div class="empty">' +
+          '<div class="ico">📭</div>' +
+          '<div class="ti">ยังไม่มีตารางจ่ายยา</div>' +
+          '<div class="su">เพิ่มยาและเลือกช่วงเวลาที่หน้าตั้งค่า NETPIE</div>' +
+          '</div>';
+        return;
+      }
+
+      var html = '<div class="dose-list">';
+      for (var k = 0; k < doses.length; k++) {
+        var d = doses[k];
+        var t = d.time;
+        var hh = Math.floor(t / 60), mm = t % 60;
+
+        /* Status: past / now (within ±15 min) / upcoming / recently passed. */
+        var cls = '', badge = '', badgeText = '';
+        var diff = t - nowMin;
+        if (diff < -PAST_GRACE_MIN) {
+          cls = 'past';
+          badge = 'past';
+          badgeText = 'ผ่านแล้ว';
+        } else if (Math.abs(diff) <= NOW_WINDOW_MIN) {
+          cls = 'now';
+          badge = 'now';
+          badgeText = '<span class="pulse"></span>ถึงเวลา';
+        } else if (diff > 0) {
+          badge = 'upcoming';
+          badgeText = 'รอ';
+        } else {
+          badge = 'past';
+          badgeText = 'เลยเวลา';
+        }
+
+        html += '<div class="dose ' + d.def.meal + ' ' + cls + '">';
+        html += '  <div class="dose-row">';
+
+        /* Time + slot */
+        html += '    <div class="dose-time-col">';
+        html += '      <div class="dose-time">' + pad2(hh) + ':' + pad2(mm) + '</div>';
+        html += '      <div class="dose-slot"><span class="em">' + d.def.ico + '</span>' + d.def.label + '</div>';
+        html += '    </div>';
+
+        /* Med pills */
+        html += '    <div class="dose-meds-col">';
+        html += '      <div class="dose-meds-label">ยาที่ต้องรับ (' + d.meds.length + ' ตัว)</div>';
+        html += '      <div class="dose-meds">';
+        for (var mi = 0; mi < d.meds.length; mi++) {
+          var med = d.meds[mi];
+          var nm = med.name || ('โมดูล ' + med.id);
+          /* Just the name — count / empty state intentionally NOT shown
+           * (user 2026-05-15: "ลบออกให้หมด"). Today-schedule widget is
+           * for WHAT to take WHEN. Remaining-stock view belongs on the
+           * dashboard widget. */
+          html += '<div class="med-pill" style="--mc:' + med.color + '">';
+          html += '<span class="dot"></span>';
+          html += escapeHtml(nm);
+          html += '</div>';
+        }
+        html += '      </div>';
+        html += '    </div>';
+
+        /* Status badge + time-to-arrive */
+        html += '    <div class="dose-status-col">';
+        html += '      <div class="dose-badge ' + badge + '">' + badgeText + '</div>';
+        html += '      <div class="dose-tta">' + formatTTA(t, nowMin) + '</div>';
+        html += '    </div>';
+
+        html += '  </div>';
+        html += '</div>';
+      }
+      html += '</div>';
+      cont.innerHTML = html;
+    }
+
+    /* Hero clock ticks every second; the heavy dose re-render runs every
+     * 30 s — dose statuses only change on minute boundaries so re-running
+     * sooner wastes work. */
+    tickClock();
+    render();
+    setInterval(tickClock, 1000);
+    setInterval(render, 30000);
   </script>
 </body>
 </html>
