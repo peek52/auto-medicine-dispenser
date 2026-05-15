@@ -3,6 +3,7 @@
 #include "web_handlers_tech.h"
 #include "web_handlers_status.h"
 #include "dispenser_scheduler.h"
+#include "netpie_mqtt.h"
 #include "config.h"
 
 #include "esp_http_server.h"
@@ -243,6 +244,19 @@ static const char TECH_PAGE[] =
 "<span id='qh-state' class='state-line' style='margin-top:0'></span>"
 "</div>"
 "</div>"
+
+"<div class='section'>"
+"<h3>จำนวนยาสูงสุดต่อโมดูล</h3>"
+"<p class='sub'>ตั้งเพดานจำนวนเม็ดยาที่ใส่ได้ต่อโมดูล &middot; ใช้ทั้งบนจอสัมผัสและ NETPIE widget &middot; ค่าเริ่มต้น 16 เม็ด &middot; ค่าที่ตั้งจะถูกบันทึกใน NVS และซิงก์ผ่าน NETPIE shadow</p>"
+"<div class='row' style='align-items:flex-end;gap:14px'>"
+"<div style='flex:0 1 180px'>"
+"<label class='lbl'>เม็ดสูงสุด (1–999)</label>"
+"<input id='mp-input' type='number' min='1' max='999' value='16' inputmode='numeric'>"
+"</div>"
+"<button class='btn primary' id='mp-save'>💾 บันทึก</button>"
+"<span id='mp-state' class='state-line' style='margin-top:0'></span>"
+"</div>"
+"</div>"
 "</div>"
 
 "<script>"
@@ -364,6 +378,28 @@ static const char TECH_PAGE[] =
 "    document.getElementById('qh-start').value='00:00';document.getElementById('qh-end').value='00:00';loadQuiet();}"
 "  catch(err){st.textContent='ขัดข้อง';st.style.color='#ff8a80';}});"
 "loadQuiet();"
+
+/* Max-pills setting — global ceiling, persisted to NVS via shadow.
+ * Status comes back through /status.json so the same poll keeps both
+ * quiet-hours and max-pills fresh. */
+"async function loadMaxPills(){"
+"  try{const r=await fetch('/status.json',{cache:'no-store'});const j=await r.json();"
+"  const v=j&&j.max_pills?parseInt(j.max_pills,10):16;"
+"  const el=document.getElementById('mp-input');if(el)el.value=v;"
+"  const st=document.getElementById('mp-state');"
+"  if(st){st.textContent='ค่าปัจจุบัน: '+v+' เม็ด';st.style.color='var(--text-dim)';}"
+"  }catch(e){}}"
+"document.getElementById('mp-save').addEventListener('click',async()=>{"
+"  const v=parseInt(document.getElementById('mp-input').value,10);"
+"  if(!v||v<1||v>999){alert('กรุณาใส่ค่า 1–999');return;}"
+"  const st=document.getElementById('mp-state');st.textContent='กำลังบันทึก…';st.style.color='var(--accent)';"
+"  try{const r=await fetch('/tech/maxpills',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'max_pills='+v});"
+"    const j=await r.json();"
+"    if(j&&j.ok){st.textContent='บันทึกแล้ว (ค่า '+v+' เม็ด)';st.style.color='var(--ok)';loadMaxPills();}"
+"    else{st.textContent='ผิดพลาด: '+(j&&j.error||'unknown');st.style.color='#ff8a80';}"
+"  }catch(e){st.textContent='ขัดข้อง — ลองใหม่';st.style.color='#ff8a80';}"
+"});"
+"loadMaxPills();"
 
 
 /* Audit history panel */
@@ -645,6 +681,44 @@ esp_err_t tech_quiet_handler(httpd_req_t *req)
 
     char out[80];
     snprintf(out, sizeof(out), "{\"ok\":true,\"start_min\":%d,\"end_min\":%d}", s, e);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+}
+
+/* POST /tech/maxpills?max_pills=N
+ * Global per-module pill ceiling. Updates the NETPIE shadow's max_pills
+ * field which firmware reads via dispenser_max_pills(); the touch UI
+ * and MQTT count clamps both pick it up immediately. NETPIE publishes
+ * back out so the widget reflects the new ceiling. NVS persistence is
+ * handled by the shadow-cache layer. */
+esp_err_t tech_maxpills_handler(httpd_req_t *req)
+{
+    esp_err_t auth = web_require_tech_api_auth(req);
+    if (auth != ESP_OK) return auth;
+
+    char body[80] = {0};
+    int len = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (len < 0) return ESP_FAIL;
+    body[len] = '\0';
+
+    const char *p = strstr(body, "max_pills=");
+    int v = p ? atoi(p + 10) : 0;
+    if (v < 1 || v > 999) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req,
+            "{\"ok\":false,\"error\":\"value must be 1..999\"}",
+            HTTPD_RESP_USE_STRLEN);
+    }
+
+    /* Local update + MQTT publish in one call — sets s_shadow.max_pills
+     * immediately so dispenser_max_pills() returns the new value on the
+     * very next call without waiting for the MQTT round-trip echo. */
+    netpie_shadow_update_max_pills(v);
+
+    char out[80];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"max_pills\":%d}", v);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
     return httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);

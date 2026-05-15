@@ -536,6 +536,18 @@ void netpie_shadow_update_enabled(bool enabled)
     publish_shadow_payload(build_shadow_payload_int("scheduleEnabled", enabled ? 1 : 0));
 }
 
+void netpie_shadow_update_max_pills(int new_max)
+{
+    if (new_max < 1)   new_max = 1;
+    if (new_max > 999) new_max = 999;
+    if (shadow_lock()) {
+        s_shadow.max_pills = new_max;
+        shadow_cache_save_locked();
+        shadow_unlock();
+    }
+    publish_shadow_payload(build_shadow_payload_int("max_pills", new_max));
+}
+
 bool netpie_shadow_copy(netpie_shadow_t *out_shadow)
 {
     if (!out_shadow) return false;

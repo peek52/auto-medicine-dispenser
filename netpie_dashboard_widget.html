@@ -154,7 +154,7 @@
     /* ===== Summary bar (above cards) ===== */
     .quick-stats {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(2, 1fr);
       gap: 10px;
       margin-bottom: 16px;
     }
@@ -585,7 +585,7 @@
         --fs-2xl: 26px;
       }
       body { padding: 18px 14px 132px; }
-      .quick-stats { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .quick-stats { grid-template-columns: repeat(2, 1fr); gap: 8px; }
       .stat { padding: 12px 14px; }
       .schedule-summary { grid-template-columns: 1fr; }
       .module-summary { grid-template-columns: 1fr; }
@@ -623,8 +623,6 @@
     @media (max-width: 380px) {
       .mod-controls { flex-direction: column; align-items: stretch; gap: 12px; }
       .mod-badge { align-self: flex-start; }
-      .quick-stats { grid-template-columns: 1fr 1fr; }
-      .quick-stats .stat:nth-child(3) { grid-column: 1 / -1; }
     }
 
     /* Reduce-motion respect */
@@ -662,10 +660,6 @@
         <div class="stat-label">ยาคงเหลือรวม</div>
         <div class="stat-value" id="stat-total">0<span class="unit">เม็ด</span></div>
       </div>
-      <div class="stat" id="stat-empty-wrap">
-        <div class="stat-label">โมดูลที่ต้องเติม</div>
-        <div class="stat-value" id="stat-empty">0<span class="unit">ช่อง</span></div>
-      </div>
     </div>
 
     <!-- CARD 1: SCHEDULE CONTROL -->
@@ -700,23 +694,6 @@
           <div class="summary-chip">
             <b>โหมดจ่ายยา</b>
             <span>ก่อน / หลังอาหาร / ก่อนนอน</span>
-          </div>
-          <div class="summary-chip">
-            <b>การบันทึก</b>
-            <span>NETPIE Shadow Sync</span>
-          </div>
-        </div>
-
-        <!-- NEW: configurable max-pills limit -->
-        <div class="limits-row">
-          <div class="limits-copy">
-            <b>จำนวนยาสูงสุดต่อโมดูล</b>
-            <span>เครื่องและหน้าเว็บจะไม่ให้เกินค่านี้</span>
-          </div>
-          <div class="limits-input-wrap">
-            <button class="qty-btn" onclick="stepMax(-1)" aria-label="ลดค่าสูงสุด">−</button>
-            <input type="number" id="max-pills" inputmode="numeric" min="1" max="999" value="16" oninput="onMaxPillsInput()">
-            <button class="qty-btn" onclick="stepMax(1)" aria-label="เพิ่มค่าสูงสุด">+</button>
           </div>
         </div>
       </div>
@@ -982,60 +959,29 @@
     }
 
     function updateStats(){
-      var active = 0, total = 0, empty = 0;
+      var active = 0, total = 0;
       for (var i = 0; i < modules.length; i++) {
         var m = modules[i];
         if (m.slots) active++;
         total += m.count;
-        if (m.slots && m.count === 0) empty++;
       }
       document.getElementById('stat-active').innerHTML = active + '<span class="unit">/6</span>';
       document.getElementById('stat-total').innerHTML  = total + '<span class="unit">เม็ด</span>';
-      document.getElementById('stat-empty').innerHTML  = empty + '<span class="unit">ช่อง</span>';
 
-      var emptyWrap = document.getElementById('stat-empty-wrap');
       var totalWrap = document.getElementById('stat-total-wrap');
-      emptyWrap.classList.toggle('warn', empty > 0);
-      totalWrap.classList.toggle('ok', total > 0);
-    }
-
-    function onMaxPillsInput(){
-      var el = document.getElementById('max-pills');
-      if (!el) return;
-      var v = clamp(el.value, 1, ABS_MAX_PILLS);
-      MAX_PILLS = v;
-      // Clamp existing module counts down if new max is lower.
-      for (var i = 0; i < modules.length; i++) {
-        if (modules[i].count > MAX_PILLS) {
-          modules[i].count = MAX_PILLS;
-          var q = document.getElementById('q-'+modules[i].id);
-          if (q) q.value = MAX_PILLS;
-        }
-      }
-      // Update +/− max attribute on every qty input.
-      var ins = document.querySelectorAll('.qty-input');
-      for (var k = 0; k < ins.length; k++) ins[k].max = MAX_PILLS;
-      updateStats();
-      markDirty();
-    }
-
-    function stepMax(d){
-      var el = document.getElementById('max-pills');
-      if (!el) return;
-      var v = clamp((parseInt(el.value, 10) || 0) + d, 1, ABS_MAX_PILLS);
-      el.value = v;
-      onMaxPillsInput();
+      if (totalWrap) totalWrap.classList.toggle('ok', total > 0);
     }
 
     function initFromShadow(){
       var sh = window._sh || {};
       document.getElementById('master').checked = (safeInt(sh.scheduleEnabled)==1);
 
+      // max_pills is set on the device's /tech web page, not here — but
+      // we still READ it from the shadow so the widget's +/- stepper
+      // respects the configured ceiling.
       var mp = safeInt(sh.max_pills);
       if (mp < 1 || mp > ABS_MAX_PILLS) mp = DEFAULT_MAX_PILLS;
       MAX_PILLS = mp;
-      var mpEl = document.getElementById('max-pills');
-      if (mpEl) mpEl.value = mp;
 
       var d = {
         t_morn_pre:"08:00", t_morn_post:"08:30",
@@ -1203,9 +1149,6 @@
         var p = {};
         p.scheduleEnabled = document.getElementById('master').checked ? 1 : 0;
 
-        var mp = clamp(document.getElementById('max-pills').value, 1, ABS_MAX_PILLS);
-        p.max_pills = mp;
-
         for (var t=0; t<TIME_KEYS.length; t++) {
           var el = document.getElementById(TIME_KEYS[t]);
           if (el && el.value) p[TIME_KEYS[t]] = el.value;
@@ -1215,7 +1158,7 @@
           upd(modules[i].id);
           setQty(modules[i].id);
           p["med"+modules[i].id+"_name"]  = modules[i].name;
-          p["med"+modules[i].id+"_count"] = clamp(modules[i].count, 0, mp);
+          p["med"+modules[i].id+"_count"] = clamp(modules[i].count, 0, MAX_PILLS);
           p["med"+modules[i].id+"_slots"] = normalizeSlotsMask(modules[i].slots);
         }
 

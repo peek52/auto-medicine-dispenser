@@ -95,6 +95,7 @@ httpd_handle_t start_webserver(void) {
         { "/tech/reboot",     HTTP_POST, tech_reboot_handler,    NULL },
         { "/tech/estop",      HTTP_POST, tech_estop_handler,     NULL },
         { "/tech/quiet",      HTTP_POST, tech_quiet_handler,     NULL },
+        { "/tech/maxpills",   HTTP_POST, tech_maxpills_handler,  NULL },
         { "/api/factory-reset", HTTP_POST, factory_reset_handler,  NULL },
     };
 

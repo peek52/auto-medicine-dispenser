@@ -45,6 +45,12 @@ const netpie_shadow_t *netpie_get_shadow(void);
  * DISPENSER_MAX_PILLS. Safe to call from any task; reads a volatile
  * scalar so no locking needed. */
 int dispenser_max_pills(void);
+
+/* Set max_pills locally + publish to NETPIE so the cloud and any other
+ * subscribers pick up the change. Clamped to 1..999. Used by the /tech
+ * web page so the new ceiling is effective immediately without waiting
+ * for the MQTT round-trip. */
+void netpie_shadow_update_max_pills(int new_max);
 bool netpie_is_connected(void);
 bool netpie_publish_shadow_json(const char *payload);
 

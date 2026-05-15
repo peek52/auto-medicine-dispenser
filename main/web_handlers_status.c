@@ -609,6 +609,10 @@ esp_err_t status_json_handler(httpd_req_t *req) {
     dispenser_get_quiet_hours(&qh_s, &qh_e);
     cJSON_AddNumberToObject(root, "quiet_start_min", (double)qh_s);
     cJSON_AddNumberToObject(root, "quiet_end_min",   (double)qh_e);
+    /* Global per-module pill ceiling. Web /tech reads this to populate
+     * the max-pills input on page load. */
+    extern int dispenser_max_pills(void);
+    cJSON_AddNumberToObject(root, "max_pills", (double)dispenser_max_pills());
     cJSON_AddBoolToObject(root, "pca_present", pca);
     cJSON_AddBoolToObject(root, "rtc_present", rtc);
     cJSON_AddBoolToObject(root, "eeprom_present", false);

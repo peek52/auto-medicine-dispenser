@@ -7,4 +7,5 @@ esp_err_t tech_dashboard_handler(httpd_req_t *req);
 esp_err_t tech_reboot_handler(httpd_req_t *req);
 esp_err_t tech_estop_handler(httpd_req_t *req);
 esp_err_t tech_quiet_handler(httpd_req_t *req);
+esp_err_t tech_maxpills_handler(httpd_req_t *req);
 esp_err_t factory_reset_handler(httpd_req_t *req);
