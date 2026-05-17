@@ -362,8 +362,13 @@ static esp_err_t entry_send_login_page(httpd_req_t *req, bool show_error)
         "<button type='button' id='login-th' class='active' onclick=\"setEntryLang('th')\">ไทย</button>"
         "</div></div>"
         "<h1><span class='lang-en'>Enter one access code</span><span class='lang-th'>กรอกรหัสเพียงครั้งเดียว</span></h1>"
-        "<p class='lang-en'>The device will open the correct page automatically. Customer code goes to the user settings page, while technician, admin, or owner codes go straight to the maintenance dashboard.</p>"
-        "<p class='lang-th'>ระบบจะพาไปยังหน้าที่ถูกต้องให้อัตโนมัติ ถ้าเป็นรหัสผู้ใช้จะเข้าไปหน้าตั้งค่าสำหรับลูกค้า แต่ถ้าเป็นรหัสช่าง แอดมิน หรือรหัสเจ้าของ จะเข้าหน้าช่างทันที</p>"
+        /* Login description trimmed per user 2026-05-17: only mention
+         * the user / customer flow on the public page. Technician,
+         * admin, and owner codes still work in the form below — they
+         * just aren't advertised. Keeps the public-facing UI clean
+         * for end users while preserving the auto-route behaviour. */
+        "<p class='lang-en'>Enter your access code to open the user settings page.</p>"
+        "<p class='lang-th'>กรอกรหัสเพื่อเข้าหน้าตั้งค่าสำหรับผู้ใช้งาน</p>"
         "<form method='POST' action='/cloud/login'>"
         "<label for='access_code'><span class='lang-en'>Access Code</span><span class='lang-th'>รหัสเข้าใช้งาน</span></label>"
         "<input id='access_code' name='access_code' type='password' autocomplete='current-password' autofocus>"
