@@ -1474,14 +1474,15 @@ static void ui_standby_render_modal(uint32_t now)
             s_incomplete_needs_count_drawn = incomplete_needs_count;
             s_incomplete_pill_drawn = true;
             s_popup_state = 6;
-            /* Voice prompt: "จัดการยาให้สมบูรณ์" (TH 108) / EN 109.
-             * One-shot — re-armed when incomplete_idx goes back to -1.
-             * Held back briefly if the clear-all-done prompt is still
-             * playing so 112/113 isn't cut off mid-sentence. */
-            if (!s_audio_played_state6 && !clear_all_done_recently) {
-                dfplayer_play_track((g_ui_language == UI_LANG_TH) ? 108 : 109);
-                s_audio_played_state6 = true;
-            }
+            /* Voice prompt 108/109 ("จัดการยาให้สมบูรณ์") suppressed per
+             * user request 2026-05-17. The popup is visually obvious on
+             * its own and the user explicitly does not want any audio
+             * associated with this dialog ("ตอนนี้เสียงจัดการยาให้
+             * สมบูรณ์" — they reported it as unwanted noise). Latch
+             * s_audio_played_state6 anyway so existing arm/disarm
+             * elsewhere keeps working without re-firing it. */
+            s_audio_played_state6 = true;
+            (void)clear_all_done_recently;
         }
         return;
     } else {
