@@ -1449,22 +1449,26 @@ static void ui_standby_render_modal(uint32_t now)
                 fill_round_rect(60,  208, 160, 52, 12, THEME_BAD);
                 fill_round_rect(260, 208, 160, 52, 12, THEME_OK);
                 if (th) {
-                    /* Text height reduced 24 → 20 per user report
-                     * 2026-05-17: "ใส่จำนวนยา" at size 24 spilled past
-                     * the 160-px button edge ("setcout ล้นกรอบ"). At
-                     * size 20 the glyphs fit comfortably with margin. */
-                    draw_utf8_centered_line_scaled(140, 224, "ล้างช่อง",
-                                                   0xFFFF, THEME_BAD, 20);
-                    draw_utf8_centered_line_scaled(340, 224, "ใส่จำนวนยา",
-                                                   0xFFFF, THEME_OK, 20);
+                    /* Text height reduced 24 → 18 per follow-up user
+                     * report 2026-05-17 ("set count ยังล้นกรอบ"): even
+                     * at size 20 the "ใส่จำนวนยา" tail clipped past the
+                     * 160-px button. Size 18 leaves visible margin on
+                     * both sides for the longest Thai label here. */
+                    draw_utf8_centered_line_scaled(140, 226, "ล้างช่อง",
+                                                   0xFFFF, THEME_BAD, 18);
+                    draw_utf8_centered_line_scaled(340, 226, "ใส่จำนวนยา",
+                                                   0xFFFF, THEME_OK, 18);
                 } else {
-                    /* English "Set Count" at FreeSansBold18pt7b is
-                     * ~120 px wide and fits inside the 160-px button;
-                     * left unchanged. */
+                    /* English "Set Count" at FreeSansBold18pt7b (~155 px
+                     * wide bold) was overflowing the 160-px button rect
+                     * by ~5 px on the right edge — user reported as
+                     * "set count ล้นกรอบ". Switched to FreeSans12pt7b
+                     * (non-bold), which is ~80 px wide and centres
+                     * cleanly with comfortable padding. */
                     draw_string_centered(140, 240, "Clear",
-                                         0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
                     draw_string_centered(340, 240, "Set Count",
-                                         0xFFFF, THEME_OK, &FreeSansBold18pt7b);
+                                         0xFFFF, THEME_OK, &FreeSans12pt7b);
                 }
             }
             s_incomplete_needs_count_drawn = incomplete_needs_count;
