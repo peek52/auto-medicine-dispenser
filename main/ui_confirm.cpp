@@ -2,6 +2,22 @@
 #include "dispenser_scheduler.h"
 #include "ui_confirm_thai_labels.h"
 #include <stdio.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+/* BUG FIX #6: page-enter tick used as input-debounce. A finger held or
+ * released across the STANDBY→CONFIRM page transition would otherwise
+ * dispatch the carried-over touch event into ui_confirm_handle_touch and
+ * auto-confirm/auto-skip the dose. By recording the tick at page entry
+ * and ignoring touches within IGNORE_AFTER_ENTER_MS, we force the user
+ * to perform a fresh tap on the new page. */
+static volatile uint32_t s_page_enter_tick = 0;
+#define UI_CONFIRM_IGNORE_AFTER_ENTER_MS 350
+
+extern "C" void ui_confirm_arm_on_enter(void)
+{
+    s_page_enter_tick = (uint32_t)xTaskGetTickCount();
+}
 
 static void draw_confirm_label(int16_t x, int16_t y, const ui_label_bitmap_t *label)
 {
@@ -76,6 +92,20 @@ void ui_confirm_render(void)
 
 void ui_confirm_handle_touch(uint16_t tx_n, uint16_t ty_n)
 {
+    /* BUG FIX #6: reject touch events that arrive too soon after the
+     * page transitioned to PAGE_CONFIRM_MEDS. The previous behaviour
+     * accepted the very first touch event the dispatcher delivered —
+     * which was usually the release-edge of the tap that triggered the
+     * page change in the first place, or a hold-carryover from STANDBY,
+     * resulting in instant auto-confirm/auto-skip with no user intent.
+     * 350 ms is short enough that a deliberate user tap on the new page
+     * is not blocked, but long enough to swallow the carryover event. */
+    uint32_t now_tick = (uint32_t)xTaskGetTickCount();
+    uint32_t since_enter_ms = (now_tick - s_page_enter_tick) * portTICK_PERIOD_MS;
+    if (s_page_enter_tick != 0 && since_enter_ms < UI_CONFIRM_IGNORE_AFTER_ENTER_MS) {
+        return;
+    }
+
     // Let the user confirm from nearly anywhere on screen.
     // Keep only a tiny edge guard to ignore phantom touches around [0,0].
     if (tx_n < 8 || tx_n > (LCD_W - 8) || ty_n < 8 || ty_n > (LCD_H - 8)) {

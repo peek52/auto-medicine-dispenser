@@ -38,6 +38,11 @@ static bool s_show_only_missed = false;
  * user taps. -1 = no alert currently shown. */
 static int  s_incomplete_pill_idx = -1;
 static bool s_incomplete_pill_drawn = false;
+/* True when the currently-shown popup is the "name + slots set but pill
+ * count = 0" variant — the touch handler reads this to dispatch the two
+ * choice-buttons (clear cartridge vs. open detail page to set count).
+ * Other s_popup_state==6 variants keep the legacy tap-anywhere flow. */
+static bool s_incomplete_needs_count_drawn = false;
 
 /* Boot-time "all empty — flush leftovers?" prompt (popup state 7) and
  * "clearing in progress" (state 8).
@@ -1201,11 +1206,23 @@ static void ui_standby_render_modal(uint32_t now)
      * don't re-trigger the popup. */
     if (!s_boot_clear_seen && sh && sh->loaded) {
         bool any_scheduled = false;
+        int  scheduled_module = -1;
         for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
-            if (sh->med[i].slots != 0) { any_scheduled = true; break; }
+            if (sh->med[i].slots != 0) {
+                any_scheduled = true;
+                scheduled_module = i + 1;
+                break;
+            }
         }
         s_boot_clear_offered = !any_scheduled;
         s_boot_clear_seen = true;
+        /* Surface the decision in the monitor log — operators ask "why
+         * didn't the clear popup show?" when they didn't realise a med
+         * still had slots set. This prints the first scheduled module
+         * so the cause is visible without enabling verbose logging. */
+        ESP_LOGI("ui_standby",
+                 "boot-clear gate: any_scheduled=%d (first_module=%d) → offered=%d",
+                 (int)any_scheduled, scheduled_module, (int)s_boot_clear_offered);
     }
 
     /* HARDWARE ERROR popup removed 2026-05-13.
@@ -1219,22 +1236,6 @@ static void ui_standby_render_modal(uint32_t now)
     bool incomplete_needs_count = false;  /* true → boot-empty case: ask
                                             * user to fill in the count */
     if (sh && sh->loaded) {
-        /* First render after shadow loaded — latch the boot empty-count
-         * alert if any module is configured (name + slots) but has 0
-         * pills. This catches the case where reboot finds modules in
-         * "configured-but-empty" state and the user never gets a prompt
-         * to add stock. */
-        if (!s_boot_empty_check_done) {
-            for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
-                if (sh->med[i].name[0] != '\0' &&
-                    sh->med[i].slots != 0 &&
-                    sh->med[i].count == 0) {
-                    s_boot_empty_mask |= (uint8_t)(1u << i);
-                }
-            }
-            s_boot_empty_check_done = true;
-        }
-
         for (int i = 0; i < DISPENSER_MED_COUNT; ++i) {
             bool has_name  = sh->med[i].name[0] != '\0';
             bool has_slots = sh->med[i].slots != 0;
@@ -1242,23 +1243,19 @@ static void ui_standby_render_modal(uint32_t now)
             bool has_count = (count > 0);
             bool partial_config = (has_name != has_slots);  /* name XOR slots */
             bool stale_pills    = has_count && !(has_name && has_slots);
-            /* boot_empty_now → THIS specific module was tagged at boot
-             * AND still meets the condition. Per-module latch prevents
-             * a scheduled dispense from triggering the alert on a
-             * different module. */
-            bool boot_empty_now = (s_boot_empty_mask & (1u << i)) &&
-                                  has_name && has_slots && !has_count;
-            /* Clear the per-module latch as soon as the user resolves it
-             * (refilled, or wiped config). */
-            if ((s_boot_empty_mask & (1u << i)) &&
-                !(has_name && has_slots && !has_count)) {
-                s_boot_empty_mask &= (uint8_t)~(1u << i);
-            }
+            /* "needs count" = fully configured (name + slots) but stock
+             * not entered yet. Fires any time the condition exists, not
+             * only at boot — operator might create it mid-session by
+             * configuring a fresh cartridge on the touch UI / web /
+             * NETPIE and forgetting to set the pill count. The popup
+             * gives them two explicit choices below: clear the slot or
+             * specify the count. */
+            bool needs_count = has_name && has_slots && !has_count;
             if (incomplete_idx < 0 &&
-                (partial_config || stale_pills || boot_empty_now)) {
+                (partial_config || stale_pills || needs_count)) {
                 incomplete_idx = i;
                 incomplete_has_pills = has_count;
-                incomplete_needs_count = boot_empty_now &&
+                incomplete_needs_count = needs_count &&
                                          !partial_config && !stale_pills;
             }
         }
@@ -1360,72 +1357,110 @@ static void ui_standby_render_modal(uint32_t now)
      * BEFORE the user refills/reconfigures, otherwise new pills land
      * on top of old ones. Boot clear-all always wins at boot. */
     if (incomplete_idx >= 0 && !s_boot_clear_offered && !clear_all_running) {
-        if (!s_incomplete_pill_drawn || is_forced || s_popup_state != 6) {
-            fill_round_rect_frame(40, 50, 400, 220, 14, THEME_BAD, 0xFFFF);
+        /* Force a repaint whenever the popup's "key" — which module,
+         * which variant — changes between frames. Without this, fixing
+         * module 0 mid-session while module 1 has a different incomplete
+         * condition would leave the OLD module 0 popup on screen while
+         * taps target module 1's index → wrong action. Track the last
+         * painted key in statics so we detect every transition. */
+        static int  s_last_drawn_idx = -1;
+        static bool s_last_drawn_needs_count = false;
+        static bool s_last_drawn_has_pills   = false;
+        bool key_changed = (incomplete_idx != s_last_drawn_idx ||
+                            incomplete_needs_count != s_last_drawn_needs_count ||
+                            incomplete_has_pills != s_last_drawn_has_pills);
+        if (!s_incomplete_pill_drawn || is_forced || s_popup_state != 6 ||
+            key_changed) {
+            s_last_drawn_idx = incomplete_idx;
+            s_last_drawn_needs_count = incomplete_needs_count;
+            s_last_drawn_has_pills = incomplete_has_pills;
+            /* needs_count uses a neutral PANEL background so the two
+             * choice buttons (red Clear / green Set-count) stand out.
+             * Other variants keep the alarming red frame. */
+            uint16_t frame_bg = incomplete_needs_count ? THEME_PANEL : THEME_BAD;
+            fill_round_rect_frame(40, 50, 400, 220, 14, frame_bg, 0xFFFF);
             bool th = (g_ui_language == UI_LANG_TH);
             char head[64];
             if (th) {
                 if (incomplete_has_pills) {
-                    snprintf(head, sizeof(head), "ตลับที่ %d มียาค้าง", incomplete_idx + 1);
-                    draw_utf8_centered_line_scaled(LCD_W / 2, 75, head, 0xFFFF, THEME_BAD, 30);
+                    snprintf(head, sizeof(head), "โมดูลที่ %d มียาค้าง", incomplete_idx + 1);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 75, head, 0xFFFF, frame_bg, 30);
                     draw_utf8_centered_line_scaled(LCD_W / 2, 125,
-                        "แต่ข้อมูลยายังไม่ครบ", 0xFFFF, THEME_BAD, 24);
+                        "แต่ข้อมูลยายังไม่ครบ", 0xFFFF, frame_bg, 24);
                     draw_utf8_centered_line_scaled(LCD_W / 2, 165,
-                        "ต้องคืนยาก่อนตั้งค่าใหม่", 0xFFFF, THEME_BAD, 24);
+                        "ต้องคืนยาก่อนตั้งค่าใหม่", 0xFFFF, frame_bg, 24);
                     draw_utf8_centered_line_scaled(LCD_W / 2, 220,
-                        "แตะที่หน้าจอเพื่อคืนยา", 0xFFFF, THEME_BAD, 22);
+                        "แตะที่หน้าจอเพื่อคืนยา", 0xFFFF, frame_bg, 22);
                 } else if (incomplete_needs_count) {
-                    snprintf(head, sizeof(head), "ตลับที่ %d ยังไม่ใส่ยา", incomplete_idx + 1);
-                    draw_utf8_centered_line_scaled(LCD_W / 2, 75, head, 0xFFFF, THEME_BAD, 30);
-                    draw_utf8_centered_line_scaled(LCD_W / 2, 130,
-                        "ตั้งชื่อและมื้อแล้ว", 0xFFFF, THEME_BAD, 24);
-                    draw_utf8_centered_line_scaled(LCD_W / 2, 170,
-                        "แต่ยังไม่ระบุจำนวนเม็ดยา", 0xFFFF, THEME_BAD, 24);
-                    draw_utf8_centered_line_scaled(LCD_W / 2, 220,
-                        "แตะที่หน้าจอเพื่อเติมยา", 0xFFFF, THEME_BAD, 22);
+                    snprintf(head, sizeof(head), "โมดูลที่ %d ยังไม่ใส่ยา", incomplete_idx + 1);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 75, head, 0xFFFF, frame_bg, 28);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 120,
+                        "ตั้งชื่อและมื้อแล้ว แต่ยังไม่ใส่จำนวน", 0xFFFF, frame_bg, 20);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 152,
+                        "เลือกตัวเลือกด้านล่าง", 0xFFFF, frame_bg, 20);
                 } else {
-                    snprintf(head, sizeof(head), "ตลับที่ %d ข้อมูลไม่ครบ", incomplete_idx + 1);
-                    draw_utf8_centered_line_scaled(LCD_W / 2, 75, head, 0xFFFF, THEME_BAD, 30);
+                    snprintf(head, sizeof(head), "โมดูลที่ %d ข้อมูลไม่ครบ", incomplete_idx + 1);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 75, head, 0xFFFF, frame_bg, 30);
                     draw_utf8_centered_line_scaled(LCD_W / 2, 130,
-                        "กรุณาตั้งค่าให้ครบทุกช่อง", 0xFFFF, THEME_BAD, 24);
+                        "กรุณาตั้งค่าให้ครบทุกช่อง", 0xFFFF, frame_bg, 24);
                     draw_utf8_centered_line_scaled(LCD_W / 2, 170,
-                        "(ชื่อ + มื้อ + จำนวน)", 0xFFFF, THEME_BAD, 22);
+                        "(ชื่อ + มื้อ + จำนวน)", 0xFFFF, frame_bg, 22);
                     draw_utf8_centered_line_scaled(LCD_W / 2, 220,
-                        "แตะที่หน้าจอเพื่อตั้งค่า", 0xFFFF, THEME_BAD, 22);
+                        "แตะที่หน้าจอเพื่อตั้งค่า", 0xFFFF, frame_bg, 22);
                 }
             } else {
                 if (incomplete_has_pills) {
                     snprintf(head, sizeof(head), "Cartridge %d Has Pills", incomplete_idx + 1);
                     draw_string_centered(LCD_W / 2, 90, head,
-                                         0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+                                         0xFFFF, frame_bg, &FreeSansBold18pt7b);
                     draw_string_centered(LCD_W / 2, 135, "but its setup is incomplete",
-                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                                         0xFFFF, frame_bg, &FreeSans12pt7b);
                     draw_string_centered(LCD_W / 2, 170, "Return pills before reconfiguring",
-                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                                         0xFFFF, frame_bg, &FreeSans12pt7b);
                     draw_string_centered(LCD_W / 2, 225, "Tap to return pills",
-                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                                         0xFFFF, frame_bg, &FreeSans12pt7b);
                 } else if (incomplete_needs_count) {
                     snprintf(head, sizeof(head), "Cartridge %d Is Empty", incomplete_idx + 1);
                     draw_string_centered(LCD_W / 2, 90, head,
-                                         0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
-                    draw_string_centered(LCD_W / 2, 140, "Name and schedule are set,",
-                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
-                    draw_string_centered(LCD_W / 2, 175, "but pill count is 0",
-                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
-                    draw_string_centered(LCD_W / 2, 225, "Tap to refill",
-                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                                         0xFFFF, frame_bg, &FreeSansBold18pt7b);
+                    draw_string_centered(LCD_W / 2, 135, "Name + schedule set, count = 0",
+                                         0xFFFF, frame_bg, &FreeSans12pt7b);
+                    draw_string_centered(LCD_W / 2, 162, "Choose an option below",
+                                         0xFFFF, frame_bg, &FreeSans12pt7b);
                 } else {
                     snprintf(head, sizeof(head), "Cartridge %d Incomplete", incomplete_idx + 1);
                     draw_string_centered(LCD_W / 2, 90, head,
-                                         0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+                                         0xFFFF, frame_bg, &FreeSansBold18pt7b);
                     draw_string_centered(LCD_W / 2, 140, "Please fill all required fields",
-                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                                         0xFFFF, frame_bg, &FreeSans12pt7b);
                     draw_string_centered(LCD_W / 2, 175, "(name + slots + count)",
-                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                                         0xFFFF, frame_bg, &FreeSans12pt7b);
                     draw_string_centered(LCD_W / 2, 225, "Tap to set up",
-                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                                         0xFFFF, frame_bg, &FreeSans12pt7b);
                 }
             }
+
+            /* needs_count: two explicit choice buttons —
+             *   Clear (red, left, x=60..220)   → wipe name/slots/count
+             *   Set count (green, right, x=260..420) → jump to detail page
+             * Touch hit rects in ui_standby_handle_touch_modal use the
+             * SAME bounds; keep them in sync if you move the buttons. */
+            if (incomplete_needs_count) {
+                fill_round_rect(60,  208, 160, 52, 12, THEME_BAD);
+                fill_round_rect(260, 208, 160, 52, 12, THEME_OK);
+                if (th) {
+                    draw_utf8_centered_line_scaled(140, 222, "ล้างช่อง",
+                                                   0xFFFF, THEME_BAD, 24);
+                    draw_utf8_centered_line_scaled(340, 222, "ใส่จำนวนยา",
+                                                   0xFFFF, THEME_OK, 24);
+                } else {
+                    draw_string_centered(140, 240, "Clear",
+                                         0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+                    draw_string_centered(340, 240, "Set Count",
+                                         0xFFFF, THEME_OK, &FreeSansBold18pt7b);
+                }
+            }
+            s_incomplete_needs_count_drawn = incomplete_needs_count;
             s_incomplete_pill_drawn = true;
             s_popup_state = 6;
             /* Voice prompt: "จัดการยาให้สมบูรณ์" (TH 108) / EN 109.
@@ -1440,6 +1475,7 @@ static void ui_standby_render_modal(uint32_t now)
         return;
     } else {
         s_incomplete_pill_drawn = false;
+        s_incomplete_needs_count_drawn = false;
         s_audio_played_state6 = false;
     }
 
@@ -1624,29 +1660,12 @@ static void ui_standby_render_modal(uint32_t now)
                                      0xFFFF, THEME_PANEL, &FreeSans12pt7b);
             }
 
-            /* Diff summary — up to a few lines so the operator sees what
-             * actually changed before committing. */
-            char summary[512];
-            size_t slen = netpie_pending_format_summary_th(summary, sizeof(summary));
-            (void)slen;
-            /* Render first ~4 lines below the title at 18 px font. */
-            int y = 130;
-            const char *p = summary;
-            for (int line = 0; line < 4 && *p; ++line) {
-                const char *eol = strchr(p, '\n');
-                char buf[160];
-                size_t n = eol ? (size_t)(eol - p) : strlen(p);
-                if (n >= sizeof(buf)) n = sizeof(buf) - 1;
-                memcpy(buf, p, n);
-                buf[n] = '\0';
-                if (n > 0) {
-                    /* Left-aligned, wrapped to popup width. */
-                    ui_utf8_draw_text_scaled_px(40, y, buf, 0xFFFF, 18);
-                }
-                y += 24;
-                if (!eol) break;
-                p = eol + 1;
-            }
+            /* Diff summary intentionally NOT shown on the touch popup
+             * (user spec 2026-05-15: "ขึ้นแค่กรุณายืนยันการบันทึก"). The
+             * full per-field diff still goes to Telegram via
+             * netpie_pending_format_summary_th — that's where the
+             * operator audits what's about to commit. The touch screen
+             * is the consent gesture, not the audit log. */
 
             /* Two buttons: Reject (red, left) / Approve (green, right). */
             fill_round_rect(40,  236, 180, 44, 10, THEME_BAD);
@@ -1665,6 +1684,8 @@ static void ui_standby_render_modal(uint32_t now)
             s_pending_popup_drawn = true;
             s_popup_state = 10;
             if (got) s_pending_popup_arrived_tick_last = pend.arrived_tick;
+            ESP_LOGI("ui_standby", "NETPIE pending popup drawn (arrived_tick=%lu)",
+                     (unsigned long)(got ? pend.arrived_tick : 0));
         }
         return;
     } else if (s_popup_state == 10) {
@@ -1691,6 +1712,41 @@ static void ui_standby_render_modal(uint32_t now)
             s_popup_state = 3;
         }
         return;
+    }
+
+    /* HARDWARE-FAIL banner — highest priority popup. Shown when
+     * hw_health_is_failed() is true (PCA9685 missing, I2C wedged, etc.)
+     * and the user hasn't dismissed it yet. The user is expected to
+     * power-cycle, NOT just tap OK and continue — dismissal merely
+     * silences the visual modal so it doesn't block the schedule view,
+     * but hw_health_is_failed() stays true and Telegram alerts keep
+     * being rate-limited from dispenser_scheduler. Dispense attempts
+     * will still abort on the underlying error. */
+    if (hw_health_is_failed() && !s_hw_warn_dismissed) {
+        if (s_popup_state != 2 || is_forced) {
+            fill_round_rect_frame(kAlertPopupX, kAlertPopupY, kAlertPopupW, kAlertPopupH, 16, THEME_BAD, 0xFFFF);
+            const char *comp = hw_health_get_component();
+            const char *det  = hw_health_get_detail();
+            if (g_ui_language == UI_LANG_TH) {
+                draw_string_centered(LCD_W / 2, 80, "ฮาร์ดแวร์ผิดปกติ", 0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 120, comp[0] ? comp : "ไม่ทราบส่วน", 0xFFFF, THEME_BAD, 22);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 150, "กรุณาปิดเปิดเครื่อง", 0xFFFF, THEME_BAD, 24);
+                if (det[0]) {
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 180, det, 0xFFFF, THEME_BAD, 18);
+                }
+            } else {
+                draw_string_centered(LCD_W / 2, 80, "HARDWARE FAILURE", 0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+                draw_string_centered(LCD_W / 2, 122, comp[0] ? comp : "Unknown component", 0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                draw_string_centered(LCD_W / 2, 152, "Please POWER-CYCLE the device", 0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                if (det[0]) {
+                    draw_string_centered(LCD_W / 2, 180, det, 0xFFFF, THEME_BAD, &FreeSans9pt7b);
+                }
+            }
+            draw_standby_modal_button(kAlertButtonX, kAlertButtonY, kAlertButtonW, kAlertButtonH, ST_RGB565(185, 28, 28), 0xFFFF);
+            s_popup_state = 2;
+            return;
+        }
+        if (s_popup_state == 2) return;
     }
 
     if (!schedule_ok) {
@@ -1954,6 +2010,42 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
      * return-pill confirm dialog pre-filled with "ALL"; otherwise
      * just go to detail so the user can fill in missing fields. */
     if (s_popup_state == 6 && s_incomplete_pill_idx >= 0) {
+        /* needs_count variant — two explicit choice buttons. Hit rects
+         * must match the paint code above. Tapping outside the two
+         * buttons is intentionally ignored so an accidental tap can't
+         * silently wipe the slot or jump pages. */
+        if (s_incomplete_needs_count_drawn) {
+            bool on_clear = (tx_n >=  60 && tx_n <= 220 &&
+                             ty_n >= 208 && ty_n <= 260);
+            bool on_set   = (tx_n >= 260 && tx_n <= 420 &&
+                             ty_n >= 208 && ty_n <= 260);
+            if (on_clear) {
+                int idx = s_incomplete_pill_idx;
+                netpie_shadow_update_med_name(idx + 1, "");
+                netpie_shadow_update_med_slots(idx + 1, 0);
+                netpie_shadow_update_count(idx + 1, 0);
+                s_popup_state = 0;
+                s_incomplete_pill_drawn = false;
+                s_incomplete_needs_count_drawn = false;
+                s_audio_played_state6 = false;
+                force_redraw = true;
+                dfplayer_play_track(28);
+            } else if (on_set) {
+                selected_med_idx = s_incomplete_pill_idx;
+                s_popup_state = 0;
+                s_incomplete_pill_drawn = false;
+                s_incomplete_needs_count_drawn = false;
+                pending_page = PAGE_SETUP_MEDS_DETAIL;
+                force_redraw = true;
+                dfplayer_play_track(28);
+            }
+            return;
+        }
+
+        /* Legacy "tap anywhere" path — used by the other state-6 variants
+         * (stale pills / partial config). Pills present → open return
+         * confirm pre-filled with ALL; otherwise just jump to detail so
+         * the user can fill in the missing fields. */
         (void)tx_n; (void)ty_n;
         const netpie_shadow_t *sh_now = netpie_get_shadow();
         bool has_pills = (sh_now && sh_now->med[s_incomplete_pill_idx].count > 0);

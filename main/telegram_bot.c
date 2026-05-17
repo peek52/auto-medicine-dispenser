@@ -766,25 +766,37 @@ static void telegram_send_snapshot_reply(const char *caption)
     }
     // Tell the encoder a "client" is waiting so camera_task wakes up and
     // produces a fresh JPEG (camera_task otherwise skips work when
-    // jpeg_enc_has_clients()==false). The 3 s timeout is long enough
-    // for the camera to capture + JPEG-encode one frame even with the
-    // 2-buffer pipeline.
+    // jpeg_enc_has_clients()==false).
     jpeg_enc_client_added();
+    /* CAMERA STALENESS FIX: invalidate any pending frame token before
+     * waiting. Without this, jpeg_enc_get_frame returns immediately
+     * with the stale frame left over from the last /photo or /stream
+     * session — user gets a photo that may be many minutes old.
+     * Forcing a re-wait makes camera_task encode a NEW frame after
+     * the client_added bumped the count above zero. */
+    jpeg_enc_invalidate_pending();
     uint8_t *jpg_buf = NULL;
     size_t jpg_len = 0;
     esp_err_t got = jpeg_enc_get_frame(&jpg_buf, &jpg_len, 3000);
-    jpeg_enc_client_removed();
     if (got == ESP_OK) {
         uint8_t *copy_buf = (uint8_t *)malloc(jpg_len);
         if (copy_buf) {
             memcpy(copy_buf, jpg_buf, jpg_len);
+            /* Release the held buffer BEFORE the actual HTTPS upload
+             * so the encoder can refill it for the next /photo while
+             * we're still streaming bytes to Telegram. Reduces dead
+             * time between back-to-back photos. */
+            jpeg_enc_release_frame();
+            jpeg_enc_client_removed();
             telegram_send_photo_with_text(copy_buf, jpg_len, caption);
-        } else {
-            telegram_send_text(telegram_pick("Snapshot captured, but memory copy failed.",
-                                             "ถ่ายภาพได้ แต่คัดลอกหน่วยความจำไม่สำเร็จ"));
+            return;
         }
+        telegram_send_text(telegram_pick("Snapshot captured, but memory copy failed.",
+                                         "ถ่ายภาพได้ แต่คัดลอกหน่วยความจำไม่สำเร็จ"));
         jpeg_enc_release_frame();
+        jpeg_enc_client_removed();
     } else {
+        jpeg_enc_client_removed();
         telegram_send_text(telegram_pick("Camera snapshot is not available right now.",
                                          "ตอนนี้ยังไม่สามารถถ่ายภาพจากกล้องได้"));
     }
@@ -1221,7 +1233,7 @@ static void handle_telegram_command_safe(const char *cmd_text)
 
     if (strcmp(cmd, "/status") == 0 || strcmp(cmd, "/meds") == 0) {
         const netpie_shadow_t *sh = netpie_get_shadow();
-        if (!sh->loaded) {
+        if (!sh || !sh->loaded) {
             telegram_send_text(telegram_pick("Medication shadow is not synced yet. Please try again shortly.",
                                              "ข้อมูลยายังไม่ซิงก์จากคลาวด์ กรุณาลองใหม่อีกครั้ง"));
             return;
@@ -1277,6 +1289,10 @@ static void handle_telegram_command_safe(const char *cmd_text)
         }
         size_t n = dispenser_audit_get(entries, total);
         const netpie_shadow_t *sh = netpie_get_shadow();
+        /* netpie_get_shadow() normally returns a valid pointer (one of
+         * the static pub buffers), but guard anyway — accessing
+         * sh->med[].name below would crash on a stray NULL. */
+        if (!sh) { free(entries); return; }
 
         /* Audit ring now only stores scheduled-dispense outcomes
          * ('S'), so visible_n == n. Loop kept for forward-compat in

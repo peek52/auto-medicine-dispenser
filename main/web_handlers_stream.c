@@ -109,17 +109,32 @@ esp_err_t capture_handler(httpd_req_t *req) {
     // (idle-skip optimization in camera_task otherwise leaves the
     // last buffer stale when nobody is streaming).
     jpeg_enc_client_added();
+    /* CAMERA STALENESS FIX: discard any frame the encoder left over
+     * from a previous /stream session or /capture call before waiting.
+     * Otherwise jpeg_enc_get_frame would return immediately with the
+     * stale buffer (binary semaphore already "given" by the last
+     * encode), producing a photo that looks several minutes old.
+     * 3 s timeout is generous enough for camera_task to wake, receive
+     * one MIPI frame (20 ms at 50 fps), and run the HW JPEG encode
+     * (~30 ms). */
+    jpeg_enc_invalidate_pending();
     uint8_t *jpeg_buf = NULL;
     size_t jpeg_len = 0;
-    esp_err_t got = jpeg_enc_get_frame(&jpeg_buf, &jpeg_len, 2000);
-    jpeg_enc_client_removed();
+    esp_err_t got = jpeg_enc_get_frame(&jpeg_buf, &jpeg_len, 3000);
     if (got != ESP_OK) {
+        jpeg_enc_client_removed();
         return httpd_resp_send_500(req);
     }
     httpd_resp_set_type(req, "image/jpeg");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     esp_err_t ret = httpd_resp_send(req, (const char *)jpeg_buf, jpeg_len);
+    /* Release the frame BEFORE removing the client — see jpeg_encoder.c
+     * for ordering rules. The earlier code did client_removed first
+     * which let the encoder believe no client was waiting while the
+     * frame buffer was still held, potentially overwriting it
+     * mid-send and producing torn JPEGs. */
     jpeg_enc_release_frame();
+    jpeg_enc_client_removed();
     return ret;
 }
 

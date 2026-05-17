@@ -784,6 +784,23 @@ static void clock_task(void *)
             }
         }
 
+        /* NETPIE pending approval — operator should see the popup. Only
+         * yank back to standby if (a) nothing more urgent already set
+         * `pending_page` this iteration (a scheduled-dose alarm above
+         * sets PAGE_CONFIRM_MEDS — that has to win or the user misses
+         * dose timing), (b) the user isn't already on a setup flow we
+         * just jumped them into (e.g. PAGE_SETUP_MEDS_DETAIL for the
+         * post-dispense missed-nav). The pending popup is mandatory but
+         * not time-critical — it waits indefinitely, so deferring it
+         * one screen later is safe. */
+        if (netpie_pending_active() &&
+            current_page != PAGE_STANDBY &&
+            pending_page == current_page &&
+            current_page != PAGE_CONFIRM_MEDS &&
+            current_page != PAGE_SETUP_MEDS_DETAIL) {
+            pending_page = PAGE_STANDBY;
+        }
+
         /* After a scheduled dispense, if a module came up empty or the IR
          * never saw a pill, jump straight into that module's detail page
          * so the user can refill or clear it. Set by execute_dispense
@@ -869,6 +886,15 @@ static void clock_task(void *)
                 pending_page != PAGE_SETUP_MEDS_DETAIL &&
                 pending_page != PAGE_KEYBOARD) {
                 ui_setup_meds_end_edit_session_if_any();
+            }
+            /* BUG FIX #6: when we're about to enter PAGE_CONFIRM_MEDS,
+             * arm the confirm-page debounce so any touch event in the
+             * next ~350 ms is rejected. Prevents the auto-confirm/skip
+             * bug where a carried-over release-edge or held finger from
+             * the prior page (STANDBY) instantly dispatches a dose. */
+            if (pending_page == PAGE_CONFIRM_MEDS &&
+                current_page != PAGE_CONFIRM_MEDS) {
+                ui_confirm_arm_on_enter();
             }
             current_page = pending_page;
             force_redraw = true;

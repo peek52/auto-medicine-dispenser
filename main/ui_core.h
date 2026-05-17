@@ -208,6 +208,16 @@ void ui_keyboard_prepare(bool prefer_th);
 
 void ui_confirm_render(void);
 void ui_confirm_handle_touch(uint16_t tx_n, uint16_t ty_n);
+/* BUG FIX #6: call when current_page becomes PAGE_CONFIRM_MEDS so the
+ * confirm page rejects carried-over touch events from the previous page
+ * for a short debounce window. See ui_confirm.cpp for details. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void ui_confirm_arm_on_enter(void);
+#ifdef __cplusplus
+}
+#endif
 
 // Global settings (volume + pre-alert)
 extern int g_alert_volume;

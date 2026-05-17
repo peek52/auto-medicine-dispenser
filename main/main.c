@@ -435,7 +435,15 @@ void late_detect_task(void *arg)
         wedge_streak = 0;
         if (pca_left && probe == ESP_OK) {
             ESP_LOGW(TAG, "Late-detect: PCA9685 appeared at round %d", round + 1);
-            if (pca9685_init() == ESP_OK) pca_left = false;
+            if (pca9685_init() == ESP_OK) {
+                pca_left = false;
+                /* HW recovered — drop the alert if PCA9685 was the only
+                 * outstanding failure. hw_health_clear_failure tells the
+                 * operator via Telegram so they know they don't have to
+                 * power-cycle after all. */
+                extern void hw_health_clear_failure(void);
+                hw_health_clear_failure();
+            }
         }
     }
     if (pca_left) {
@@ -656,13 +664,26 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(I2C_PING_GAP_MS));
     }
     if (pca_ok) {
-        pca9685_init();
+        esp_err_t pi = pca9685_init();
+        if (pi != ESP_OK) {
+            ESP_LOGE(TAG, "PCA9685 init failed: %s", esp_err_to_name(pi));
+            extern void hw_health_set_failure(const char *, const char *);
+            hw_health_set_failure("Servo PCA9685",
+                                  "ชิปขับเซอร์โวเริ่มต้นไม่สำเร็จ ยังไม่สามารถจ่ายยาได้");
+        }
     } else {
         ESP_LOGW(TAG, "PCA9685 not found at 0x%02X after retries", ADDR_PCA9685);
         // Even without hardware, populate g_servo[] from defaults +
         // NVS so the web UI / dashboard still shows the user's saved
         // home/work angles instead of BSS-zero 0/0.
         pca9685_load_cache_only();
+        /* HARDWARE FAIL alert: PCA9685 is essential — without it no
+         * dispense can ever happen. Tell the user via Telegram + UI
+         * banner to power-cycle. Done after pca9685_load_cache_only
+         * so the UI still has servo positions to display in /tech. */
+        extern void hw_health_set_failure(const char *, const char *);
+        hw_health_set_failure("Servo PCA9685",
+                              "ไม่พบชิปขับเซอร์โว (0x40) — กรุณาปิดเปิดเครื่อง");
     }
 
     // IR sensors removed 2026-05-13 (servo-trust mode only).
@@ -715,6 +736,13 @@ void app_main(void)
     if (ir_input_init() != ESP_OK) {
         ESP_LOGW(TAG, "IR sensor init failed — dispense will fall back to servo-trust");
     }
+
+    /* Logical med → physical slot mapping (web /tech "สลับโมดูล"). Must
+     * load before the dispenser task starts since execute_dispense calls
+     * module_map_phys_slot() on every cycle. Falls back to identity if
+     * NVS hasn't been written. */
+    extern void module_map_init(void);
+    module_map_init();
 
     // When NOTHING acked, the I2C bus is dead. Tear down the i2c_master
     // driver so its ISR can never fire.

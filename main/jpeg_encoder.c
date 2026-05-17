@@ -322,3 +322,28 @@ void jpeg_enc_client_removed(void) {
 bool jpeg_enc_has_clients(void) {
     return s_stream_clients > 0;
 }
+
+/* CAMERA STALENESS FIX: discard any frame token that's already sitting in
+ * s_frame_ready (left over from a previous /stream session or /capture
+ * call) AND clear s_read_idx so a concurrent get_frame doesn't pick up
+ * the stale buffer. The caller (typically /capture or Telegram /photo)
+ * should call this AFTER jpeg_enc_client_added() and BEFORE
+ * jpeg_enc_get_frame(); the next encode that camera_task performs will
+ * give a fresh token and the get_frame will return current pixels.
+ *
+ * Without this, jpeg_enc_get_frame would return immediately with the
+ * stale buffer because the binary semaphore was already "given" by the
+ * last encode before the stream client disconnected — symptoms were
+ * "photo looks like it was taken several minutes ago". */
+void jpeg_enc_invalidate_pending(void)
+{
+    if (!s_swap_mutex || !s_frame_ready) return;
+
+    xSemaphoreTake(s_swap_mutex, portMAX_DELAY);
+    s_read_idx = -1;
+    xSemaphoreGive(s_swap_mutex);
+
+    /* Drain any leftover frame_ready token. Binary semaphore stores at
+     * most 1 token so a single take with 0 timeout is enough. */
+    (void)xSemaphoreTake(s_frame_ready, 0);
+}

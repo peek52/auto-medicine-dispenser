@@ -22,6 +22,13 @@ void      jpeg_enc_client_added(void);
 void      jpeg_enc_client_removed(void);
 bool      jpeg_enc_has_clients(void);
 
+/* CAMERA STALENESS FIX: Drain any pending frame ready token and clear
+ * the read-index pointer. Used by /capture and Telegram /photo so the
+ * caller waits for a FRESH frame instead of receiving the stale buffer
+ * left over from the previous /stream session or /capture call.
+ * Without this, photos can appear minutes old. */
+void      jpeg_enc_invalidate_pending(void);
+
 #ifdef __cplusplus
 }
 #endif

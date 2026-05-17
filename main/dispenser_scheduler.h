@@ -124,6 +124,26 @@ void google_sheets_log(const char *event, const char *meds, const char *detail);
  *  cartridge after each significant action. */
 void dispenser_telegram_photo_msg(const char *msg);
 
+/* ── Hardware Health (power-cycle prompt) ──────────────────────────────
+ * Tracks critical peripheral failures that the user can't recover from
+ * without physically power-cycling the device:
+ *   - PCA9685 missing at boot (no servo signal possible)
+ *   - I2C bus wedged after recovery exhaustion
+ *   - Dispense aborted because servo writes keep failing
+ *
+ * When set_failure is called the first time per failure cycle, a one-
+ * shot Telegram alert is queued (rate-limited 1 per hour to avoid spam
+ * during transient flaps). UI overlay on PAGE_STANDBY shows a red
+ * banner asking the user to power-cycle. clear_failure should be called
+ * only when the underlying condition is verifiably resolved (e.g.
+ * pca9685_init returns OK on a retry) — manual clear from the UI is
+ * intentionally NOT exposed so a user can't dismiss a real fault. */
+void        hw_health_set_failure(const char *component, const char *detail);
+void        hw_health_clear_failure(void);
+bool        hw_health_is_failed(void);
+const char *hw_health_get_component(void);
+const char *hw_health_get_detail(void);
+
 #ifdef __cplusplus
 }
 #endif
