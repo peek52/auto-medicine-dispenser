@@ -174,23 +174,34 @@ esp_err_t pca9685_init(void)
     //  the web /servo/state shows the right values even when the chip
     //  isn't physically present.)
 
-    /* COLD-BOOT FIX: drive every channel to its configured home angle
-     * NOW, while the bus is quiet. Without this, the PCA9685's PWM
-     * registers are at chip-default (zero duty) after init — no
-     * servo signal at all. The first dispense then calls
-     * pca9685_set_angle_ramped which pretends cur_angle == home (the
-     * "cheap fix" near line 257) and starts ramping from home toward
-     * work — but the servo is wherever it was physically left when
-     * power was cut (often at work from a mid-dispense reset), so
-     * the ramp's PWM commands tell the servo to move BACKWARD from
-     * home then forward again, producing the user-reported
-     * "servo ไม่ทำงาน ต้องรีบูตบอตก่อน" symptom.
-     *
-     * Snap to home with a single write per channel. Small inter-write
-     * gap so the chip's auto-increment register latches each value
-     * cleanly even on a noisy 5 V rail. cur_angle is set by
-     * pca9685_set_angle on success, so subsequent ramps start from
-     * the correct known position. */
+    /* COLD-BOOT FIX: park loop moved out of init — see
+     * pca9685_park_all_home() below. Doing PWM writes here, BEFORE
+     * the FT6336U touch chip is initialised, was wedging the shared
+     * I2C bus on some boots (IDF v5.3.2 i2c_master ISR race triggered
+     * by back-to-back writes immediately after MODE1 wakeup). Symptom
+     * was "หน้าจอแสดงแล้วแต่กดไม่ได้" — display worked, touch dead.
+     * The park step is now called by main.c AFTER ft6336u_init has
+     * succeeded, so any I2C wobble from PWM writes can be recovered
+     * without taking touch down with it. */
+    ESP_LOGI(TAG, "PCA9685 initialized (prescale=%d, ~50Hz) — park deferred to post-touch-init", prescale);
+    return ESP_OK;
+}
+
+/* COLD-BOOT FIX: drive every channel to its configured home angle.
+ * Called by main.c after ft6336u_init has run, so even if the PWM
+ * burst destabilises the shared I2C bus the touch driver is already
+ * up and i2c_manager_recover_bus can be called from any path to
+ * unstick FT6336U reads. Without this, the PCA9685's PWM registers
+ * are at chip-default (zero duty) after init — no servo signal at
+ * all. The first dispense then calls pca9685_set_angle_ramped which
+ * pretends cur_angle == home (the "cheap fix" near line 257) and
+ * starts ramping from home toward work — but the servo is wherever
+ * it was physically left when power was cut (often at work from a
+ * mid-dispense reset), so the ramp's PWM commands tell the servo
+ * to move BACKWARD from home then forward again, producing the
+ * "servo ไม่ทำงาน ต้องรีบูตบอตก่อน" symptom. */
+void pca9685_park_all_home(void)
+{
     for (uint8_t ch = 0; ch < PCA9685_NUM_CHANNELS; ++ch) {
         int home = g_servo[ch].home_angle;
         if (home < 0)   home = 0;
@@ -202,13 +213,11 @@ esp_err_t pca9685_init(void)
         }
         vTaskDelay(pdMS_TO_TICKS(15));
     }
-    /* Hold here so servos physically arrive at home BEFORE any caller
-     * (dispenser/web) issues new commands. MG90S takes ~250 ms
-     * worst-case to traverse 90°. */
+    /* Settle wait so servos physically arrive at home BEFORE any
+     * caller (dispenser/web) issues new commands. MG90S takes
+     * ~250 ms worst-case to traverse 90°. */
     vTaskDelay(pdMS_TO_TICKS(300));
-
-    ESP_LOGI(TAG, "PCA9685 initialized (prescale=%d, ~50Hz) — all channels parked at home", prescale);
-    return ESP_OK;
+    ESP_LOGI(TAG, "All servo channels parked at home");
 }
 
 esp_err_t pca9685_set_pwm(uint8_t channel, uint16_t on, uint16_t off)

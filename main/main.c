@@ -437,6 +437,8 @@ void late_detect_task(void *arg)
             ESP_LOGW(TAG, "Late-detect: PCA9685 appeared at round %d", round + 1);
             if (pca9685_init() == ESP_OK) {
                 pca_left = false;
+                /* Park to home now that PCA9685 finally answered. */
+                pca9685_park_all_home();
                 /* HW recovered — drop the alert if PCA9685 was the only
                  * outstanding failure. hw_health_clear_failure tells the
                  * operator via Telegram so they know they don't have to
@@ -448,6 +450,17 @@ void late_detect_task(void *arg)
     }
     if (pca_left) {
         ESP_LOGW(TAG, "Late-detect timeout: PCA still missing");
+        /* Late-detect exhausted its 3-minute window without finding
+         * PCA9685. NOW it's safe to fire the hw_health alert — by
+         * this point we've genuinely confirmed the chip is absent
+         * (not just a transient cold-boot ping miss), so the user
+         * really does need to power-cycle. Doing this here (instead
+         * of in the main probe loop) keeps the popup off the screen
+         * during the touch-init window so it can never block touch
+         * the way the eager call did. */
+        extern void hw_health_set_failure(const char *, const char *);
+        hw_health_set_failure("Servo PCA9685",
+                              "ไม่พบชิปขับเซอร์โว (0x40) หลังพยายาม 3 นาที — กรุณาปิดเปิดเครื่อง");
     }
     free(missing);
     vTaskDelete(NULL);
@@ -667,9 +680,14 @@ void app_main(void)
         esp_err_t pi = pca9685_init();
         if (pi != ESP_OK) {
             ESP_LOGE(TAG, "PCA9685 init failed: %s", esp_err_to_name(pi));
-            extern void hw_health_set_failure(const char *, const char *);
-            hw_health_set_failure("Servo PCA9685",
-                                  "ชิปขับเซอร์โวเริ่มต้นไม่สำเร็จ ยังไม่สามารถจ่ายยาได้");
+            /* DO NOT fire hw_health here. The IDF v5.3.2 i2c_master
+             * ISR race can make init flap on cold boot; late_detect
+             * retries every 3 s and will fire hw_health if PCA9685
+             * is still missing after the retry budget is exhausted.
+             * Setting hw_health here unconditionally caused a red
+             * "power-cycle" popup to appear on perfectly-good boards
+             * the moment the screen turned on, and the popup blocked
+             * touch ("กดไม่ได้" symptom). */
         }
     } else {
         ESP_LOGW(TAG, "PCA9685 not found at 0x%02X after retries", ADDR_PCA9685);
@@ -677,13 +695,10 @@ void app_main(void)
         // NVS so the web UI / dashboard still shows the user's saved
         // home/work angles instead of BSS-zero 0/0.
         pca9685_load_cache_only();
-        /* HARDWARE FAIL alert: PCA9685 is essential — without it no
-         * dispense can ever happen. Tell the user via Telegram + UI
-         * banner to power-cycle. Done after pca9685_load_cache_only
-         * so the UI still has servo positions to display in /tech. */
-        extern void hw_health_set_failure(const char *, const char *);
-        hw_health_set_failure("Servo PCA9685",
-                              "ไม่พบชิปขับเซอร์โว (0x40) — กรุณาปิดเปิดเครื่อง");
+        /* HARDWARE FAIL alert is intentionally NOT raised here — see
+         * comment above. late_detect_task will set it if PCA9685
+         * remains absent after several retries (~30-60 s). This avoids
+         * blocking touch with a popup on a transient ping miss. */
     }
 
     // IR sensors removed 2026-05-13 (servo-trust mode only).
@@ -728,6 +743,17 @@ void app_main(void)
     /* Camera init has already been done at the top of app_main while
      * the I2C bus was pristine — see "CAMERA INIT WHILE BUS IS PRISTINE"
      * block far above. We DO NOT re-init here. */
+
+    /* COLD-BOOT SERVO PARK — drive every channel to home angle NOW
+     * that FT6336U touch init has completed. Done here (not inside
+     * pca9685_init) because the PWM-write burst can transiently
+     * destabilise the shared I2C bus and we want touch to come up
+     * cleanly first. If PCA9685 isn't present, pca_ok is false and
+     * we skip — pca9685_load_cache_only already populated g_servo[]
+     * for the web UI. */
+    if (pca_ok) {
+        pca9685_park_all_home();
+    }
 
     /* IR obstacle sensors on direct GPIO. Init once at boot — pins
      * configured as input with internal pull-up so a disconnected wire

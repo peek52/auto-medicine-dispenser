@@ -58,6 +58,12 @@ esp_err_t pca9685_go_work_async(uint8_t channel);
 /** Save home/work for a channel (in RAM only, no NVS) */
 void pca9685_set_positions(uint8_t channel, int home, int work);
 
+/** Drive all 6 servo channels to their configured home angle. Used at
+ *  boot after FT6336U touch init has completed — see comment in
+ *  pca9685.c. Blocks ~ (channels * 25 ms) + 300 ms settle. Safe to call
+ *  multiple times; each call refreshes PWM and updates cur_angle. */
+void pca9685_park_all_home(void);
+
 /** Servo-ramp busy flag. Set TRUE while a PWM ramp is driving the bus
  * (PCA9685 sends a burst of I2C writes per degree). The ft6336u touch
  * driver checks this and skips a poll cycle, otherwise the touch IC

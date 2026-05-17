@@ -2074,18 +2074,19 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
     }
 
     if (s_popup_state == 2) {
-        // HW alert modal — dismiss when user taps the button rect. Keep
-        // the rest of the popup tap-through-to-clear so an accidental
-        // outside-tap doesn't silence a real fault. Once dismissed, the
-        // modal stays hidden until a *new* device fails (the dismiss
-        // logic compares hw_mask against s_hw_alert_mask).
-        if (tx_n >= kAlertButtonX && tx_n <= (kAlertButtonX + kAlertButtonW) &&
-            ty_n >= kAlertButtonY && ty_n <= (kAlertButtonY + kAlertButtonH)) {
-            s_hw_warn_dismissed = true;
-            s_hw_alert_drawn = false;
-            s_popup_state = 0;
-            force_redraw = true;
-        }
+        /* HW alert modal — dismiss on tap ANYWHERE on screen (not just
+         * the button rect). User reports "เปิดมาแล้วจอแสดงแล้วแต่กดไม่
+         * ได้": when a transient cold-boot ping miss fired the HW popup,
+         * only the small ~136x40 px button rect was tappable, making the
+         * device feel completely dead. Tap-anywhere dismissal lets the
+         * user clear the warning even if rendering glitched the button.
+         * The underlying hw_health_is_failed() flag stays set and
+         * dispense attempts will still abort with a meaningful error;
+         * dismissing the popup just hides the visual layer. */
+        s_hw_warn_dismissed = true;
+        s_hw_alert_drawn = false;
+        s_popup_state = 0;
+        force_redraw = true;
         return;
     }
 
