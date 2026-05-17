@@ -238,9 +238,10 @@ static esp_err_t maintenance_send_login_page(httpd_req_t *req, bool show_error)
         "<html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>Technician Unlock</title>"
         "<style>"
+        "*,*::before,*::after{box-sizing:border-box}"
         "body.lang-en .lang-th{display:none!important}body.lang-th .lang-en{display:none!important}"
-        "body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#16345a 0%%,#0a1425 42%%,#050b14 100%%);font-family:'Segoe UI',Tahoma,sans-serif;color:#f4f8ff}"
-        ".card{max-width:620px;width:100%%;background:linear-gradient(180deg,rgba(17,36,61,.97),rgba(8,18,32,.98));border:1px solid rgba(255,255,255,.08);border-radius:28px;padding:30px;box-shadow:0 20px 46px rgba(0,0,0,.24)}"
+        "body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#16345a 0%%,#0a1425 42%%,#050b14 100%%);font-family:'Segoe UI',Tahoma,sans-serif;color:#f4f8ff;overflow-x:hidden}"
+        ".card{max-width:620px;width:100%%;min-width:0;overflow:hidden;background:linear-gradient(180deg,rgba(17,36,61,.97),rgba(8,18,32,.98));border:1px solid rgba(255,255,255,.08);border-radius:28px;padding:30px;box-shadow:0 20px 46px rgba(0,0,0,.24)}"
         ".top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}"
         ".pill{display:inline-flex;padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.05);color:#ffd98b;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}"
         ".lang-switch{display:inline-flex;padding:5px;border-radius:999px;background:rgba(3,12,22,.55);border:1px solid rgba(255,255,255,.09);gap:6px}"
@@ -253,8 +254,11 @@ static esp_err_t maintenance_send_login_page(httpd_req_t *req, bool show_error)
         "input:focus{border-color:#6db8ff;box-shadow:0 0 0 3px rgba(109,184,255,.16)}"
         ".warn{margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(255,209,102,.10);border:1px solid rgba(255,209,102,.18);color:#ffe7a3;font-size:14px;line-height:1.7}"
         ".error{margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(255,138,128,.10);border:1px solid rgba(255,138,128,.18);color:#ffd9d3;font-size:14px;line-height:1.7}"
-        ".actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px}"
-        ".btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border-radius:14px;border:none;font-size:15px;font-weight:700;text-decoration:none;cursor:pointer}"
+        ".actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px;width:100%%;min-width:0}"
+        /* max-width:100%% + overflow-wrap so a long Thai/EN label wraps
+         * inside the card instead of pushing the parent flex container
+         * past the screen edge (mobile "WiFi bar bleeds out" bug). */
+        ".btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border-radius:14px;border:none;font-size:15px;font-weight:700;text-decoration:none;cursor:pointer;max-width:100%%;text-align:center;overflow-wrap:anywhere}"
         ".primary{background:linear-gradient(135deg,#4dd7b0,#2fc4d5);color:#042032}"
         ".secondary{background:rgba(109,184,255,.12);border:1px solid rgba(109,184,255,.28);color:#e4efff}"
         ".hint{margin-top:12px;color:#96acc8;font-size:13px;line-height:1.7}"
@@ -314,9 +318,18 @@ static esp_err_t entry_send_login_page(httpd_req_t *req, bool show_error)
         "<html lang='th'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>Automatic Pill Dispenser Login</title>"
         "<style>"
+        /* box-sizing:border-box on EVERYTHING — without it, width:100%%
+         * inputs/buttons on mobile overflow their card by the padding
+         * amount, which is the "WiFi bar pushes past the frame" report. */
+        "*,*::before,*::after{box-sizing:border-box}"
         "body.lang-en .lang-th{display:none!important}body.lang-th .lang-en{display:none!important}"
-        "body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#16345a 0%%,#0a1425 42%%,#050b14 100%%);font-family:'Segoe UI',Tahoma,sans-serif;color:#f4f8ff}"
-        ".card{max-width:720px;width:100%%;background:linear-gradient(180deg,rgba(17,36,61,.97),rgba(8,18,32,.98));border:1px solid rgba(255,255,255,.08);border-radius:28px;padding:30px;box-shadow:0 20px 46px rgba(0,0,0,.24)}"
+        "body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#16345a 0%%,#0a1425 42%%,#050b14 100%%);font-family:'Segoe UI',Tahoma,sans-serif;color:#f4f8ff;overflow-x:hidden}"
+        /* overflow:hidden + min-width:0 prevents children with intrinsic
+         * width (long button labels, long Thai phrases) from pushing past
+         * the card frame on narrow phones. The "WiFi bar bleeds out of
+         * the background" report came from .actions taking its width
+         * from a non-shrinking .btn child. */
+        ".card{max-width:720px;width:100%%;min-width:0;overflow:hidden;background:linear-gradient(180deg,rgba(17,36,61,.97),rgba(8,18,32,.98));border:1px solid rgba(255,255,255,.08);border-radius:28px;padding:30px;box-shadow:0 20px 46px rgba(0,0,0,.24)}"
         ".top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}"
         ".pill{display:inline-flex;padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.05);color:#9ae8d0;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}"
         ".lang-switch{display:inline-flex;padding:5px;border-radius:999px;background:rgba(3,12,22,.55);border:1px solid rgba(255,255,255,.09);gap:6px}"
@@ -331,8 +344,11 @@ static esp_err_t entry_send_login_page(httpd_req_t *req, bool show_error)
         ".guide{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:18px}"
         ".guide-card{border-radius:18px;padding:16px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}"
         ".guide-card h3{margin:0 0 6px;font-size:18px}.guide-card p{font-size:14px;line-height:1.7}"
-        ".actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px}"
-        ".btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border-radius:14px;border:none;font-size:15px;font-weight:700;text-decoration:none;cursor:pointer}"
+        ".actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px;width:100%%;min-width:0}"
+        /* max-width:100%% + overflow-wrap so a long Thai/EN label wraps
+         * inside the card instead of pushing the parent flex container
+         * past the screen edge (mobile "WiFi bar bleeds out" bug). */
+        ".btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border-radius:14px;border:none;font-size:15px;font-weight:700;text-decoration:none;cursor:pointer;max-width:100%%;text-align:center;overflow-wrap:anywhere}"
         ".primary{background:linear-gradient(135deg,#4dd7b0,#2fc4d5);color:#042032}"
         ".secondary{background:rgba(109,184,255,.12);border:1px solid rgba(109,184,255,.28);color:#e4efff}"
         ".hint{margin-top:12px;color:#96acc8;font-size:13px;line-height:1.7}"
@@ -359,7 +375,11 @@ static esp_err_t entry_send_login_page(httpd_req_t *req, bool show_error)
         "</form>"
         "<div class='guide'>"
         "<div class='guide-card'><h3><span class='lang-en'>Customer Code</span><span class='lang-th'>รหัสผู้ใช้</span></h3><p><span class='lang-en'>Opens the protected customer page for Telegram Bot setup and notification routing.</span><span class='lang-th'>เข้าไปหน้าที่ลูกค้าใช้สำหรับตั้งค่า Telegram Bot และการแจ้งเตือน</span></p></div>"
-        "<div class='guide-card'><h3><span class='lang-en'>Technician Code</span><span class='lang-th'>รหัสช่าง</span></h3><p><span class='lang-en'>Opens the maintenance dashboard for diagnostics, module checks, camera tools, and backend controls.</span><span class='lang-th'>เข้าไปหน้าช่างสำหรับตรวจระบบ โมดูล กล้อง และฟังก์ชันหลังบ้าน</span></p></div>"
+        /* Technician Code card removed per user request 2026-05-17:
+         * the maintenance flow is intended for the installer/owner
+         * only and shouldn't be advertised on the public login page.
+         * The technician code itself still works at this login form
+         * (auto-routes to /tech) — only the guide card is hidden. */
         "</div>"
         "<div class='hint lang-en'>Opening the device IP will always land on this page first unless you already have a valid login session.</div>"
         "<div class='hint lang-th'>เมื่อเปิด IP ของเครื่อง ระบบจะเข้าหน้านี้ก่อนเสมอ ยกเว้นมี session ที่ล็อกอินค้างไว้อยู่แล้ว</div>"
@@ -470,9 +490,10 @@ static esp_err_t cloud_send_login_page(httpd_req_t *req, bool show_error)
         "<html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>Cloud Access</title>"
         "<style>"
+        "*,*::before,*::after{box-sizing:border-box}"
         "body.lang-en .lang-th{display:none!important}body.lang-th .lang-en{display:none!important}"
-        "body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#16345a 0%%,#0a1425 42%%,#050b14 100%%);font-family:'Segoe UI',Tahoma,sans-serif;color:#f4f8ff}"
-        ".card{max-width:620px;width:100%%;background:linear-gradient(180deg,rgba(17,36,61,.97),rgba(8,18,32,.98));border:1px solid rgba(255,255,255,.08);border-radius:28px;padding:30px;box-shadow:0 20px 46px rgba(0,0,0,.24)}"
+        "body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#16345a 0%%,#0a1425 42%%,#050b14 100%%);font-family:'Segoe UI',Tahoma,sans-serif;color:#f4f8ff;overflow-x:hidden}"
+        ".card{max-width:620px;width:100%%;min-width:0;overflow:hidden;background:linear-gradient(180deg,rgba(17,36,61,.97),rgba(8,18,32,.98));border:1px solid rgba(255,255,255,.08);border-radius:28px;padding:30px;box-shadow:0 20px 46px rgba(0,0,0,.24)}"
         ".top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}"
         ".pill{display:inline-flex;padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.05);color:#9ae8d0;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}"
         ".lang-switch{display:inline-flex;padding:5px;border-radius:999px;background:rgba(3,12,22,.55);border:1px solid rgba(255,255,255,.09);gap:6px}"
@@ -484,8 +505,11 @@ static esp_err_t cloud_send_login_page(httpd_req_t *req, bool show_error)
         "input{width:100%%;border-radius:16px;border:1px solid #35567f;background:#06101e;color:#f4f8ff;padding:14px 16px;font-size:16px;outline:none}"
         "input:focus{border-color:#6db8ff;box-shadow:0 0 0 3px rgba(109,184,255,.16)}"
         ".error{margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(255,138,128,.10);border:1px solid rgba(255,138,128,.18);color:#ffd9d3;font-size:14px;line-height:1.7}"
-        ".actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px}"
-        ".btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border-radius:14px;border:none;font-size:15px;font-weight:700;text-decoration:none;cursor:pointer}"
+        ".actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px;width:100%%;min-width:0}"
+        /* max-width:100%% + overflow-wrap so a long Thai/EN label wraps
+         * inside the card instead of pushing the parent flex container
+         * past the screen edge (mobile "WiFi bar bleeds out" bug). */
+        ".btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border-radius:14px;border:none;font-size:15px;font-weight:700;text-decoration:none;cursor:pointer;max-width:100%%;text-align:center;overflow-wrap:anywhere}"
         ".primary{background:linear-gradient(135deg,#4dd7b0,#2fc4d5);color:#042032}"
         ".secondary{background:rgba(109,184,255,.12);border:1px solid rgba(109,184,255,.28);color:#e4efff}"
         ".hint{margin-top:12px;color:#96acc8;font-size:13px;line-height:1.7}"
@@ -1003,8 +1027,9 @@ esp_err_t cloud_save_handler(httpd_req_t *req) {
         "<html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>Cloud Config Result</title>"
         "<style>"
-        "body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#16345a 0%%,#0a1425 42%%,#050b14 100%%);font-family:'Segoe UI',Tahoma,sans-serif;color:#f4f8ff}"
-        ".card{max-width:720px;width:100%%;background:linear-gradient(180deg,rgba(17,36,61,.97),rgba(8,18,32,.98));border:1px solid rgba(255,255,255,.08);border-radius:28px;padding:30px;box-shadow:0 20px 46px %s}"
+        "*,*::before,*::after{box-sizing:border-box}"
+        "body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#16345a 0%%,#0a1425 42%%,#050b14 100%%);font-family:'Segoe UI',Tahoma,sans-serif;color:#f4f8ff;overflow-x:hidden}"
+        ".card{max-width:720px;width:100%%;min-width:0;overflow:hidden;background:linear-gradient(180deg,rgba(17,36,61,.97),rgba(8,18,32,.98));border:1px solid rgba(255,255,255,.08);border-radius:28px;padding:30px;box-shadow:0 20px 46px %s}"
         ".pill{display:inline-flex;padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.05);color:%s;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}"
         "h1{margin:18px 0 12px;font-size:34px;line-height:1.15}"
         "p{margin:0;color:#a7bdd7;font-size:16px;line-height:1.8}"
@@ -1086,9 +1111,10 @@ esp_err_t cloud_test_handler(httpd_req_t *req) {
         "<html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>Telegram Test Result</title>"
         "<style>"
+        "*,*::before,*::after{box-sizing:border-box}"
         "body.lang-en .lang-th{display:none!important}body.lang-th .lang-en{display:none!important}"
-        "body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#16345a 0%%,#0a1425 42%%,#050b14 100%%);font-family:'Segoe UI',Tahoma,sans-serif;color:#f4f8ff}"
-        ".card{max-width:760px;width:100%%;background:linear-gradient(180deg,rgba(17,36,61,.97),rgba(8,18,32,.98));border:1px solid rgba(255,255,255,.08);border-radius:28px;padding:30px;box-shadow:0 20px 46px %s}"
+        "body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#16345a 0%%,#0a1425 42%%,#050b14 100%%);font-family:'Segoe UI',Tahoma,sans-serif;color:#f4f8ff;overflow-x:hidden}"
+        ".card{max-width:760px;width:100%%;min-width:0;overflow:hidden;background:linear-gradient(180deg,rgba(17,36,61,.97),rgba(8,18,32,.98));border:1px solid rgba(255,255,255,.08);border-radius:28px;padding:30px;box-shadow:0 20px 46px %s}"
         ".top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}"
         ".pill{display:inline-flex;padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.05);color:%s;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}"
         ".lang-switch{display:inline-flex;padding:5px;border-radius:999px;background:rgba(3,12,22,.55);border:1px solid rgba(255,255,255,.09);gap:6px}"
