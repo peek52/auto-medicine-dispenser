@@ -1449,11 +1449,18 @@ static void ui_standby_render_modal(uint32_t now)
                 fill_round_rect(60,  208, 160, 52, 12, THEME_BAD);
                 fill_round_rect(260, 208, 160, 52, 12, THEME_OK);
                 if (th) {
-                    draw_utf8_centered_line_scaled(140, 222, "ล้างช่อง",
-                                                   0xFFFF, THEME_BAD, 24);
-                    draw_utf8_centered_line_scaled(340, 222, "ใส่จำนวนยา",
-                                                   0xFFFF, THEME_OK, 24);
+                    /* Text height reduced 24 → 20 per user report
+                     * 2026-05-17: "ใส่จำนวนยา" at size 24 spilled past
+                     * the 160-px button edge ("setcout ล้นกรอบ"). At
+                     * size 20 the glyphs fit comfortably with margin. */
+                    draw_utf8_centered_line_scaled(140, 224, "ล้างช่อง",
+                                                   0xFFFF, THEME_BAD, 20);
+                    draw_utf8_centered_line_scaled(340, 224, "ใส่จำนวนยา",
+                                                   0xFFFF, THEME_OK, 20);
                 } else {
+                    /* English "Set Count" at FreeSansBold18pt7b is
+                     * ~120 px wide and fits inside the 160-px button;
+                     * left unchanged. */
                     draw_string_centered(140, 240, "Clear",
                                          0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
                     draw_string_centered(340, 240, "Set Count",
