@@ -2073,7 +2073,13 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
         s_incomplete_pill_drawn = false;
         pending_page        = PAGE_SETUP_MEDS_DETAIL;
         force_redraw        = true;
-        dfplayer_play_track(28);                /* confirm/forward sound */
+        /* No click sound on incomplete-module popup dismissal per
+         * user request 2026-05-17: "ตอนกดล้างยา หรือเติมยาหลังยา
+         * หมด กดแล้วไม่ต้องใส่เสียงก็ได้". The popup already plays
+         * a voice prompt (108/109) when it appears; adding a click
+         * sound on tap is audio clutter. Covers BOTH the legacy
+         * tap-anywhere path here AND the explicit needs_count
+         * buttons (Clear/Set Count) above. */
         return;
     }
 
