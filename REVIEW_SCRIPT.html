@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>สคริปต์รีวิว — เครื่องจ่ายยาอัตโนมัติ ESP32-P4</title>
+<style>
+  :root{
+    --bg:#0e1320;--panel:#171c2c;--card:#1f2538;--border:#2a3149;
+    --text:#e7ecf6;--muted:#9ba8c4;--accent:#2dd4bf;--accent-dim:#0f766e;
+    --warn:#f59e0b;--bad:#ef4444;--ok:#22c55e;--th:#a78bfa;
+    --code-bg:#0b0f1c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font-family:'Sukhumvit Set','Prompt','Segoe UI',-apple-system,sans-serif;
+    line-height:1.65}
+  body{padding:2.5rem 1.25rem;max-width:1100px;margin:0 auto}
+  header{margin-bottom:2.5rem;padding-bottom:2rem;border-bottom:1px solid var(--border)}
+  header h1{font-size:2.4rem;margin:0 0 .6rem;font-weight:800;
+    background:linear-gradient(120deg,var(--accent) 0%,var(--th) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  header .meta{display:flex;gap:1rem;flex-wrap:wrap;color:var(--muted);font-size:.95rem}
+  header .meta span{background:var(--panel);padding:.3rem .8rem;border-radius:999px;
+    border:1px solid var(--border)}
+  h2{margin:2.5rem 0 1rem;font-size:1.65rem;color:var(--accent);
+    display:flex;align-items:center;gap:.7rem;
+    padding-bottom:.4rem;border-bottom:1px solid var(--border)}
+  h2 .scene-num{background:var(--accent-dim);color:#fff;padding:.15rem .7rem;
+    border-radius:8px;font-size:.85rem;font-weight:700}
+  h3{margin:1.4rem 0 .6rem;font-size:1.15rem;color:var(--th)}
+  h4{margin:1rem 0 .4rem;color:var(--accent);font-size:1rem}
+  p,li{color:var(--text)}
+  .muted{color:var(--muted);font-size:.92rem}
+  .card{background:var(--panel);border:1px solid var(--border);
+    border-radius:14px;padding:1.2rem 1.4rem;margin:1rem 0}
+  .quote{background:linear-gradient(90deg,rgba(45,212,191,0.12) 0%,transparent 100%);
+    border-left:3px solid var(--accent);padding:.9rem 1.2rem;margin:1rem 0;
+    border-radius:0 10px 10px 0;font-size:1.02rem}
+  .quote::before{content:"🎙️ ";font-style:normal}
+  .caption{background:rgba(167,139,250,0.1);border:1px dashed var(--th);
+    padding:.5rem 1rem;border-radius:8px;display:inline-block;margin:.5rem 0;
+    font-size:.9rem;color:var(--th)}
+  table{width:100%;border-collapse:collapse;margin:1rem 0;
+    background:var(--card);border-radius:10px;overflow:hidden}
+  th,td{padding:.7rem 1rem;text-align:left;border-bottom:1px solid var(--border)}
+  th{background:var(--panel);color:var(--accent);font-weight:700;font-size:.9rem;
+    text-transform:uppercase;letter-spacing:.05em}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:rgba(45,212,191,0.05)}
+  td:first-child{font-weight:600;color:var(--accent);font-family:monospace;white-space:nowrap}
+  ol li{margin:.35rem 0}
+  ul li{margin:.25rem 0}
+  code{background:var(--code-bg);color:var(--accent);padding:.15rem .4rem;
+    border-radius:4px;font-family:'JetBrains Mono','Cascadia Code',monospace;
+    font-size:.92em}
+  .scene-time{display:inline-block;background:var(--bad);color:#fff;
+    padding:.2rem .6rem;border-radius:6px;font-size:.8rem;margin-left:.5rem;
+    font-weight:600}
+  .tip{background:linear-gradient(90deg,rgba(245,158,11,0.1) 0%,transparent 100%);
+    border-left:3px solid var(--warn);padding:.8rem 1.2rem;margin:.8rem 0;
+    border-radius:0 10px 10px 0}
+  .tip::before{content:"💡 ";font-weight:bold;color:var(--warn)}
+  .ok-tag{display:inline-block;background:var(--ok);color:#fff;
+    padding:.15rem .6rem;border-radius:6px;font-size:.78rem;font-weight:600}
+  .toc{background:var(--panel);border:1px solid var(--border);border-radius:14px;
+    padding:1.2rem 1.5rem;margin:1.5rem 0;position:sticky;top:1rem}
+  .toc h3{margin-top:0;color:var(--accent)}
+  .toc ol{column-count:2;column-gap:2rem;padding-left:1.2rem;margin:0}
+  .toc a{color:var(--text);text-decoration:none;display:block;padding:.2rem 0;
+    border-bottom:1px solid transparent;transition:all .15s}
+  .toc a:hover{color:var(--accent);border-bottom-color:var(--accent)}
+  footer{margin-top:4rem;padding-top:2rem;border-top:1px solid var(--border);
+    text-align:center;color:var(--muted);font-size:.9rem}
+  footer code{font-size:.85em}
+  .badge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+    gap:.7rem;margin:1rem 0}
+  .badge-grid .badge{background:var(--card);border:1px solid var(--border);
+    padding:.6rem .9rem;border-radius:10px;display:flex;align-items:center;
+    gap:.6rem;font-size:.9rem}
+  .badge-grid .badge::before{content:"✓ ";color:var(--ok);font-weight:bold}
+  @media (max-width:720px){
+    body{padding:1.5rem .8rem}
+    header h1{font-size:1.8rem}
+    h2{font-size:1.3rem}
+    .toc ol{column-count:1}
+  }
+  @media print{
+    body{background:#fff;color:#000}
+    .toc{display:none}
+    h2{break-before:page;border-color:#888}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎬 สคริปต์ถ่ายคลิปรีวิว</h1>
+  <p style="font-size:1.15rem;color:var(--muted);margin:.3rem 0 1.2rem">
+    เครื่องจ่ายยาอัตโนมัติ ESP32-P4 — ครบทุกฟังก์ชั่น
+  </p>
+  <div class="meta">
+    <span>⏱️ ประมาณ 14 นาที</span>
+    <span>🎬 11 ฉาก</span>
+    <span>🇹🇭 Voice-over ภาษาไทย</span>
+    <span>📺 1080p แนะนำ</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h3>📑 สารบัญฉาก</h3>
+  <ol>
+    <li><a href="#scene1">Hook + แนะนำเครื่อง</a></li>
+    <li><a href="#scene2">ทัวร์ฮาร์ดแวร์</a></li>
+    <li><a href="#scene3">Boot sequence</a></li>
+    <li><a href="#scene4">Touch UI: เซ็ตอัพยา</a></li>
+    <li><a href="#scene5">NETPIE Dashboard</a></li>
+    <li><a href="#scene6">Telegram Bot</a></li>
+    <li><a href="#scene7">Auto Dispense + Confirm</a></li>
+    <li><a href="#scene8">Edge case: ยาหมด popup</a></li>
+    <li><a href="#scene9">Web /tech panel</a></li>
+    <li><a href="#scene10">Hardware fail alert</a></li>
+    <li><a href="#scene11">Offline operation + Recap</a></li>
+    <li><a href="#cheat">Cheat sheet 28 ฟังก์ชัน</a></li>
+    <li><a href="#tips">เทคนิคการถ่าย</a></li>
+  </ol>
+</nav>
+
+<section class="card">
+  <h3 style="margin-top:0">⚙️ เตรียมก่อนถ่าย</h3>
+  <table>
+    <thead><tr><th>รายการ</th><th>สถานะที่ควรเป็น</th></tr></thead>
+    <tbody>
+      <tr><td>โมดูล 6 ช่อง</td><td>ใส่ยาจำลองอย่างน้อย 3 ช่อง (เม็ดวิตามิน/ลูกอม)</td></tr>
+      <tr><td>Wi-Fi</td><td>เชื่อมแล้ว (จอแสดงสถานะ Online)</td></tr>
+      <tr><td>Telegram bot</td><td>ผูกกับ chat แล้ว ใช้ได้จริง</td></tr>
+      <tr><td>NETPIE Dashboard</td><td>เปิดบน laptop/มือถือเตรียมไว้</td></tr>
+      <tr><td>Web /tech</td><td>login พร้อม</td></tr>
+      <tr><td>กล้องถ่ายคลิป</td><td>2 angle: หน้าตู้ตรง + screen-record</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- SCENE 1 -->
+<h2 id="scene1"><span class="scene-num">01</span> Hook + แนะนำเครื่อง <span class="scene-time">0:00 – 0:40</span></h2>
+<p><strong>ภาพ:</strong> Pan-up จากฐานเครื่องขึ้นมาที่หน้าจอ standby</p>
+<div class="quote">
+  "นี่คือเครื่องจ่ายยาอัตโนมัติที่เราพัฒนาขึ้นเอง ใช้ ESP32-P4 Nano เป็นสมอง รองรับยา 6 ชนิด ตั้งเวลาได้ 7 มื้อต่อวัน เชื่อมต่อ NETPIE cloud และ Telegram bot — ดูแลผู้สูงอายุได้แม้อยู่คนละบ้าน วันนี้จะพาทุกคนรีวิวการใช้งานครบทุกฟังก์ชั่น"
+</div>
+<p><span class="caption">Caption: "Automatic Pill Dispenser — ESP32-P4 + NETPIE + Telegram"</span></p>
+
+<!-- SCENE 2 -->
+<h2 id="scene2"><span class="scene-num">02</span> ทัวร์ฮาร์ดแวร์ <span class="scene-time">0:40 – 1:40</span></h2>
+<table>
+  <thead><tr><th>Beat</th><th>ภาพ</th><th>คำพูด</th></tr></thead>
+  <tbody>
+    <tr><td>0:40</td><td>เปิดประตูตู้ → ชี้ตลับ 6 ช่อง</td><td>"หกตลับแยกอิสระ บรรจุยาได้ตลับละ 16 เม็ด"</td></tr>
+    <tr><td>0:55</td><td>ชี้ servo MG90S</td><td>"เซอร์โว MG90S 6 ตัว ขับด้วย PCA9685 ผ่าน I2C"</td></tr>
+    <tr><td>1:05</td><td>ชี้กล้อง OV5647</td><td>"กล้อง MIPI-CSI 5 ล้านพิกเซล ถ่ายภาพยืนยันการจ่ายยา"</td></tr>
+    <tr><td>1:15</td><td>ชี้จอ TFT 4"</td><td>"จอสัมผัส ST7796S ความละเอียด 480×320"</td></tr>
+    <tr><td>1:25</td><td>ชี้ลำโพง</td><td>"ลำโพง 8Ω 20W ขับด้วย DY-HV20T เสียงพูดภาษาไทย"</td></tr>
+    <tr><td>1:35</td><td>ชี้ตู้คอนโทรล</td><td>"สวิตช์ชิ่ง 5V 10A + 12V 2A แยกราง"</td></tr>
+  </tbody>
+</table>
+
+<!-- SCENE 3 -->
+<h2 id="scene3"><span class="scene-num">03</span> Boot sequence <span class="scene-time">1:40 – 2:30</span></h2>
+<p><strong>ภาพ:</strong> ปิด-เปิดเครื่อง ถ่ายตั้งแต่จอดับ → splash → standby</p>
+<h4>สิ่งที่ผู้ชมต้องเห็น:</h4>
+<ol>
+  <li>จอดำ → splash "เครื่องจ่ายยา / อัตโนมัติ" (~2 วินาที)</li>
+  <li>เปลี่ยนเป็นหน้า standby (เวลา + ตารางถัดไป)</li>
+  <li>ได้ยินเสียง servo park ช่วงสั้นๆ ขณะใช้หน้า standby แล้ว</li>
+  <li>แตะหน้าจอเทสต์ — touch ตอบรับทันที</li>
+</ol>
+<div class="quote">
+  "เปิดเครื่องแค่ 2 วินาทีก็พร้อมใช้งาน servo ทุกตัว park ไป home อัตโนมัติในพื้นหลัง โดยที่ touch screen ใช้งานได้ทันที"
+</div>
+
+<!-- SCENE 4 -->
+<h2 id="scene4"><span class="scene-num">04</span> Touch UI: เซ็ตอัพยา <span class="scene-time">2:30 – 4:30</span></h2>
+<h4>ขั้นตอนทำหน้ากล้อง:</h4>
+<ol>
+  <li>แตะมุมล่างขวาเพื่อเข้า Menu</li>
+  <li>เลือก "ตั้งค่ายา" (Setup Meds)</li>
+  <li>แตะโมดูล 1 → เข้าหน้า detail</li>
+  <li>ตั้งชื่อยา → กด "ชื่อยา" → keyboard → พิมพ์ "Paracetamol" → Enter</li>
+  <li>ปรับจำนวน → กด <code>+</code> จนถึง 10</li>
+  <li>เลือกมื้อ → แตะ "ก่อนอาหารเช้า" + "ก่อนอาหารกลางวัน"</li>
+  <li>กด Save → กลับหน้า Setup Meds → เห็นโมดูล 1 มีข้อมูลครบ</li>
+</ol>
+<div class="quote">
+  "ตั้งค่ายาแต่ละช่องได้ง่ายๆ ผ่านหน้าจอสัมผัส กำหนดชื่อยา จำนวนเม็ด และมื้อที่ต้องจ่ายได้ 7 มื้อ — เช้า กลางวัน เย็น ก่อนนอน และก่อน-หลังอาหาร"
+</div>
+
+<!-- SCENE 5 -->
+<h2 id="scene5"><span class="scene-num">05</span> NETPIE Dashboard <span class="scene-time">4:30 – 6:30</span></h2>
+<p><strong>ภาพ:</strong> ถ่ายมือถือ/laptop เปิด NETPIE widget</p>
+<h4>ขั้นตอน:</h4>
+<ol>
+  <li>เปิด NETPIE freeboard ที่ตั้งไว้</li>
+  <li><strong>Widget 1 — Dashboard หลัก:</strong> สถานะ Online + เวลาปัจจุบัน + กราฟยาคงเหลือ 6 ช่อง</li>
+  <li><strong>Widget 2 — ตั้งเวลา:</strong> กด Edit → ปรับเวลามื้อใหม่ → Save → บนเครื่อง popup confirm เด้ง → กดอนุมัติ → Telegram ส่งสรุปการเปลี่ยนแปลง</li>
+  <li><strong>Widget 3 — Manual Dispense:</strong> เลือกโมดูล 1 → จำนวน 2 → กดจ่าย → ดู servo หมุนผ่านกล้องสด</li>
+  <li><strong>Widget 4 — คืนยาทั้งหมด:</strong> กด "คืนยาทั้งหมด" → confirm → servo ทุกตัวทำงาน</li>
+</ol>
+<div class="quote">
+  "NETPIE Dashboard ให้คุณดูสถานะแบบ realtime ตั้งเวลาใหม่ สั่งจ่ายยาด้วยมือ หรือล้างยาทั้งระบบ — ที่สำคัญทุกการเปลี่ยนแปลงต้องผ่านการยืนยันจากหน้าจอเครื่อง ป้องกันการแก้ข้อมูลโดยไม่ตั้งใจ"
+</div>
+
+<!-- SCENE 6 -->
+<h2 id="scene6"><span class="scene-num">06</span> Telegram Bot <span class="scene-time">6:30 – 8:30</span></h2>
+<table>
+  <thead><tr><th>คำสั่ง</th><th>สิ่งที่ควรเห็น</th></tr></thead>
+  <tbody>
+    <tr><td>/status</td><td>bot ตอบสถานะตลับ 6 ช่อง พร้อมจำนวนคงเหลือ</td></tr>
+    <tr><td>/photo</td><td>bot ส่งภาพ realtime จากกล้องในเครื่อง</td></tr>
+    <tr><td>/dispense 1 2</td><td>bot ยืนยัน → servo จ่าย 2 เม็ดจากตลับ 1 + รูปภาพหลังจ่าย</td></tr>
+    <tr><td>/help</td><td>bot แสดงรายการคำสั่งทั้งหมด</td></tr>
+  </tbody>
+</table>
+<div class="quote">
+  "Telegram bot รองรับคำสั่งครบ — สั่งจ่ายยา ดูภาพสด ตรวจสถานะ และยังส่งภาพถ่ายเป็นหลักฐานทุกครั้งที่จ่ายยา ผู้ดูแลตรวจสอบจากที่ไหนก็ได้ในโลก"
+</div>
+<p><span class="caption">Caption: "Telegram: /status /photo /dispense /help"</span></p>
+
+<!-- SCENE 7 -->
+<h2 id="scene7"><span class="scene-num">07</span> Auto Dispense + Confirm popup <span class="scene-time">8:30 – 10:30</span></h2>
+<p><strong>ภาพ:</strong> ตั้งเวลา test ให้ตรงกับเวลาถ่าย เช่น ก่อนถ่าย 1 นาที</p>
+<h4>ลำดับ:</h4>
+<ol>
+  <li>ถึงเวลา → จอเปลี่ยนเป็น "ถึงเวลาทานยา" สีแดง</li>
+  <li>ลำโพงพูด "ถึงเวลาทานยาก่อนอาหารกลางวัน"</li>
+  <li><strong>แตะหน้าจอ</strong> (ใช้ปลายนิ้วชัดๆ) → popup หาย → "กำลังจ่ายยา"</li>
+  <li>servo หมุน → ยาตกลงถาด</li>
+  <li>จอเปลี่ยนเป็น "จ่ายยาเรียบร้อย"</li>
+  <li>ลำโพงพูด "จ่ายยาเรียบร้อย"</li>
+  <li>Telegram ได้รับภาพ + ข้อความ "จ่ายยาแล้ว มื้อ ก่อนอาหารกลางวัน — Paracetamol 2 เม็ด"</li>
+</ol>
+<div class="quote">
+  "ถึงเวลาแล้วเครื่องจะเตือนทั้งจอและเสียง ผู้ใช้แตะเพื่อยืนยันรับยา — เครื่องจะจ่ายยาออกมาแล้วถ่ายภาพส่งให้ผู้ดูแลทันที"
+</div>
+
+<!-- SCENE 8 -->
+<h2 id="scene8"><span class="scene-num">08</span> Edge case: ยาหมด popup <span class="scene-time">10:30 – 11:30</span></h2>
+<p><strong>ภาพ:</strong> ตั้งโมดูลที่มี slot แต่ count=0 → รอ slot fire</p>
+<h4>สิ่งที่ผู้ชมเห็น:</h4>
+<ol>
+  <li>ถึงเวลา → popup สีแดง "โมดูลที่ N ยังไม่ใส่ยา"</li>
+  <li>แสดง 2 ปุ่ม: <strong>ล้างช่อง</strong> (สีแดง ซ้าย) / <strong>ใส่จำนวนยา</strong> (สีเขียว ขวา)</li>
+  <li>กด "ใส่จำนวนยา" → เข้าหน้า detail ของโมดูลนั้นๆ</li>
+  <li>กลับมา demo "ล้างช่อง" → โมดูลถูก reset</li>
+</ol>
+<div class="quote">
+  "ถ้าตลับไหนตั้งค่ามื้อแต่ยังไม่ใส่ยา ระบบจะแจ้งเตือนพร้อมให้เลือกล้างค่าหรือเติมยาทันที"
+</div>
+
+<!-- SCENE 9 -->
+<h2 id="scene9"><span class="scene-num">09</span> Web /tech panel <span class="scene-time">11:30 – 12:30</span></h2>
+<p><strong>ภาพ:</strong> เปิด browser → IP ของเครื่อง</p>
+<h4>ลำดับ:</h4>
+<ol>
+  <li>หน้า Login → กรอกรหัส tech → Enter</li>
+  <li>แสดงหน้า /tech → Dashboard</li>
+  <li><strong>System tab:</strong> แสดง max_pills, quiet hours, sound</li>
+  <li><strong>Module tab:</strong> สลับโมดูล logical → physical</li>
+  <li><strong>Camera tab:</strong> ดู MJPEG stream live + ปุ่ม snapshot</li>
+  <li><strong>Servo tab:</strong> ตั้ง home/work angle ของแต่ละ servo</li>
+  <li><strong>Audio test:</strong> กดปุ่มทดสอบเสียง</li>
+</ol>
+<div class="quote">
+  "หน้า /tech สำหรับช่างเทคนิค ตั้งค่าระดับ system ดู camera stream ปรับ servo angle และทดสอบเสียง — รหัสเข้าใช้แยกจากผู้ใช้ทั่วไป"
+</div>
+
+<!-- SCENE 10 -->
+<h2 id="scene10"><span class="scene-num">10</span> Hardware fail alert <span class="scene-time">12:30 – 13:30</span></h2>
+<p><strong>ภาพ:</strong> ถอดสาย PCA9685 ออก → reboot</p>
+<h4>สิ่งที่ผู้ชมเห็น:</h4>
+<ol>
+  <li>Boot ผ่านปกติ</li>
+  <li>หลัง 3 นาที popup สีแดงเด้ง "ฮาร์ดแวร์ผิดปกติ — กรุณาปิดเปิดเครื่อง"</li>
+  <li>Telegram ได้รับข้อความเตือน (พร้อม rate-limit 1 ชม.)</li>
+  <li>แตะหน้าจอที่ไหนก็ปิด popup ได้</li>
+</ol>
+<div class="quote">
+  "ถ้าฮาร์ดแวร์มีปัญหา เครื่องจะแจ้งทั้งบนจอและส่ง Telegram ให้ผู้ดูแลรู้ทันที — ไม่ต้องนั่งเฝ้าตู้ตลอด"
+</div>
+
+<!-- SCENE 11 -->
+<h2 id="scene11"><span class="scene-num">11</span> Offline operation + Recap <span class="scene-time">13:30 – 14:30</span></h2>
+<ol>
+  <li>ถอด Wi-Fi (ดึงสายเราเตอร์หรือปิด ESP32-C6) → ดูจอ — ยัง standby ปกติ</li>
+  <li>รอ slot fire → ยังจ่ายยาได้</li>
+  <li>เสียบ Wi-Fi กลับ → Telegram ค้างคิวจะปล่อยทีเดียว</li>
+</ol>
+<div class="quote">
+  "เครื่องจ่ายยาอัตโนมัตินี้ทำงานได้ครบครัน ผ่าน touch screen, NETPIE cloud, และ Telegram bot — มีระบบ Watchdog 3 ชั้น offline queue กล้องถ่ายยืนยัน และที่สำคัญทำงานต่อเนื่อง 24 ชั่วโมงแม้ไม่มีอินเทอร์เน็ต ฟังก์ชันจ่ายยายังคงอยู่ทุกอย่าง"
+</div>
+<p><span class="caption">Caption สุดท้าย: "✨ Source code: github.com/peek52/auto-medicine-dispenser"</span></p>
+<p><span class="caption">"📝 ปริญญานิพนธ์: เทคโนโลยีแมคคาทรอนิกส์ KMUTNB"</span></p>
+
+<!-- CHEAT SHEET -->
+<h2 id="cheat"><span class="scene-num">★</span> Cheat sheet — 28 ฟังก์ชันที่ต้องโชว์</h2>
+<div class="badge-grid">
+  <div class="badge">Hardware tour (ฉาก 2)</div>
+  <div class="badge">Boot + servo park (3)</div>
+  <div class="badge">Touch UI navigation (4)</div>
+  <div class="badge">Setup meds (4)</div>
+  <div class="badge">Setup schedule (4)</div>
+  <div class="badge">Language switch TH/EN</div>
+  <div class="badge">NETPIE Dashboard (5)</div>
+  <div class="badge">NETPIE Manual dispense (5)</div>
+  <div class="badge">NETPIE Clear all (5)</div>
+  <div class="badge">NETPIE Pending approval (5)</div>
+  <div class="badge">Telegram /status (6)</div>
+  <div class="badge">Telegram /photo (6)</div>
+  <div class="badge">Telegram /dispense (6)</div>
+  <div class="badge">Telegram /help (6)</div>
+  <div class="badge">Auto-dispense flow (7)</div>
+  <div class="badge">Confirm popup (7)</div>
+  <div class="badge">Camera snapshot → TG (7)</div>
+  <div class="badge">Out-of-stock popup (8)</div>
+  <div class="badge">Web /tech login (9)</div>
+  <div class="badge">Web /tech tabs (9)</div>
+  <div class="badge">MJPEG stream (9)</div>
+  <div class="badge">Hardware fail alert (10)</div>
+  <div class="badge">Offline operation (11)</div>
+  <div class="badge">Recovery (queue flush)</div>
+  <div class="badge">Skip dispense (optional)</div>
+  <div class="badge">Emergency stop (optional)</div>
+  <div class="badge">Quiet hours (optional)</div>
+  <div class="badge">Boot-clear flow (optional)</div>
+</div>
+
+<!-- TIPS -->
+<h2 id="tips"><span class="scene-num">🎙️</span> เทคนิคการถ่าย</h2>
+<div class="tip"><strong>เสียง:</strong> ใช้ไมค์ติดเสื้อหรือ shotgun mic — ลำโพงเครื่องเสียงดัง ระวังตัดทับเสียงพูด</div>
+<div class="tip"><strong>แสง:</strong> ไฟวงแหวนส่องหน้าจอตรงๆ จะทำให้จอสะท้อน — ใช้ไฟด้านข้าง 45°</div>
+<div class="tip"><strong>มุมกล้องจอเครื่อง:</strong> กล้องทำมุม 5-10° กับจอ ป้องกัน moire pattern</div>
+<div class="tip"><strong>ตัดต่อ:</strong>
+  <ul>
+    <li>ใส่ caption thai-english คู่กัน (อาจารย์ต่างชาติเข้าใจง่าย)</li>
+    <li>timestamp ฉาก: 0:00, 1:40, 4:30, ฯลฯ ใน description</li>
+    <li>speed-up 2x ในฉากตั้งค่า (ไม่ต้องดูทุก keystroke)</li>
+  </ul>
+</div>
+<div class="tip"><strong>คำลงท้าย:</strong> "ขอบคุณที่ดูจนจบ — ฝากกด subscribe ครับ"</div>
+
+<footer>
+  <p><strong>Repo:</strong> <code>github.com/peek52/auto-medicine-dispenser</code></p>
+  <p><strong>Branch:</strong> <code>fix/cloud-networking-bugs</code></p>
+  <p>เปิดไฟล์นี้ในเบราว์เซอร์ก็ดูได้ทันที — ไม่ต้องลง dependency อะไรเพิ่ม</p>
+</footer>
+
+</body>
+</html>
