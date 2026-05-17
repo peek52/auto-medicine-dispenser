@@ -2029,7 +2029,11 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
                 s_incomplete_needs_count_drawn = false;
                 s_audio_played_state6 = false;
                 force_redraw = true;
-                dfplayer_play_track(28);
+                /* No button sound per user request 2026-05-17 —
+                 * "ตอนกด 2 ปุ่มนี้ไม่ต้องมีเสียงก็ได้". The popup
+                 * itself already plays a voice prompt when it
+                 * appears; an extra click sound on dismissal is
+                 * audio clutter. */
             } else if (on_set) {
                 selected_med_idx = s_incomplete_pill_idx;
                 s_popup_state = 0;
@@ -2037,7 +2041,7 @@ static void ui_standby_handle_touch_modal(uint16_t tx_n, uint16_t ty_n)
                 s_incomplete_needs_count_drawn = false;
                 pending_page = PAGE_SETUP_MEDS_DETAIL;
                 force_redraw = true;
-                dfplayer_play_track(28);
+                /* No button sound — see note on on_clear branch. */
             }
             return;
         }

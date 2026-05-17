@@ -1201,7 +1201,12 @@ static void execute_dispense(int slot_idx)
          * 2026-05-15. Trade-off is a longer total announcement (~30 s
          * worst case with all 6 modules), which is acceptable since
          * the dispense task is done at this point. */
-        const uint32_t WAIT_AFTER_HEADLINE_MS = 3000;   /* "จ่ายยาเรียบร้อย" */
+        /* Bumped per user report 2026-05-17: the "เสียงจ่ายยาไม่สำเร็จ"
+         * headline was getting cut off ("เล่นแปปเดียวเอง เสียงอื่นมา
+         * ทับ") because the lead-in queued in to dfplayer too soon.
+         * 3000 → 4500 ms gives the longer Thai failure phrase room to
+         * finish. */
+        const uint32_t WAIT_AFTER_HEADLINE_MS = 4500;   /* "จ่ายยาเรียบร้อย" / "ไม่สำเร็จ" */
         const uint32_t WAIT_AFTER_LEAD_IN_MS  = 5000;   /* long lead-in phrase */
         const uint32_t WAIT_PER_MODULE_MS     = 2800;   /* "โมดูลที่ N ยาหมด" */
         const uint32_t WAIT_AFTER_TRAILER_MS  = 4000;   /* "กรุณาเติมยาให้เรียบร้อยค่ะ" */
@@ -2366,6 +2371,7 @@ bool dispenser_clear_all_start(void)
      * Without this, the second task blocks on s_dispense_mutex then runs
      * the entire 6-module flush again from scratch. */
     bool already_running = false;
+    bool dispense_busy_seen = false;
     portENTER_CRITICAL(&s_dispense_state_mux);
     if (s_clear_all_running) {
         already_running = true;
@@ -2373,8 +2379,22 @@ bool dispenser_clear_all_start(void)
         s_clear_all_running = true;
         s_clear_all_current = -1;
     }
+    dispense_busy_seen = s_dispense_busy;
     portEXIT_CRITICAL(&s_dispense_state_mux);
+    ESP_LOGI(TAG, "dispenser_clear_all_start invoked. already_running=%d dispense_busy=%d e_stop=%d",
+             (int)already_running, (int)dispense_busy_seen, (int)s_emergency_stop);
     if (already_running) return false;
+    if (s_emergency_stop) {
+        /* Don't start clear-all while emergency-stop is active — the
+         * task would just spin servos that can't be stopped mid-cycle.
+         * Release the running flag we just took so a subsequent call
+         * after e-stop clears can succeed. */
+        portENTER_CRITICAL(&s_dispense_state_mux);
+        s_clear_all_running = false;
+        portEXIT_CRITICAL(&s_dispense_state_mux);
+        ESP_LOGW(TAG, "Clear-all rejected: emergency stop active");
+        return false;
+    }
 
     /* Clear the paint-ack flag BEFORE setting running=true so the
      * UI render loop doesn't latch a stale "painted" from a previous

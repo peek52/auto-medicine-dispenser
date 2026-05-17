@@ -100,6 +100,60 @@ static void shadow_unlock(void)
     }
 }
 
+/* Parse "HH:MM" → minutes since midnight. Returns -1 for empty/disabled
+ * slot ("--:--" or ""), or -2 for malformed input. */
+static int slot_hhmm_minutes(const char *s)
+{
+    if (!s || s[0] == '\0' || strcmp(s, "--:--") == 0) return -1;
+    if (strlen(s) != 5 || s[2] != ':' ||
+        !isdigit((unsigned char)s[0]) || !isdigit((unsigned char)s[1]) ||
+        !isdigit((unsigned char)s[3]) || !isdigit((unsigned char)s[4])) return -2;
+    int h = (s[0]-'0')*10 + (s[1]-'0');
+    int m = (s[3]-'0')*10 + (s[4]-'0');
+    if (h < 0 || h > 23 || m < 0 || m > 59) return -2;
+    return h*60 + m;
+}
+
+/* Returns true iff the slot_time[] set satisfies the user's rules
+ * (spec 2026-05-15):
+ *   1. Within each meal pair (morn, noon, eve): pre < post.
+ *   2. No two set slots share the same HH:MM ("ห้ามตั้งเวลาเดียวกัน").
+ * Empty slots are ignored (a slot at "--:--" is disabled). Cross-meal
+ * ordering between distinct pairs is NOT enforced; operators are free
+ * to set, e.g., bed before morn if their day runs that way.
+ * Caller passes a (slot_idx, proposed) pair representing the candidate
+ * write; the rest comes from `times`. Pass slot_idx=-1 + proposed=NULL
+ * to validate an already-merged array. */
+static bool slot_times_monotonic(const char *times[7], int slot_idx, const char *proposed)
+{
+    int mins[7];
+    for (int i = 0; i < 7; i++) {
+        const char *s = (i == slot_idx) ? proposed : times[i];
+        int v = slot_hhmm_minutes(s);
+        if (v == -2) return false;   /* malformed → reject */
+        mins[i] = v;
+    }
+    /* Rule 1: pre < post within each meal pair.
+     * Pair indices: (0,1) morn, (2,3) noon, (4,5) eve. `bed` (6) is
+     * standalone — no pre/post counterpart to check. */
+    const int pairs[3][2] = { {0, 1}, {2, 3}, {4, 5} };
+    for (int p = 0; p < 3; p++) {
+        int pre  = mins[pairs[p][0]];
+        int post = mins[pairs[p][1]];
+        if (pre < 0 || post < 0) continue;
+        if (post <= pre) return false;
+    }
+    /* Rule 2: no duplicate HH:MM across any set slots. */
+    for (int i = 0; i < 7; i++) {
+        if (mins[i] < 0) continue;
+        for (int j = i + 1; j < 7; j++) {
+            if (mins[j] < 0) continue;
+            if (mins[i] == mins[j]) return false;
+        }
+    }
+    return true;
+}
+
 static uint8_t normalize_med_slots_mask(uint8_t slots_mask)
 {
     slots_mask &= 0x7F;
@@ -284,7 +338,16 @@ static bool json_get_str(const char *json, const char *key, char *buf_out, size_
     return i > 0;
 }
 
-static void parse_shadow(const char *json)
+/* `is_initial_response` MUST be true only for messages arriving on
+ * @shadow/data/get/response — that topic is the device-initiated pull
+ * from cloud at MQTT connect, so the first such message is treated as
+ * the authoritative sync and applied silently.
+ *
+ * Anything on @shadow/data/updated is treated as a third-party write
+ * (web widget, another client, our own publish echo) — never a silent
+ * sync. This closes the bug where a /updated message arriving before
+ * the GET response could silently absorb a web-widget save. */
+static void parse_shadow(const char *json, bool is_initial_response)
 {
     if (!json) return;
     const char *data = strstr(json, "\"data\":");
@@ -292,9 +355,10 @@ static void parse_shadow(const char *json)
 
     if (!shadow_lock()) return;
 
-    /* Cold-boot pull from cloud applies directly; every subsequent
-     * message goes through the diff/pending-approval path. */
-    bool first_sync = !s_shadow_synced_once;
+    /* Only the FIRST GET response gets the silent-apply path; all other
+     * messages (including subsequent responses on reconnect and every
+     * /updated message) go through the diff/pending-approval flow. */
+    bool first_sync = is_initial_response && !s_shadow_synced_once;
 
     /* Start the incoming candidate as a copy of the current shadow so
      * non-mentioned fields stay untouched, then patch in only the
@@ -320,7 +384,12 @@ static void parse_shadow(const char *json)
 
     /* Per-module pill ceiling from the web/touch UI. Clamp to 1..999 so
      * a stale / corrupted shadow value doesn't lock the dispenser into
-     * 0 or wrap-around state. */
+     * 0 or wrap-around state. Note: `incoming.max_pills` becomes the
+     * effective cap for clamping the med%d_count fields below — without
+     * that, a synchronous "raise max_pills + raise count" save would
+     * see the count clamped against the OLD cap and lose user input. */
+    int effective_cap = s_shadow.max_pills;
+    if (effective_cap <= 0 || effective_cap > 999) effective_cap = DISPENSER_MAX_PILLS;
     if (json_get_str(data, "max_pills", tmp, sizeof(tmp))) {
         int mp = atoi(tmp);
         if (mp < 1)   mp = DISPENSER_MAX_PILLS;
@@ -330,6 +399,10 @@ static void parse_shadow(const char *json)
             max_pills_diff = true;
             any_diff = true;
         }
+        /* Use the new cap for clamp even when only the cap field is in
+         * this single payload — both raising and lowering must take
+         * effect on the count fields in the same message. */
+        effective_cap = mp;
     }
 
     for (int i = 0; i < 7; i++) {
@@ -339,6 +412,35 @@ static void parse_shadow(const char *json)
                 strlcpy(incoming.slot_time[i], buf, sizeof(incoming.slot_time[i]));
                 slot_time_diff[i] = true;
                 any_diff = true;
+            }
+        }
+    }
+
+    /* Enforce monotonic slot ordering on the candidate set. If a NETPIE
+     * client tries to set, e.g., morn_post < morn_pre or noon_pre <
+     * morn_post, revert the slot_time portion of the diff (keep med
+     * and enable diffs). Logged so the operator can see the rejection
+     * in the serial monitor. */
+    {
+        const char *cand[7];
+        for (int i = 0; i < 7; i++) cand[i] = incoming.slot_time[i];
+        if (!slot_times_monotonic(cand, -1, NULL)) {
+            ESP_LOGW(TAG, "Rejected NETPIE slot_time set — non-monotonic order");
+            for (int i = 0; i < 7; i++) {
+                if (slot_time_diff[i]) {
+                    strlcpy(incoming.slot_time[i], s_shadow.slot_time[i],
+                            sizeof(incoming.slot_time[i]));
+                    slot_time_diff[i] = false;
+                }
+            }
+            /* Re-compute any_diff: keep true only if at least one non-
+             * slot_time field still differs. Simplest: walk the other
+             * diff flags. */
+            any_diff = enabled_diff || max_pills_diff;
+            for (int i = 0; i < DISPENSER_MED_COUNT && !any_diff; i++) {
+                if (med_name_diff[i] || med_count_diff[i] || med_slots_diff[i]) {
+                    any_diff = true;
+                }
             }
         }
     }
@@ -360,9 +462,8 @@ static void parse_shadow(const char *json)
         snprintf(key, sizeof(key), "med%d_count", id);
         if (json_get_str(data, key, val_buf, sizeof(val_buf))) {
             int cnt = atoi(val_buf);
-            int cap = dispenser_max_pills();
-            if (cnt < 0)   cnt = 0;
-            if (cnt > cap) cnt = cap;
+            if (cnt < 0)            cnt = 0;
+            if (cnt > effective_cap) cnt = effective_cap;
             if (cnt != s_shadow.med[i].count) {
                 incoming.med[i].count = cnt;
                 med_count_diff[i] = true;
@@ -382,21 +483,38 @@ static void parse_shadow(const char *json)
     }
 
     /* disp_req is a transient command, not a stored config value —
-     * always handle it live, never via the pending-approval buffer. */
+     * always handle it live, never via the pending-approval buffer.
+     *
+     * Decode under the lock but defer the actual side effects
+     * (dispenser_clear_all_start / dispenser_manual_dispense / MQTT
+     * publish) until AFTER shadow_unlock(). Holding shadow_lock across
+     * those would risk a future deadlock if any of them ever ended up
+     * re-entering the shadow lock. */
+    enum { DISP_NONE, DISP_MANUAL, DISP_CLEAR_ALL } disp_cmd = DISP_NONE;
+    int  disp_mod_id = 0;
+    int  disp_qty    = 0;
     char disp_buf[24];
     if (json_get_str(data, "disp_req", disp_buf, sizeof(disp_buf)) &&
         disp_buf[0] && strcmp(disp_buf, "0,0") != 0 && strcmp(disp_buf, "0") != 0) {
-        int mod_id = 0;
-        int qty = 0;
-        if (sscanf(disp_buf, "%d,%d", &mod_id, &qty) == 2 &&
-            mod_id >= 1 && mod_id <= DISPENSER_MED_COUNT && qty > 0) {
-            ESP_LOGI(TAG, "NETPIE remote dispense request: module=%d qty=%d", mod_id, qty);
-            extern void dispenser_manual_dispense(int med_idx, int qty);
-            dispenser_manual_dispense(mod_id - 1, qty);
-            if (s_client) {
-                esp_mqtt_client_publish(s_client, NETPIE_TOPIC_SET,
-                                        "{\"data\":{\"disp_req\":\"0,0\"}}", 0, 0, 0);
-            }
+        ESP_LOGI(TAG, "disp_req received: '%s'", disp_buf);
+        /* Accept multiple aliases for the system-wide clear command.
+         * User report: NETPIE widget "ล้างยาทุกตลับ" (sends "all") was
+         * being silently ignored on some firmware builds while per-
+         * module dispense (sends "M,N") worked. Adding "clear" and
+         * "clearall" tokens future-proofs the parser against widget
+         * code churn and makes the command robust to case folding. */
+        if (strcmp(disp_buf, "all") == 0 ||
+            strcmp(disp_buf, "ALL") == 0 ||
+            strcmp(disp_buf, "clear") == 0 ||
+            strcmp(disp_buf, "clearall") == 0 ||
+            strcmp(disp_buf, "clear_all") == 0) {
+            disp_cmd = DISP_CLEAR_ALL;
+        } else if (sscanf(disp_buf, "%d,%d", &disp_mod_id, &disp_qty) == 2 &&
+                   disp_mod_id >= 1 && disp_mod_id <= DISPENSER_MED_COUNT &&
+                   disp_qty > 0) {
+            disp_cmd = DISP_MANUAL;
+        } else {
+            ESP_LOGW(TAG, "disp_req '%s' did not match any known command", disp_buf);
         }
     }
 
@@ -424,8 +542,13 @@ static void parse_shadow(const char *json)
         memcpy(s_pending.med_slots_diff, med_slots_diff, sizeof(med_slots_diff));
         if (!was_active) {
             s_pending.arrived_tick = xTaskGetTickCount();
-            s_pending_notify_telegram = true;
         }
+        /* Re-arm the Telegram notify flag on EVERY external diff, not
+         * only the inactive→active transition. A second web write
+         * arriving before the operator replies overwrites the snapshot
+         * — without re-arming, the user would /approve based on a
+         * stale message and inadvertently commit values they never saw. */
+        s_pending_notify_telegram = true;
         ESP_LOGI(TAG, "NETPIE pending shadow update — awaiting approval");
     }
     /* else: self-echo (all incoming fields match current shadow) →
@@ -436,6 +559,69 @@ static void parse_shadow(const char *json)
     s_last_rx_ticks = xTaskGetTickCount();
     // shadow_unlock() publishes the snapshot atomically.
     shadow_unlock();
+
+    /* Execute the disp_req side effects AFTER releasing the shadow lock
+     * — see the decode block above. */
+    if (disp_cmd == DISP_CLEAR_ALL) {
+        ESP_LOGI(TAG, "NETPIE remote clear-all request");
+        extern bool dispenser_clear_all_start(void);
+        extern bool dispenser_clear_all_active(void);
+        bool started = dispenser_clear_all_start();
+        if (!started) {
+            ESP_LOGW(TAG, "Clear-all start rejected (already running=%d). "
+                          "Caller may have left a stale state — exposing to the user.",
+                     (int)dispenser_clear_all_active());
+        }
+    } else if (disp_cmd == DISP_MANUAL) {
+        ESP_LOGI(TAG, "NETPIE remote dispense request: module=%d qty=%d",
+                 disp_mod_id, disp_qty);
+        extern void dispenser_manual_dispense(int med_idx, int qty);
+        dispenser_manual_dispense(disp_mod_id - 1, disp_qty);
+    }
+    if (disp_cmd != DISP_NONE && s_client) {
+        esp_mqtt_client_publish(s_client, NETPIE_TOPIC_SET,
+                                "{\"data\":{\"disp_req\":\"0,0\"}}", 0, 0, 0);
+    }
+}
+
+/* Push every scalar of s_shadow to NETPIE so the cloud aligns to the
+ * device's local state. Called on MQTT connect — the device's touch
+ * screen is the source of truth (user spec 2026-05-15), so any drift on
+ * the cloud side gets overwritten before we'd have to handle it through
+ * the pending-approval flow.
+ *
+ * Implementation: take a copy of s_shadow under lock, then publish each
+ * scalar without holding the lock (publish path is non-blocking but
+ * still touches MQTT internals; safer not to nest). NETPIE will echo
+ * everything back on @shadow/data/updated — parse_shadow's diff filter
+ * sees matching values and silently no-ops, but first_sync flips on the
+ * first echo so subsequent web-widget edits go through pending. */
+static void publish_full_shadow_from_copy(const netpie_shadow_t *src)
+{
+    if (!src || !src->loaded) return;
+    publish_shadow_payload(build_shadow_payload_int("scheduleEnabled", src->enabled ? 1 : 0));
+    publish_shadow_payload(build_shadow_payload_int("max_pills", src->max_pills));
+    for (int i = 0; i < 7; i++) {
+        publish_shadow_payload(build_shadow_payload_string(s_slot_keys[i], src->slot_time[i]));
+    }
+    for (int i = 0; i < DISPENSER_MED_COUNT; i++) {
+        char key[24];
+        int id = i + 1;
+        snprintf(key, sizeof(key), "med%d_name", id);
+        publish_shadow_payload(build_shadow_payload_string(key, src->med[i].name));
+        snprintf(key, sizeof(key), "med%d_count", id);
+        publish_shadow_payload(build_shadow_payload_int(key, src->med[i].count));
+        snprintf(key, sizeof(key), "med%d_slots", id);
+        publish_shadow_payload(build_shadow_payload_int(key, src->med[i].slots));
+    }
+}
+
+static void netpie_push_local_to_cloud(void)
+{
+    netpie_shadow_t snap;
+    if (!netpie_shadow_copy(&snap)) return;
+    publish_full_shadow_from_copy(&snap);
+    ESP_LOGI(TAG, "Pushed local shadow to NETPIE (device-is-master sync)");
 }
 
 static void mqtt_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *event_data)
@@ -450,7 +636,12 @@ static void mqtt_event_handler(void *arg, esp_event_base_t base, int32_t event_i
             ESP_LOGI(TAG, "Connected to NETPIE broker");
             esp_mqtt_client_subscribe(s_client, NETPIE_TOPIC_RESP, 0);
             esp_mqtt_client_subscribe(s_client, NETPIE_TOPIC_UPDATED, 0);
-            netpie_shadow_get();
+            /* Device-is-master sync: push local shadow up before doing
+             * anything else, so the cloud immediately reflects the
+             * device's current state. Skips the legacy GET-then-apply
+             * round-trip which could overwrite local NVS with stale
+             * cloud values if the operator made offline edits via touch. */
+            netpie_push_local_to_cloud();
             offline_sync_flush_async();
             break;
 
@@ -465,12 +656,17 @@ static void mqtt_event_handler(void *arg, esp_event_base_t base, int32_t event_i
                 int topic_len = ev->topic_len < (int)sizeof(topic) - 1 ? ev->topic_len : (int)sizeof(topic) - 1;
                 memcpy(topic, ev->topic, topic_len);
 
-                if (strstr(topic, "@shadow/data/get/response") || strstr(topic, "@shadow/data/updated")) {
+                bool is_get_resp = (strstr(topic, "@shadow/data/get/response") != NULL);
+                bool is_updated  = (strstr(topic, "@shadow/data/updated")      != NULL);
+                if (is_get_resp || is_updated) {
                     char *buf = (char *)malloc(ev->data_len + 1);
                     if (buf) {
                         memcpy(buf, ev->data, ev->data_len);
                         buf[ev->data_len] = '\0';
-                        parse_shadow(buf);
+                        /* Only GET responses are authoritative initial pulls;
+                         * /updated is a third-party write that must go through
+                         * the pending-approval diff path. */
+                        parse_shadow(buf, is_get_resp);
                         free(buf);
                     }
                 }
@@ -587,9 +783,9 @@ void netpie_shadow_update_med_slots(int med_id, uint8_t slots_mask)
     publish_shadow_payload(build_shadow_payload_int(key, slots_mask));
 }
 
-void netpie_shadow_update_slot(int slot_idx, const char *hh_mm)
+bool netpie_shadow_update_slot(int slot_idx, const char *hh_mm)
 {
-    if (!hh_mm || slot_idx < 0 || slot_idx >= 7) return;
+    if (!hh_mm || slot_idx < 0 || slot_idx >= 7) return false;
 
     // HH:MM validation — reject "25:00", "12:60", "ab:cd", "1:2",
     // "10:5", etc. Strict 5-char format with two digits, colon, two
@@ -602,21 +798,54 @@ void netpie_shadow_update_slot(int slot_idx, const char *hh_mm)
         if (strlen(hh_mm) != 5 || hh_mm[2] != ':' ||
             !isdigit((unsigned char)hh_mm[0]) || !isdigit((unsigned char)hh_mm[1]) ||
             !isdigit((unsigned char)hh_mm[3]) || !isdigit((unsigned char)hh_mm[4])) {
-            return;  // malformed
+            return false;  // malformed
         }
         int hh = (hh_mm[0]-'0')*10 + (hh_mm[1]-'0');
         int mm = (hh_mm[3]-'0')*10 + (hh_mm[4]-'0');
-        if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return;  // out of range
+        if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return false;
         strlcpy(safe_time, hh_mm, sizeof(safe_time));
     }
 
+    bool ok = false;
     if (shadow_lock()) {
-        strlcpy(s_shadow.slot_time[slot_idx], safe_time, sizeof(s_shadow.slot_time[slot_idx]));
-        shadow_cache_save_locked();
+        /* Validate the FULL set with the candidate slot patched in.
+         * Disabled-slot writes ("--:--") always pass; otherwise reject
+         * if the resulting set would break pre<post within a meal or
+         * duplicate another set slot's HH:MM. The caller surfaces the
+         * failure on the touch UI / web — silent reject would leave
+         * the operator confused why the new time didn't stick. */
+        const char *cur[7];
+        for (int i = 0; i < 7; i++) cur[i] = s_shadow.slot_time[i];
+        if (slot_times_monotonic(cur, slot_idx, safe_time)) {
+            strlcpy(s_shadow.slot_time[slot_idx], safe_time,
+                    sizeof(s_shadow.slot_time[slot_idx]));
+            shadow_cache_save_locked();
+            ok = true;
+        } else {
+            ESP_LOGW(TAG, "Rejected slot %d='%s' — duplicate or pre>=post",
+                     slot_idx, safe_time);
+        }
         shadow_unlock();
     }
 
-    publish_shadow_payload(build_shadow_payload_string(s_slot_keys[slot_idx], safe_time));
+    if (ok) {
+        publish_shadow_payload(build_shadow_payload_string(s_slot_keys[slot_idx], safe_time));
+    }
+    return ok;
+}
+
+bool netpie_slot_time_valid(int slot_idx, const char *hh_mm)
+{
+    if (slot_idx < 0 || slot_idx >= 7 || !hh_mm) return false;
+    /* Disabled / empty always allowed. */
+    if (hh_mm[0] == '\0' || strcmp(hh_mm, "--:--") == 0) return true;
+
+    if (!shadow_lock()) return false;
+    const char *cur[7];
+    for (int i = 0; i < 7; i++) cur[i] = s_shadow.slot_time[i];
+    bool ok = slot_times_monotonic(cur, slot_idx, hh_mm);
+    shadow_unlock();
+    return ok;
 }
 
 void netpie_shadow_update_enabled(bool enabled)

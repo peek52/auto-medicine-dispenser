@@ -765,11 +765,16 @@ static void clock_task(void *)
             // Loop the alarm sound every g_snd_alarm_interval_s seconds
             // (NVS-configurable from /tech > เสียง). Default 15 s lets a
             // long voice prompt finish playing before the next replay.
+            //
+            // Min bumped 5 s → 9 s after user report: the Thai alarm
+            // tracks like "ถึงเวลาทานยาก่อนอาหารกลางวัน" run ~7-8 s, so
+            // the previous 5 s minimum cut "วัน" off the tail every
+            // replay ("ขึ้นแค่อาหารกลาง" — "only 'lunch' is heard").
             if (current_page == PAGE_CONFIRM_MEDS || pending_page == PAGE_CONFIRM_MEDS) {
                 extern int g_snd_alarm;
                 extern int g_snd_alarm_interval_s;
                 uint32_t period_ms = (uint32_t)g_snd_alarm_interval_s * 1000U;
-                if (period_ms < 5000U) period_ms = 5000U;
+                if (period_ms < 9000U) period_ms = 9000U;
                 uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
                 if (s_last_play_ms == 0 || (now_ms - s_last_play_ms) >= period_ms) {
                     dfplayer_play_track(g_snd_alarm);

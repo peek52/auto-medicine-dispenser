@@ -351,6 +351,18 @@ static void deferred_init_task(void *arg)
         g_system_ready = true;
     }
 
+    /* COLD-BOOT SERVO PARK (deferred). Now that g_system_ready=true
+     * the splash dismisses immediately and touch is live; the user no
+     * longer waits for the 6-channel × 25 ms PWM burst + 300 ms settle.
+     * Park runs at low prio so it doesn't preempt the touch poll, and
+     * the dispenser scheduler's first slot check is >10 s away so the
+     * park easily finishes before any real dispense could fire. */
+    extern void servo_park_task(void *arg);
+    if (xTaskCreate(servo_park_task, "park", 3072, NULL, 2, NULL) != pdPASS) {
+        ESP_LOGW(TAG, "park task spawn failed — calling inline as fallback");
+        pca9685_park_all_home();
+    }
+
     // 2) Camera + web servers BEFORE WiFi. wifi_sta_init() can block
     //    up to 15 s waiting for ESP-Hosted to associate; if camera/web
     //    init were sequenced after that, every flash where WiFi is
@@ -403,6 +415,16 @@ static void deferred_init_task(void *arg)
 // In safe mode we skip the heavy WiFi/camera/web stack (those are the
 // suspected crash source after a panic). Bring up the minimum that lets
 // safe_mode_init_task removed 2026-05-10 — see top-of-file comment.
+
+/* Background one-shot: drives every servo channel to its configured
+ * home angle and self-deletes. Spawned from deferred_init_task so the
+ * splash screen doesn't block on the 400-500 ms PWM burst + settle. */
+void servo_park_task(void *arg)
+{
+    (void)arg;
+    pca9685_park_all_home();
+    vTaskDelete(NULL);
+}
 
 // Late-detect: retry PCA9685 if it didn't ACK at boot.
 // Caller passes a malloc'd bool[1] = { pca_missing }.
@@ -744,16 +766,14 @@ void app_main(void)
      * the I2C bus was pristine — see "CAMERA INIT WHILE BUS IS PRISTINE"
      * block far above. We DO NOT re-init here. */
 
-    /* COLD-BOOT SERVO PARK — drive every channel to home angle NOW
-     * that FT6336U touch init has completed. Done here (not inside
-     * pca9685_init) because the PWM-write burst can transiently
-     * destabilise the shared I2C bus and we want touch to come up
-     * cleanly first. If PCA9685 isn't present, pca_ok is false and
-     * we skip — pca9685_load_cache_only already populated g_servo[]
-     * for the web UI. */
-    if (pca_ok) {
-        pca9685_park_all_home();
-    }
+    /* COLD-BOOT SERVO PARK — DEFERRED: park is now scheduled to run
+     * AFTER deferred_init has marked g_system_ready, so the splash
+     * screen dismisses immediately when boot is otherwise complete.
+     * The 6-channel × 25 ms park burst + 300 ms settle was adding
+     * ~500 ms of perceived "screen frozen" time which the user reported
+     * as "นานมาก". The park task is created at low priority below in
+     * deferred_init_task so it runs in the background while the user
+     * is already interacting with standby. */
 
     /* IR obstacle sensors on direct GPIO. Init once at boot — pins
      * configured as input with internal pull-up so a disconnected wire
