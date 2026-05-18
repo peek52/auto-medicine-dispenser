@@ -2,10 +2,21 @@
 #include "netpie_mqtt.h"
 #include "dfplayer.h"
 #include "ui_schedule_thai_labels.h"
+#include "ds3231.h"
+#include "esp_log.h"
 #include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
+/* Tail end (ms since boot) of the "duplicate / invalid time" error
+ * overlay on the time picker. Set when netpie_shadow_update_slot()
+ * rejects the user's Save; checked in ui_time_picker_render to draw
+ * the modal. Cleared implicitly once esp_log_timestamp() passes it.
+ * s_picker_err_drawn dedupes the paint so the overlay isn't redrawn
+ * on every render tick — that's what caused the previous flicker. */
+static uint32_t s_picker_err_until_ms = 0;
+static bool     s_picker_err_drawn    = false;
 
 extern "C" {
 #include "dispenser_scheduler.h"
@@ -241,9 +252,58 @@ void ui_setup_schedule_handle_touch(uint16_t tx_n, uint16_t ty_n)
 
 void ui_time_picker_render(void)
 {
+    /* Error modal — must be checked BEFORE the picker repaint logic so
+     * it can paint once and block all subsequent picker renders for the
+     * duration. Previous version painted at the end of the function and
+     * was re-rendered every tick, producing visible flicker + digits
+     * showing through underneath. */
+    if (s_picker_err_until_ms != 0) {
+        uint32_t now_ms = esp_log_timestamp();
+        if (now_ms < s_picker_err_until_ms) {
+            if (!s_picker_err_drawn || force_redraw) {
+                /* Full-card overlay so no underlying control bleeds through. */
+                fill_round_rect_frame(28, 56, 424, 240, 18, THEME_BAD, 0xFFFF);
+                if (g_ui_language == UI_LANG_TH) {
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 110,
+                        "เวลานี้ตั้งไว้แล้ว", 0xFFFF, THEME_BAD, 32);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 170,
+                        "กรุณาเลือกเวลาอื่น", 0xFFFF, THEME_BAD, 26);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 240,
+                        "ปิดเองอัตโนมัติ", 0xFFFF, THEME_BAD, 18);
+                } else {
+                    draw_string_centered(LCD_W / 2, 130, "Time Already Used",
+                                         0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+                    draw_string_centered(LCD_W / 2, 180, "Please pick another",
+                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                    draw_string_centered(LCD_W / 2, 250, "(closes automatically)",
+                                         0xFFFF, THEME_BAD, &FreeSans9pt7b);
+                }
+                s_picker_err_drawn = true;
+                if (force_redraw) force_redraw = false;
+            }
+            return;  /* Block all picker renders while modal up. */
+        }
+        /* Expired — request a full picker repaint to wipe the modal
+         * pixels and restore the picker chrome. */
+        s_picker_err_until_ms = 0;
+        s_picker_err_drawn = false;
+        force_redraw = true;
+    }
+
+    /* Live clock chip on the time-picker page only (user spec
+     * 2026-05-15: clock must appear ONLY on the HH:MM picker, not
+     * the schedule overview or meds-detail page). Sits top-left of
+     * the 44 px top bar to the left of the centered title, x=8 y=8
+     * 86×28 px. Cached value below skips repaints when the second
+     * hasn't ticked. */
+    static char s_tp_clock_drawn[16] = "";
+
     if (force_redraw) {
         // ── Complete clean clear first ──
         fill_screen(THEME_BG);
+        /* Wiped screen → force clock repaint on the next per-tick
+         * check below. */
+        s_tp_clock_drawn[0] = '\0';
 
         // ── Top bar ──
         fill_rect(0, 0, LCD_W, 44, THEME_PANEL);
@@ -300,6 +360,30 @@ void ui_time_picker_render(void)
             tp_prev_mm = edit_mm;
         }
     }
+
+    /* Per-tick live clock chip at top-left of the time-picker. The
+     * error-overlay path early-returns above so we only reach here
+     * when the normal picker is on screen. Chip enlarged on 2026-05-15
+     * (operator report: "ตัวเลขล้นกรอบ ขยายอีกนิด") — 12pt × 8
+     * characters needed ~108 px clear width, the 86 px chip was
+     * clipping the trailing seconds digit. */
+    {
+        char now_str[16] = "--:--:--";
+        if (ds3231_get_time_str(now_str, sizeof(now_str)) != ESP_OK || now_str[0] == '\0') {
+            strncpy(now_str, "--:--:--", sizeof(now_str));
+        }
+        if (strcmp(now_str, s_tp_clock_drawn) != 0) {
+            /* Chip: x=8 y=6 w=120 h=32. Still inside the 44 px top
+             * bar and clears the centered "ตั้งเวลา" title which
+             * sits ~x=180..300. */
+            fill_round_rect(8, 6, 120, 32, 14, SB_COLOR_CARD);
+            draw_string_centered(8 + 120 / 2, 6 + 22, now_str,
+                                 THEME_TXT_MAIN, SB_COLOR_CARD,
+                                 &FreeSans12pt7b);
+            strncpy(s_tp_clock_drawn, now_str, sizeof(s_tp_clock_drawn));
+            s_tp_clock_drawn[sizeof(s_tp_clock_drawn) - 1] = '\0';
+        }
+    }
 }
 
 void ui_time_picker_handle_touch(uint16_t tx_n, uint16_t ty_n, bool long_press)
@@ -331,18 +415,92 @@ void ui_time_picker_handle_touch(uint16_t tx_n, uint16_t ty_n, bool long_press)
         edit_slot = -1;
     }
     else if (tx_n >= 284 && tx_n <= 424 && ty_n >= 248 && ty_n <= 288) {
-        dfplayer_play_track(14); // Save (user's FAT table assigned 14 to Save voice)
         char buf[8];
         snprintf(buf, sizeof(buf), "%02d:%02d", edit_hh, edit_mm);
-        netpie_shadow_update_slot(edit_slot, buf);
-        /* User just edited this slot's time — clear the 12-hour refire
-         * guard so a previous test fire today doesn't silently block the
-         * newly-scheduled time. Without this, a user testing slots back
-         * to back would see "no dispense" with no clue why. */
-        dispenser_reset_slot_refire_guard(edit_slot);
-        pending_page = PAGE_SETUP_SCHEDULE;
-        edit_slot = -1;
-        force_redraw = true;
+
+        /* Cascade the paired slot in the same meal (before↔after). When
+         * the user edits one half of a pair we auto-shift the other half
+         * by the SAME offset they had before, so the relationship is
+         * preserved ("คำนวนเวลาให้สัมพันกัน"). Falls back to ±30 min if
+         * the prior offset is missing or out of a sensible 5-240 min
+         * range. Pair index map:
+         *   slot 0 ↔ 1 (morning), 2 ↔ 3 (lunch), 4 ↔ 5 (evening).
+         * Slot 6 (bedtime) is standalone — no cascade.
+         * The pair update is attempted FIRST so the subsequent self
+         * update doesn't trip the pre<post validation; if the pair
+         * write is rejected (duplicate HH:MM with another slot, etc.)
+         * we silently fall through and the user keeps full manual
+         * control via the picker. */
+        int sign     = 0;
+        int pair_idx = -1;
+        switch (edit_slot) {
+            case 0: case 2: case 4: sign = +1; pair_idx = edit_slot + 1; break;
+            case 1: case 3: case 5: sign = -1; pair_idx = edit_slot - 1; break;
+            default: break;
+        }
+        char pair_snapshot[8] = {0};
+        bool pair_changed = false;
+        if (pair_idx >= 0) {
+            const netpie_shadow_t *sh = netpie_get_shadow();
+            strlcpy(pair_snapshot, sh->slot_time[pair_idx], sizeof(pair_snapshot));
+
+            auto parse_mins = [](const char *s) -> int {
+                if (!s || s[0] == '\0' || strcmp(s, "--:--") == 0) return -1;
+                if (strlen(s) != 5 || s[2] != ':') return -1;
+                int h = (s[0]-'0')*10 + (s[1]-'0');
+                int m = (s[3]-'0')*10 + (s[4]-'0');
+                if (h < 0 || h > 23 || m < 0 || m > 59) return -1;
+                return h*60 + m;
+            };
+            int self_old_mins = parse_mins(sh->slot_time[edit_slot]);
+            int pair_old_mins = parse_mins(sh->slot_time[pair_idx]);
+            int self_new_mins = edit_hh * 60 + edit_mm;
+
+            int offset = 30 * sign;   /* default ±30 min */
+            if (self_old_mins >= 0 && pair_old_mins >= 0) {
+                int curr_offset = pair_old_mins - self_old_mins;
+                int abs_off = curr_offset < 0 ? -curr_offset : curr_offset;
+                if ((curr_offset * sign) > 0 && abs_off >= 5 && abs_off <= 240) {
+                    offset = curr_offset;
+                }
+            }
+            int new_pair_mins = self_new_mins + offset;
+            if (new_pair_mins < 0) new_pair_mins = 0;
+            if (new_pair_mins > 23*60 + 59) new_pair_mins = 23*60 + 59;
+            char pair_buf[8];
+            snprintf(pair_buf, sizeof(pair_buf), "%02d:%02d",
+                     new_pair_mins / 60, new_pair_mins % 60);
+
+            if (strcmp(pair_buf, pair_snapshot) != 0) {
+                if (netpie_shadow_update_slot(pair_idx, pair_buf)) {
+                    dispenser_reset_slot_refire_guard(pair_idx);
+                    pair_changed = true;
+                }
+            }
+        }
+
+        if (netpie_shadow_update_slot(edit_slot, buf)) {
+            dfplayer_play_track(14); // Save voice
+            /* User just edited this slot's time — clear the 12-hour refire
+             * guard so a previous test fire today doesn't silently block the
+             * newly-scheduled time. */
+            dispenser_reset_slot_refire_guard(edit_slot);
+            pending_page = PAGE_SETUP_SCHEDULE;
+            edit_slot = -1;
+            force_redraw = true;
+        } else {
+            /* Self update rejected — roll back any cascade so the visible
+             * pair isn't left in a half-applied state. */
+            if (pair_changed) {
+                (void)netpie_shadow_update_slot(pair_idx, pair_snapshot);
+            }
+            /* Rejected — duplicate time or pre>=post. Show an error
+             * overlay and let the user pick again. Audio cue intentionally
+             * NOT played (user spec 2026-05-15: "ปอปอัพเด้งเรื่องเวลาซ้ำ
+             * ไม่ต้องใส่เสียง"). The visual overlay alone is enough. */
+            s_picker_err_until_ms = esp_log_timestamp() + 2500;
+            force_redraw = true;
+        }
     }
 }
 

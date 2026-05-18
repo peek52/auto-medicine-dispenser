@@ -1494,6 +1494,20 @@ static void dispenser_task(void *arg)
             skip_slot_eval:;
 
             // ── Pre-alerts: warn user at 30, 15, and 5 minutes before each dose ──────────
+            //
+            // Suppressed while the user is still on the confirm popup
+            // for the previous dose OR a dispense is mid-execution. Pair
+            // offsets are typically 30 min (before-meal at 08:00, after
+            // at 08:30), which means the after-meal 30-min head-up voice
+            // would otherwise fire at the EXACT same minute as the
+            // before-meal alarm — two Thai voice clips talking over each
+            // other so the user can't tell which dose is which (user
+            // spec 2026-05-18: "เสียงนะจะชนกันไม่รู้ว่ามื้อไหนกินก่อน
+            // กินหลัง"). Once the before-meal dose is confirmed/skipped
+            // and the busy flag clears, subsequent pre-alerts (15 min,
+            // 5 min) for the after-meal slot resume normally.
+            if (s_waiting_confirm || s_dispense_approved || s_dispense_busy) goto skip_prealerts;
+
             for (int s = 0; s < 7; s++) {
                 int th, tm;
                 if (!parse_hhmm(sh->slot_time[s], &th, &tm)) continue;
@@ -1551,6 +1565,7 @@ static void dispenser_task(void *arg)
                     }
                 }
             }
+            skip_prealerts:;
 
         } // end if (now_ms - last_rtc_check)
     } // end while(true)
