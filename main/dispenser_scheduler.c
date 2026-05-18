@@ -1550,16 +1550,28 @@ static void dispenser_task(void *arg)
                 int diff = slot_total - cur_total;
                 
                 if (diff == 30 || diff == 15 || diff == 5) {
-                    /* Drop the 30-min head-up for AFTER-meal slots
-                     * (indices 1, 3, 5). With the fixed +30 min
-                     * cascade, the after-meal slot fires exactly 30
-                     * min after the before-meal one, so a 30-min
-                     * head-up for it would land on the before-meal
-                     * alarm and stack two voices on top of each
-                     * other. 15 + 5 min cues stay so the user still
-                     * gets warnings (user spec 2026-05-18:
-                     * "เวลาเตือนหลังอาหารน่าจะมีแค่ 15 กับ 5 นาที"). */
-                    if (diff == 30 && (s == 1 || s == 3 || s == 5)) continue;
+                    /* Drop the 30-min head-up on an AFTER-meal slot
+                     * (1/3/5) ONLY when its paired BEFORE-meal slot
+                     * has at least one med assigned. In that case the
+                     * before-meal alarm fires at this same minute and
+                     * the two Thai voices would stack. If the paired
+                     * before-meal slot is empty (no meds), nothing
+                     * fires at T-30 → head-up plays normally so the
+                     * user still gets a heads-up for the post-meal
+                     * dose (user spec 2026-05-18: "ถ้ามื้อไหนที่ไม่มี
+                     * ยาก่อนอาหาร เสียงเตือน 30 ก่อนกินหลังอาหาร
+                     * ให้เล่นเหมือนเดิม"). */
+                    if (diff == 30 && (s == 1 || s == 3 || s == 5)) {
+                        int pair_slot = s - 1;
+                        bool pair_has_meds = false;
+                        for (int i = 0; i < DISPENSER_MED_COUNT; i++) {
+                            if ((sh->med[i].slots >> pair_slot) & 1) {
+                                pair_has_meds = true;
+                                break;
+                            }
+                        }
+                        if (pair_has_meds) continue;
+                    }
                     // De-duplicate using a separate last_prealert key
                     static char s_last_prealert[16] = "";
                     char prealert_key[12];
