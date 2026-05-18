@@ -1549,18 +1549,33 @@ static void dispenser_task(void *arg)
                 int cur_total  = cur_h * 60 + cur_m;
                 int diff = slot_total - cur_total;
                 
-                if (diff == 30 || diff == 15 || diff == 5) {
-                    /* Drop the 30-min head-up on an AFTER-meal slot
-                     * (1/3/5) ONLY when its paired BEFORE-meal slot
-                     * has at least one med assigned. In that case the
-                     * before-meal alarm fires at this same minute and
-                     * the two Thai voices would stack. If the paired
-                     * before-meal slot is empty (no meds), nothing
-                     * fires at T-30 → head-up plays normally so the
-                     * user still gets a heads-up for the post-meal
-                     * dose (user spec 2026-05-18: "ถ้ามื้อไหนที่ไม่มี
-                     * ยาก่อนอาหาร เสียงเตือน 30 ก่อนกินหลังอาหาร
-                     * ให้เล่นเหมือนเดิม"). */
+                /* Pre-alert window expanded from a single minute to a
+                 * 3-minute span per phase (user spec 2026-05-18: "เล่น
+                 * รอบเดียวใครจะฟังทัน"). Phase mapping:
+                 *   diff ∈ {30, 29, 28} → 30-min head-up (track 2)
+                 *   diff ∈ {15, 14, 13} → 15-min head-up (track 3)
+                 *   diff ∈ { 5,  4,  3} →  5-min head-up (track 4)
+                 * In each of those 3 minutes we burst-play 3 rounds of
+                 * "X นาที" + slot name, so a patient who isn't right next
+                 * to the device gets ≥ 9 audible chances per phase to
+                 * notice the alarm. The whole burst takes ~30 s — well
+                 * under the 60 s minute window and well below the
+                 * SLOT_GRACE_MIN buffer that protects slot fires. */
+                int phase_label = 0;
+                int head_track  = 0;
+                if (diff >= 28 && diff <= 30) { phase_label = 30; head_track = 2; }
+                else if (diff >= 13 && diff <= 15) { phase_label = 15; head_track = 3; }
+                else if (diff >=  3 && diff <=  5) { phase_label =  5; head_track = 4; }
+
+                if (phase_label != 0) {
+                    /* Skip the first minute (diff==30) of the 30-min phase
+                     * on an after-meal slot whose paired before-meal slot
+                     * has meds — that exact minute the before-meal alarm
+                     * is firing and two Thai voices would stack. The two
+                     * follow-up minutes (29, 28) land AFTER before-meal's
+                     * 15-min confirm-timeout window so they're safe to
+                     * play normally; the s_waiting_confirm guard above
+                     * also catches anything that slips through. */
                     if (diff == 30 && (s == 1 || s == 3 || s == 5)) {
                         int pair_slot = s - 1;
                         bool pair_has_meds = false;
@@ -1572,59 +1587,53 @@ static void dispenser_task(void *arg)
                         }
                         if (pair_has_meds) continue;
                     }
-                    // De-duplicate using a separate last_prealert key
+
+                    /* Per-minute dedup: one burst per (HH:MM, slot). The
+                     * scheduler ticks several times within a minute, so
+                     * without this we'd retrigger the burst on every
+                     * tick and pile up dfplayer commands. */
                     static char s_last_prealert[16] = "";
                     char prealert_key[12];
                     snprintf(prealert_key, sizeof(prealert_key), "%s-%d", cur_hhmm, s);
                     if (strcmp(prealert_key, s_last_prealert) == 0) continue;
                     snprintf(s_last_prealert, sizeof(s_last_prealert), "%s", prealert_key);
 
-                    // Send Telegram Alert
+                    /* Telegram fires once per minute trigger — three
+                     * pings per phase is enough, no need to spam the
+                     * chat with 9 messages. */
                     char pre_msg[256];
                     if (telegram_lang_is_th()) {
                         snprintf(pre_msg, sizeof(pre_msg),
                                  "🔔 แจ้งเตือนล่วงหน้า %d นาที\nมื้อ: %s (%s)\nเตรียมรับยาได้เลย",
-                                 diff, telegram_slot_label(s), sh->slot_time[s]);
+                                 phase_label, telegram_slot_label(s), sh->slot_time[s]);
                     } else {
                         snprintf(pre_msg, sizeof(pre_msg),
                                  "Upcoming medication in %d minutes\nDose: %s (%s)\nPlease get ready.",
-                                 diff, telegram_slot_label(s), sh->slot_time[s]);
+                                 phase_label, telegram_slot_label(s), sh->slot_time[s]);
                     }
                     telegram_send_text(pre_msg);
-                    ESP_LOGI(TAG, "Pre-alert (%d mins) sent for slot %d (%s)", diff, s, SLOT_LABELS[s]);
-                    
-                    // Stop current track (if any) and play the next alert
-                    // Volume logic is gracefully handled dynamically based on track internally by dfplayer_play_track()
-                    dfplayer_stop();
-                    vTaskDelay(pdMS_TO_TICKS(150));
+                    ESP_LOGI(TAG, "Pre-alert burst (phase=%d-min, diff=%d) slot %d (%s) — 3 rounds",
+                             phase_label, diff, s, SLOT_LABELS[s]);
 
-                    // Plays track based on physical SD card index
-                    // 1 = General Alarm, 2 = 30 min, 3 = 15 min, 4 = 5 min
-                    if (diff == 30) {
-                        dfplayer_play_track(2);
-                    } else if (diff == 15) {
-                        dfplayer_play_track(3);
-                    } else if (diff == 5) {
-                        dfplayer_play_track(4);
+                    /* Burst: 3 rounds of "X นาที" + slot name. Each round
+                     * ≈ 3 s (head-up) + 3.8 s gap + 3 s (slot name) +
+                     * 2 s pause before next round = ~12 s.  3 rounds
+                     * ≈ 36 s, fits well inside the 60 s window. */
+                    const int BURST_ROUNDS = 3;
+                    for (int r = 0; r < BURST_ROUNDS; r++) {
+                        dfplayer_stop();
+                        vTaskDelay(pdMS_TO_TICKS(150));
+                        dfplayer_play_track(head_track);
+                        vTaskDelay(pdMS_TO_TICKS(3800));
+                        dfplayer_play_track(15 + s);
+                        /* Wait for the slot-name clip (~3 s) plus a
+                         * short breathing pause before the next round
+                         * starts. Skip the trailing wait on the last
+                         * round so we don't waste the budget. */
+                        if (r < BURST_ROUNDS - 1) {
+                            vTaskDelay(pdMS_TO_TICKS(5000));
+                        }
                     }
-                    /* Follow the "X minutes" head-up with the dose
-                     * name so the user knows WHICH meal is coming up
-                     * — without it, "อีก 30 นาที" is ambiguous when
-                     * multiple slots are scheduled close together
-                     * (user spec 2026-05-18: "ให้แสดงเวลาเตือนแล้ว
-                     * ตามด้วยมื้อ"). Slot-name tracks share the same
-                     * 15+slot_idx mapping as the schedule UI
-                     * (ui_setup_schedule.cpp:241), so 15=ก่อนเช้า,
-                     * 16=หลังเช้า, ... 21=ก่อนนอน. The gap was bumped
-                     * to 3.8 s after the user reported the time clip
-                     * sounded clipped at the tail when the dose-name
-                     * came in (user spec 2026-05-18: "เสียงบอกเวลา
-                     * เล่นเพิ่มอีก 1 วิ สั้นไปนิด"). dispenser_task
-                     * blocks during this delay but pre-alerts fire
-                     * ≤6×/day and slot eval only matters once per
-                     * minute, so the stall is harmless. */
-                    vTaskDelay(pdMS_TO_TICKS(3800));
-                    dfplayer_play_track(15 + s);
                 }
             }
             skip_prealerts:;
