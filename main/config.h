@@ -103,16 +103,4 @@
 #define DFPLAYER_RX_PIN       38
 #define DFPLAYER_UART_NUM     UART_NUM_1
 
-// ── ESP32-C3 Super Mini distance-sensor bridge (READ-ONLY) ──
-// External C3 carries the TCA9548A + 6 VL53L0X sensors and streams the
-// six distance readings out its UART. The P4 listens passively on UART2
-// and exposes the latest values via /vl53 — it does NOT command the C3
-// and does NOT feed the values into the dispense or IR-detection paths.
-// Wiring: C3 TX → P4 RX(14), C3 RX → P4 TX(15) (TX wire is reserved for
-// a future command channel — currently nothing is transmitted).
-#define BRIDGE_RX_PIN         14
-#define BRIDGE_TX_PIN         15
-#define BRIDGE_UART_NUM       UART_NUM_2
-#define BRIDGE_UART_BAUD      115200
-
 // Google Apps Script URL is configured at runtime via /cloud and stored in NVS.
