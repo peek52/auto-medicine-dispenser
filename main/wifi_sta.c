@@ -290,12 +290,12 @@ static esp_err_t start_sta(const char *ssid, const char *pass)
 /* AP fallback */
 static void start_ap(void)
 {
-    ESP_LOGI(TAG, "Starting AP mode: unified_cam_setup");
+    ESP_LOGI(TAG, "Starting AP mode: Automatic Pill Dispenser");
     esp_netif_create_default_wifi_ap();
 
     wifi_config_t ap_cfg = {
         .ap = {
-            .ssid = "unified_cam_setup",
+            .ssid = "Automatic Pill Dispenser",
             .ssid_len = 0,
             .password = "",
             .max_connection = 4,
@@ -309,7 +309,7 @@ static void start_ap(void)
     if (wifi_soft_check(esp_wifi_set_ps(WIFI_PS_NONE), "esp_wifi_set_ps(AP)") != ESP_OK) return;
 
     snprintf(s_ip_str, sizeof(s_ip_str), "192.168.4.1");
-    ESP_LOGI(TAG, "AP started - connect to 'unified_cam_setup' then open http://192.168.4.1/wifi");
+    ESP_LOGI(TAG, "AP started - connect to 'Automatic Pill Dispenser' then open http://192.168.4.1/wifi");
 }
 
 esp_err_t wifi_sta_init(void)

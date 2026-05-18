@@ -233,7 +233,7 @@ static void cli_task(void *arg) {
                  * intact. After reboot the SSID falls back to compiled
                  * defaults; if those don't match the user's router the
                  * firmware drops into AP-setup mode (SSID
-                 * "unified_cam_setup"). */
+                 * "Automatic Pill Dispenser"). */
                 nvs_handle_t h;
                 esp_err_t err = nvs_open("wifi_cfg", NVS_READWRITE, &h);
                 if (err == ESP_OK) {
