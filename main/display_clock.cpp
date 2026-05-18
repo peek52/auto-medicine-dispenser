@@ -656,6 +656,69 @@ static void clock_task(void *)
             }
         }
 
+        /* Welcome-popup gate (one-shot, post-boot):
+         * After the splash drops the screen would normally jump
+         * straight into Standby, where any stray finger contact left
+         * over from powering on the device fires a touch event and
+         * lands the user on an arbitrary page. This gate paints an
+         * explicit "ยินดีต้อนรับ — แตะเพื่อเริ่มใช้งาน" overlay and
+         * blocks all touch dispatch (no setup / no module nav / no
+         * alarm dismissal) until the user performs a fresh
+         * down-press AFTER a 500 ms debounce. Lives only at boot;
+         * once dismissed the static `welcome_dismissed` flag latches
+         * true for the remainder of the session. (user spec
+         * 2026-05-18: "บังคับเลยว่าอย่ากดหน้าจอไปไหน ต้องรอให้
+         * ป๊อปอัพเริ่มต้นการใช้งานเด้งก่อน") */
+        {
+            static bool welcome_dismissed = false;
+            static bool welcome_drawn     = false;
+            static bool welcome_prev_touch = false;
+            static uint32_t welcome_armed_ms = 0;
+            if (!welcome_dismissed) {
+                if (!welcome_drawn) {
+                    fill_screen(THEME_BG);
+                    fill_round_rect_frame(40, 70, 400, 200, 20, THEME_PANEL, THEME_BORDER);
+                    /* "ยินดีต้อนรับ" */
+                    draw_utf8_centered_line_scaled(240, 105,
+                        "\xe0\xb8\xa2\xe0\xb8\xb4\xe0\xb8\x99\xe0\xb8\x94\xe0\xb8\xb5\xe0\xb8\x95\xe0\xb9\x89\xe0\xb8\xad\xe0\xb8\x99\xe0\xb8\xa3\xe0\xb8\xb1\xe0\xb8\x9a",
+                        THEME_TXT_MAIN, THEME_PANEL, 38);
+                    /* "Automatic Pill Dispenser" — ASCII so render via
+                     * draw_string_centered would be cheaper, but the
+                     * UTF-8 path keeps font sizing consistent with the
+                     * Thai line above. */
+                    draw_utf8_centered_line_scaled(240, 165,
+                        "Automatic Pill Dispenser",
+                        THEME_TXT_MAIN, THEME_PANEL, 22);
+                    /* "แตะเพื่อเริ่มใช้งาน" */
+                    draw_utf8_centered_line_scaled(240, 220,
+                        "\xe0\xb9\x81\xe0\xb8\x95\xe0\xb8\xb0\xe0\xb9\x80\xe0\xb8\x9e\xe0\xb8\xb7\xe0\xb9\x88\xe0\xb8\xad\xe0\xb9\x80\xe0\xb8\xa3\xe0\xb8\xb4\xe0\xb9\x88\xe0\xb8\xa1\xe0\xb9\x83\xe0\xb8\x8a\xe0\xb9\x89\xe0\xb8\x87\xe0\xb8\xb2\xe0\xb8\x99",
+                        THEME_OK, THEME_PANEL, 26);
+                    welcome_drawn = true;
+                    welcome_armed_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+                }
+                uint16_t wx = 0, wy = 0;
+                bool wtouched = false;
+                esp_task_wdt_reset();
+                ft6336u_read_touch(&wx, &wy, &wtouched);
+
+                uint32_t now_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+                bool armed = (now_ms - welcome_armed_ms) > 500;
+                bool fresh_down = wtouched && !welcome_prev_touch;
+                welcome_prev_touch = wtouched;
+
+                if (armed && fresh_down) {
+                    welcome_dismissed = true;
+                    dfplayer_play_track(g_snd_button);
+                    force_redraw = true;
+                    /* Fall through to the rest of the loop — the next
+                     * iteration paints the real Standby UI. */
+                } else {
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    continue;
+                }
+            }
+        }
+
         uint16_t tx = 0, ty = 0;
         bool touched = false;
         /* Feed the TWDT before the I2C touch read — under bus contention
