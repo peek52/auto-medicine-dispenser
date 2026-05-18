@@ -1597,7 +1597,7 @@ static void dispenser_task(void *arg)
                     // Volume logic is gracefully handled dynamically based on track internally by dfplayer_play_track()
                     dfplayer_stop();
                     vTaskDelay(pdMS_TO_TICKS(150));
-                    
+
                     // Plays track based on physical SD card index
                     // 1 = General Alarm, 2 = 30 min, 3 = 15 min, 4 = 5 min
                     if (diff == 30) {
@@ -1607,6 +1607,23 @@ static void dispenser_task(void *arg)
                     } else if (diff == 5) {
                         dfplayer_play_track(4);
                     }
+                    /* Follow the "X minutes" head-up with the dose
+                     * name so the user knows WHICH meal is coming up
+                     * — without it, "อีก 30 นาที" is ambiguous when
+                     * multiple slots are scheduled close together
+                     * (user spec 2026-05-18: "ให้แสดงเวลาเตือนแล้ว
+                     * ตามด้วยมื้อ"). Slot-name tracks share the same
+                     * 15+slot_idx mapping as the schedule UI
+                     * (ui_setup_schedule.cpp:241), so 15=ก่อนเช้า,
+                     * 16=หลังเช้า, ... 21=ก่อนนอน. The 2.8-s gap
+                     * roughly matches the "X นาที" clip length; if
+                     * it ever cuts off the tail of the head-up, bump
+                     * to 3500. dispenser_task blocks during this
+                     * delay but pre-alerts fire ≤6×/day and slot
+                     * eval only matters once per minute, so the
+                     * stall is harmless. */
+                    vTaskDelay(pdMS_TO_TICKS(2800));
+                    dfplayer_play_track(15 + s);
                 }
             }
             skip_prealerts:;
