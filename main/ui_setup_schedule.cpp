@@ -264,16 +264,20 @@ void ui_time_picker_render(void)
                 /* Full-card overlay so no underlying control bleeds through. */
                 fill_round_rect_frame(28, 56, 424, 240, 18, THEME_BAD, 0xFFFF);
                 if (g_ui_language == UI_LANG_TH) {
-                    draw_utf8_centered_line_scaled(LCD_W / 2, 110,
-                        "เวลานี้ตั้งไว้แล้ว", 0xFFFF, THEME_BAD, 32);
-                    draw_utf8_centered_line_scaled(LCD_W / 2, 170,
-                        "กรุณาเลือกเวลาอื่น", 0xFFFF, THEME_BAD, 26);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 100,
+                        "เวลาไม่ถูกต้อง", 0xFFFF, THEME_BAD, 32);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 155,
+                        "ห่างคู่ก่อน/หลัง", 0xFFFF, THEME_BAD, 22);
+                    draw_utf8_centered_line_scaled(LCD_W / 2, 190,
+                        "ต้องไม่เกิน 1 ชม.", 0xFFFF, THEME_BAD, 22);
                     draw_utf8_centered_line_scaled(LCD_W / 2, 240,
                         "ปิดเองอัตโนมัติ", 0xFFFF, THEME_BAD, 18);
                 } else {
-                    draw_string_centered(LCD_W / 2, 130, "Time Already Used",
+                    draw_string_centered(LCD_W / 2, 110, "Invalid Time",
                                          0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
-                    draw_string_centered(LCD_W / 2, 180, "Please pick another",
+                    draw_string_centered(LCD_W / 2, 160, "Pair gap must stay",
+                                         0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                    draw_string_centered(LCD_W / 2, 195, "within 1 hour",
                                          0xFFFF, THEME_BAD, &FreeSans12pt7b);
                     draw_string_centered(LCD_W / 2, 250, "(closes automatically)",
                                          0xFFFF, THEME_BAD, &FreeSans9pt7b);
@@ -419,20 +423,17 @@ void ui_time_picker_handle_touch(uint16_t tx_n, uint16_t ty_n, bool long_press)
         snprintf(buf, sizeof(buf), "%02d:%02d", edit_hh, edit_mm);
 
         /* Cascade the paired slot in the same meal (before↔after) to
-         * the fixed safety offset of 45 min (user spec 2026-05-18).
-         * Sits in the medical range of 30-60 min for most "before meal"
-         * drugs and leaves a 30 min buffer past the 15-min confirm
-         * timeout so a missed before-meal dose has fully resolved
-         * (skip + Telegram + refire guard stamped) before the
-         * after-meal slot fires — no audio overlap, no race on
-         * s_waiting_confirm. Pair index map:
+         * the fixed safety offset of 45 min (user spec 2026-05-18) —
+         * but ONLY when the partner's current value would otherwise
+         * leave an invalid gap with the new self. If the partner is
+         * already inside the legal 1-60 min window (correct direction)
+         * the user has tweaked it deliberately and we leave it alone;
+         * the cascade then becomes a single-slot write. Pair map:
          *   slot 0 ↔ 1 (morning), 2 ↔ 3 (lunch), 4 ↔ 5 (evening).
          * Slot 6 (bedtime) is standalone — no cascade.
-         * The pair update is attempted FIRST so the subsequent self
-         * update doesn't trip pre<post validation; if the pair write
-         * is rejected (duplicate HH:MM with another slot, etc.) we
-         * silently fall through and the user keeps full manual
-         * control via the picker. */
+         * Both halves go through the atomic pair-write API so the
+         * per-slot validator can't reject a transitional state when
+         * the cascade direction crosses the old self value. */
         int sign     = 0;
         int pair_idx = -1;
         switch (edit_slot) {
@@ -440,47 +441,71 @@ void ui_time_picker_handle_touch(uint16_t tx_n, uint16_t ty_n, bool long_press)
             case 1: case 3: case 5: sign = -1; pair_idx = edit_slot - 1; break;
             default: break;
         }
-        char pair_snapshot[8] = {0};
-        bool pair_changed = false;
+
+        bool save_ok = false;
         if (pair_idx >= 0) {
             const netpie_shadow_t *sh = netpie_get_shadow();
-            strlcpy(pair_snapshot, sh->slot_time[pair_idx], sizeof(pair_snapshot));
+            const char *pair_curr = sh->slot_time[pair_idx];
 
+            auto parse_mins = [](const char *s) -> int {
+                if (!s || s[0] == '\0' || strcmp(s, "--:--") == 0) return -1;
+                if (strlen(s) != 5 || s[2] != ':') return -1;
+                int h = (s[0]-'0')*10 + (s[1]-'0');
+                int m = (s[3]-'0')*10 + (s[4]-'0');
+                if (h < 0 || h > 23 || m < 0 || m > 59) return -1;
+                return h*60 + m;
+            };
             int self_new_mins = edit_hh * 60 + edit_mm;
-            int new_pair_mins = self_new_mins + 45 * sign;
-            if (new_pair_mins < 0) new_pair_mins = 0;
-            if (new_pair_mins > 23*60 + 59) new_pair_mins = 23*60 + 59;
-            char pair_buf[8];
-            snprintf(pair_buf, sizeof(pair_buf), "%02d:%02d",
-                     new_pair_mins / 60, new_pair_mins % 60);
+            int pair_old_mins = parse_mins(pair_curr);
 
-            if (strcmp(pair_buf, pair_snapshot) != 0) {
-                if (netpie_shadow_update_slot(pair_idx, pair_buf)) {
+            /* Gap is signed against the pre→post direction (sign=+1
+             * when editing the "before" slot, -1 when editing the
+             * "after"). Existing partner is "in-spec" iff the signed
+             * gap is between 1 and 60 minutes inclusive. */
+            bool partner_in_spec = false;
+            if (pair_old_mins >= 0) {
+                int signed_gap = (pair_old_mins - self_new_mins) * sign;
+                partner_in_spec = (signed_gap >= 1 && signed_gap <= 60);
+            }
+
+            if (partner_in_spec) {
+                /* Leave partner alone — single-slot write covers it. */
+                save_ok = netpie_shadow_update_slot(edit_slot, buf);
+                if (save_ok) dispenser_reset_slot_refire_guard(edit_slot);
+            } else {
+                /* Partner gap is invalid OR partner disabled — cascade
+                 * to the +/-45 default. Clamp inside the day so we
+                 * don't wrap, then atomic-write both. */
+                int new_pair_mins = self_new_mins + 45 * sign;
+                if (new_pair_mins < 0) new_pair_mins = 0;
+                if (new_pair_mins > 23*60 + 59) new_pair_mins = 23*60 + 59;
+                char pair_buf[8];
+                snprintf(pair_buf, sizeof(pair_buf), "%02d:%02d",
+                         new_pair_mins / 60, new_pair_mins % 60);
+                save_ok = netpie_shadow_update_slot_pair(edit_slot, buf,
+                                                         pair_idx, pair_buf);
+                if (save_ok) {
+                    dispenser_reset_slot_refire_guard(edit_slot);
                     dispenser_reset_slot_refire_guard(pair_idx);
-                    pair_changed = true;
                 }
             }
+        } else {
+            /* Bedtime / no pair — single-slot write. */
+            save_ok = netpie_shadow_update_slot(edit_slot, buf);
+            if (save_ok) dispenser_reset_slot_refire_guard(edit_slot);
         }
 
-        if (netpie_shadow_update_slot(edit_slot, buf)) {
+        if (save_ok) {
             dfplayer_play_track(14); // Save voice
-            /* User just edited this slot's time — clear the 12-hour refire
-             * guard so a previous test fire today doesn't silently block the
-             * newly-scheduled time. */
-            dispenser_reset_slot_refire_guard(edit_slot);
             pending_page = PAGE_SETUP_SCHEDULE;
             edit_slot = -1;
             force_redraw = true;
         } else {
-            /* Self update rejected — roll back any cascade so the visible
-             * pair isn't left in a half-applied state. */
-            if (pair_changed) {
-                (void)netpie_shadow_update_slot(pair_idx, pair_snapshot);
-            }
-            /* Rejected — duplicate time or pre>=post. Show an error
-             * overlay and let the user pick again. Audio cue intentionally
-             * NOT played (user spec 2026-05-15: "ปอปอัพเด้งเรื่องเวลาซ้ำ
-             * ไม่ต้องใส่เสียง"). The visual overlay alone is enough. */
+            /* Rejected — gap > 60 min, duplicate HH:MM, pre>=post,
+             * or malformed. Show the error overlay and let the user
+             * pick again. Audio cue intentionally NOT played (user
+             * spec 2026-05-15: "ปอปอัพเด้งเรื่องเวลาซ้ำไม่ต้องใส่
+             * เสียง"). The visual overlay alone is enough. */
             s_picker_err_until_ms = esp_log_timestamp() + 2500;
             force_redraw = true;
         }

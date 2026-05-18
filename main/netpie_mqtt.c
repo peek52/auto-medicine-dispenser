@@ -133,15 +133,20 @@ static bool slot_times_monotonic(const char *times[7], int slot_idx, const char 
         if (v == -2) return false;   /* malformed → reject */
         mins[i] = v;
     }
-    /* Rule 1: pre < post within each meal pair.
+    /* Rule 1: pre < post within each meal pair AND gap ≤ 60 min.
      * Pair indices: (0,1) morn, (2,3) noon, (4,5) eve. `bed` (6) is
-     * standalone — no pre/post counterpart to check. */
+     * standalone — no pre/post counterpart to check.
+     * The 60-min cap stops operators from setting clinically nonsensical
+     * before↔after spreads (user spec 2026-05-18: "ต้องไม่เกิน 1ชม.")
+     * and keeps the after-meal alarm from drifting so far that the
+     * before-meal 15-min timeout + skip path no longer protects it. */
     const int pairs[3][2] = { {0, 1}, {2, 3}, {4, 5} };
     for (int p = 0; p < 3; p++) {
         int pre  = mins[pairs[p][0]];
         int post = mins[pairs[p][1]];
         if (pre < 0 || post < 0) continue;
         if (post <= pre) return false;
+        if (post - pre > 60) return false;
     }
     /* Rule 2: no duplicate HH:MM across any set slots. */
     for (int i = 0; i < 7; i++) {
@@ -830,6 +835,76 @@ bool netpie_shadow_update_slot(int slot_idx, const char *hh_mm)
 
     if (ok) {
         publish_shadow_payload(build_shadow_payload_string(s_slot_keys[slot_idx], safe_time));
+    }
+    return ok;
+}
+
+/* Atomically write TWO slot times under a single shadow_lock,
+ * validating the merged state once. The single-slot path
+ * (netpie_shadow_update_slot) trips over its own cascade because the
+ * pair write is validated against the still-old self value — moving
+ * a "before" slot down rejects the pair update, moving it up rejects
+ * the self update. This helper sidesteps that by patching BOTH
+ * candidates into a temp array before calling slot_times_monotonic,
+ * so the pair-gap / pre<post / 60-min-cap rules see the final state.
+ * On reject NOTHING is written (no partial half-applied state).
+ * Same accept criteria as the single-slot path; "--:--" disables. */
+bool netpie_shadow_update_slot_pair(int idx_a, const char *val_a,
+                                    int idx_b, const char *val_b)
+{
+    if (!val_a || !val_b) return false;
+    if (idx_a < 0 || idx_a >= 7 || idx_b < 0 || idx_b >= 7) return false;
+    if (idx_a == idx_b) return false;
+
+    /* Normalize both inputs through the same format guard the single
+     * path uses. Disabled-slot ("--:--") is the only non-HH:MM form
+     * accepted. */
+    char safe_a[6] = {0};
+    char safe_b[6] = {0};
+    const char *inputs[2] = { val_a, val_b };
+    char *outs[2]         = { safe_a, safe_b };
+    for (int k = 0; k < 2; k++) {
+        const char *s = inputs[k];
+        char *out     = outs[k];
+        if (strcmp(s, "--:--") == 0 || s[0] == '\0') {
+            strlcpy(out, "--:--", 6);
+            continue;
+        }
+        if (strlen(s) != 5 || s[2] != ':' ||
+            !isdigit((unsigned char)s[0]) || !isdigit((unsigned char)s[1]) ||
+            !isdigit((unsigned char)s[3]) || !isdigit((unsigned char)s[4])) {
+            return false;
+        }
+        int hh = (s[0]-'0')*10 + (s[1]-'0');
+        int mm = (s[3]-'0')*10 + (s[4]-'0');
+        if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return false;
+        strlcpy(out, s, 6);
+    }
+
+    bool ok = false;
+    if (shadow_lock()) {
+        const char *cand[7];
+        for (int i = 0; i < 7; i++) cand[i] = s_shadow.slot_time[i];
+        cand[idx_a] = safe_a;
+        cand[idx_b] = safe_b;
+        /* Validate the merged candidate array (slot_idx=-1 path). */
+        if (slot_times_monotonic(cand, -1, NULL)) {
+            strlcpy(s_shadow.slot_time[idx_a], safe_a,
+                    sizeof(s_shadow.slot_time[idx_a]));
+            strlcpy(s_shadow.slot_time[idx_b], safe_b,
+                    sizeof(s_shadow.slot_time[idx_b]));
+            shadow_cache_save_locked();
+            ok = true;
+        } else {
+            ESP_LOGW(TAG, "Rejected pair %d='%s', %d='%s' — invalid combined state",
+                     idx_a, safe_a, idx_b, safe_b);
+        }
+        shadow_unlock();
+    }
+
+    if (ok) {
+        publish_shadow_payload(build_shadow_payload_string(s_slot_keys[idx_a], safe_a));
+        publish_shadow_payload(build_shadow_payload_string(s_slot_keys[idx_b], safe_b));
     }
     return ok;
 }

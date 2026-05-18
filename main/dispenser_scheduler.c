@@ -1615,14 +1615,15 @@ static void dispenser_task(void *arg)
                      * ตามด้วยมื้อ"). Slot-name tracks share the same
                      * 15+slot_idx mapping as the schedule UI
                      * (ui_setup_schedule.cpp:241), so 15=ก่อนเช้า,
-                     * 16=หลังเช้า, ... 21=ก่อนนอน. The 2.8-s gap
-                     * roughly matches the "X นาที" clip length; if
-                     * it ever cuts off the tail of the head-up, bump
-                     * to 3500. dispenser_task blocks during this
-                     * delay but pre-alerts fire ≤6×/day and slot
-                     * eval only matters once per minute, so the
-                     * stall is harmless. */
-                    vTaskDelay(pdMS_TO_TICKS(2800));
+                     * 16=หลังเช้า, ... 21=ก่อนนอน. The gap was bumped
+                     * to 3.8 s after the user reported the time clip
+                     * sounded clipped at the tail when the dose-name
+                     * came in (user spec 2026-05-18: "เสียงบอกเวลา
+                     * เล่นเพิ่มอีก 1 วิ สั้นไปนิด"). dispenser_task
+                     * blocks during this delay but pre-alerts fire
+                     * ≤6×/day and slot eval only matters once per
+                     * minute, so the stall is harmless. */
+                    vTaskDelay(pdMS_TO_TICKS(3800));
                     dfplayer_play_track(15 + s);
                 }
             }

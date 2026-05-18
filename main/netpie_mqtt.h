@@ -35,7 +35,26 @@ void netpie_shadow_get(void);
 void netpie_shadow_update_count(int med_id, int new_count);
 void netpie_shadow_update_med_name(int med_id, const char *name);
 void netpie_shadow_update_med_slots(int med_id, uint8_t slots_mask);
-void netpie_shadow_update_slot(int slot_idx, const char *hh_mm);
+/* Returns true on commit. False if the proposed time would violate the
+ * slot-time rules (malformed, pre >= post within a meal pair, OR
+ * duplicates the HH:MM of another already-set slot). On false the
+ * shadow is unchanged and no MQTT publish fires — the caller is
+ * responsible for surfacing the rejection to the user. */
+bool netpie_shadow_update_slot(int slot_idx, const char *hh_mm);
+
+/* Atomic two-slot write — validates the merged state once and commits
+ * both or neither. Use when a UI action changes both halves of a meal
+ * pair together (cascade) so half-applied state can't leak through
+ * the per-slot validator. Same accept rules as netpie_shadow_update_slot
+ * applied to the merged state (pre<post, gap ≤ 60 min, no duplicates). */
+bool netpie_shadow_update_slot_pair(int idx_a, const char *val_a,
+                                    int idx_b, const char *val_b);
+
+/* Returns true iff writing `hh_mm` to slot `slot_idx` would satisfy
+ * the slot-time rules: pre < post within the same meal pair AND no
+ * duplicate HH:MM among set slots. Callers (touch UI time picker, web
+ * widget JS) use this to preview before committing. */
+bool netpie_slot_time_valid(int slot_idx, const char *hh_mm);
 void netpie_shadow_update_enabled(bool enabled);
 
 bool netpie_shadow_copy(netpie_shadow_t *out_shadow);
