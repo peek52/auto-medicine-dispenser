@@ -835,37 +835,40 @@ void ui_setup_meds_detail_render(void)
             char head[64];
             if (th) {
                 snprintf(head, sizeof(head), "โมดูลที่ %d", selected_med_idx + 1);
-                draw_utf8_centered_line_scaled(LCD_W / 2, 78, head,
-                                               0xFFFF, THEME_BAD, 24);
-                draw_utf8_centered_line_scaled(LCD_W / 2, 120,
-                    "ล้างยาก่อนตั้งค่า", 0xFFFF, THEME_BAD, 30);
-                draw_utf8_centered_line_scaled(LCD_W / 2, 160,
+                draw_utf8_centered_line_scaled(LCD_W / 2, 80, head,
+                                               0xFFFF, THEME_BAD, 22);
+                /* Title — shrunk + extra y-spacing so the descenders of
+                 * "ล้างยาก่อน" don't kiss "ตั้งค่า" on the Thai font
+                 * (user spec 2026-05-18: "ล้างยาก่อนตั้งค่ามันติดเกิน"). */
+                draw_utf8_centered_line_scaled(LCD_W / 2, 125,
+                    "ล้างยาก่อนตั้งค่า", 0xFFFF, THEME_BAD, 26);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 175,
                     "เพื่อความปลอดภัย", 0xFFFF, THEME_BAD, 20);
-                draw_utf8_centered_line_scaled(LCD_W / 2, 184,
-                    "ล้างตลับและท่อยาให้สะอาดก่อน", 0xFFFF, THEME_BAD, 18);
             } else {
                 snprintf(head, sizeof(head), "Module %d", selected_med_idx + 1);
                 draw_string_centered(LCD_W / 2, 90, head,
                                      0xFFFF, THEME_BAD, &FreeSans12pt7b);
-                draw_string_centered(LCD_W / 2, 125, "Clean before setup",
+                draw_string_centered(LCD_W / 2, 130, "Clean before setup",
                                      0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
-                draw_string_centered(LCD_W / 2, 160, "For safety, please",
-                                     0xFFFF, THEME_BAD, &FreeSans12pt7b);
-                draw_string_centered(LCD_W / 2, 185, "clean the cartridge first",
+                draw_string_centered(LCD_W / 2, 175, "For safety",
                                      0xFFFF, THEME_BAD, &FreeSans12pt7b);
             }
-            /* Two buttons: CANCEL (left, gray) + CLEANED (right, green) */
+            /* Two buttons: CANCEL (left, gray) + ล้างยา (right, green).
+             * "ล้างยา" actually fires the servo flush — operator can't
+             * reach the detail editor without running a clean cycle on
+             * the cartridge first (user spec 2026-05-18). Cancel
+             * bounces back to the grid. Neither plays a click sound. */
             fill_round_rect( 60, 220, 160, 44, 10, THEME_INACTIVE);
             fill_round_rect(260, 220, 160, 44, 10, THEME_OK);
             if (th) {
                 draw_utf8_centered_line_scaled(140, 230, "ยกเลิก",
                                                0xFFFF, THEME_INACTIVE, 24);
-                draw_utf8_centered_line_scaled(340, 230, "ล้างเสร็จแล้ว",
-                                               0xFFFF, THEME_OK, 22);
+                draw_utf8_centered_line_scaled(340, 230, "ล้างยา",
+                                               0xFFFF, THEME_OK, 24);
             } else {
                 draw_string_centered(140, 248, "Cancel", 0xFFFF,
                                      THEME_INACTIVE, &FreeSans12pt7b);
-                draw_string_centered(340, 248, "Cleaned", 0xFFFF,
+                draw_string_centered(340, 248, "Clean",  0xFFFF,
                                      THEME_OK, &FreeSans12pt7b);
             }
             s_clean_before_setup_drawn = true;
@@ -1082,20 +1085,23 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
         return; // Ignore touches while dispensing
     }
 
-    /* Clean-before-setup popup: armed when an unconfigured slot
-     * was tapped on the grid. Two buttons, no other escape:
-     *   left (Cancel)        → bounce straight back to the grid so
-     *                          the operator can pick a different
-     *                          slot. Detail editor never opens.
-     *   right (ล้างเสร็จแล้ว) → close popup, let the operator edit
-     *                          the detail page normally. */
+    /* Clean-before-setup popup: armed when an unconfigured slot was
+     * tapped on the grid. Two buttons:
+     *   left  (ยกเลิก) → bounce back to the grid, no editing
+     *   right (ล้างยา) → fire dispenser_manual_dispense(idx, 100) so
+     *                     the servo physically flushes anything left
+     *                     in the cartridge tube; existing detail-page
+     *                     "กำลังจ่ายยา" popup then takes over via
+     *                     ui_manual_disp_status flipping to 1.
+     * Neither button plays a click sound (user spec 2026-05-18:
+     * "ไม่ต้องใส่เสียง"). Taps outside the buttons are ignored so the
+     * operator can't accidentally close the popup. */
     if (s_clean_before_setup_popup) {
         bool in_left  = (tx_n >= 60  && tx_n <= 220 && ty_n >= 220 && ty_n <= 264);
         bool in_right = (tx_n >= 260 && tx_n <= 420 && ty_n >= 220 && ty_n <= 264);
         if (in_left) {
             s_clean_before_setup_popup = false;
             s_clean_before_setup_drawn = false;
-            dfplayer_play_track(12);   /* cancel sound */
             pending_page = PAGE_SETUP_MEDS;
             force_redraw = true;
             return;
@@ -1103,7 +1109,12 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
         if (in_right) {
             s_clean_before_setup_popup = false;
             s_clean_before_setup_drawn = false;
-            dfplayer_play_track(28);   /* confirm sound */
+            /* Run the actual flush. qty=100 = "all" — servo cycles
+             * until IR sees no more pills (or until the no-stock
+             * timeout fires for an empty cartridge). Operator stays
+             * on the detail page; the existing fast-path dispensing
+             * popup will paint over the next frame. */
+            dispenser_manual_dispense(selected_med_idx, 100);
             force_redraw = true;
             return;
         }

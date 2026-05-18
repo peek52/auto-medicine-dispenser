@@ -708,7 +708,10 @@ static void clock_task(void *)
 
                 if (armed && fresh_down) {
                     welcome_dismissed = true;
-                    dfplayer_play_track(g_snd_button);
+                    /* No button sound on this dismiss — user spec
+                     * 2026-05-18: "ตอนกด ... ปิดเสียงไปเลยกดแล้วไม่
+                     * ต้องมีเสียง". The patient is acknowledging the
+                     * device is ready; no click feedback needed. */
                     force_redraw = true;
                     /* Fall through to the rest of the loop — the next
                      * iteration paints the real Standby UI. */
