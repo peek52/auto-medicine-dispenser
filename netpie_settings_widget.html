@@ -3,7 +3,12 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- maximum-scale + user-scalable=no stop iOS Safari auto-zooming on
+       focused inputs (the "screen shrinks when typing name" bug); the
+       16px+ input font-size below also helps. interactive-widget tells
+       Chrome to resize the page when the soft keyboard appears instead
+       of shrinking the visual viewport. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
   <style>
     :root {
       --bgA: #f6fbff;
@@ -41,7 +46,11 @@
       color: var(--text);
       padding: 16px;
       padding-bottom: 128px;
+      /* `dvh` is the dynamic viewport height — shrinks with the soft
+       * keyboard so the layout isn't forced taller than the visible area
+       * when the user taps a name input. `vh` fallback for old browsers. */
       min-height: 100vh;
+      min-height: 100dvh;
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
       background:
@@ -634,6 +643,11 @@
       border: 1px solid rgba(11, 18, 32, .12);
       background: rgba(255, 255, 255, .95);
       font-weight: 900;
+      /* iOS Safari auto-zooms any text input rendered under 16px, which
+       * is what produced the "หน้าจอหด" (screen shrinks) report when
+       * tapping a med-name input on mobile. Forcing 16px disables the
+       * zoom heuristic without changing visual size meaningfully. */
+      font-size: 16px;
       outline: none;
       transition: .15s;
       margin-bottom: 0;
@@ -1410,9 +1424,45 @@
       modules[id - 1].name = document.getElementById('n-' + id).value;
     }
 
+    // Mirror the device-side rules (netpie_mqtt.c slot_times_monotonic):
+    // pair (0,1)/(2,3)/(4,5) must satisfy post > pre AND post - pre ≤ 60
+    // min; (6) bedtime is standalone. Returns "" if OK or a Thai reason
+    // string. Catching invalid combos client-side avoids the "❌ ผิดพลาด"
+    // round-trip where the cloud user sees "เรียบร้อย" but the device
+    // silently reverts the diff.
+    function validatePairGaps() {
+      const PAIRS = [[0, 1, "เช้า"], [2, 3, "เที่ยง"], [4, 5, "เย็น"]];
+      function toMin(s) {
+        if (!s) return -1;
+        var m = /^(\d{2}):(\d{2})$/.exec(s);
+        if (!m) return -1;
+        return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+      }
+      for (var i = 0; i < PAIRS.length; i++) {
+        var pre  = toMin(document.getElementById(TIME_KEYS[PAIRS[i][0]]).value);
+        var post = toMin(document.getElementById(TIME_KEYS[PAIRS[i][1]]).value);
+        if (pre < 0 || post < 0) continue;
+        if (post <= pre) {
+          return "มื้อ" + PAIRS[i][2] + ": หลังต้องอยู่หลังก่อน";
+        }
+        if (post - pre > 60) {
+          return "มื้อ" + PAIRS[i][2] + ": ห่างก่อน/หลังต้องไม่เกิน 1 ชม.";
+        }
+      }
+      return "";
+    }
+
     async function saveData() {
       var btn = document.getElementById('save-txt');
       var orig = btn.innerText;
+
+      var gapErr = validatePairGaps();
+      if (gapErr) {
+        btn.innerText = "❌ " + gapErr;
+        setTimeout(function () { btn.innerText = orig; }, 4000);
+        return;
+      }
+
       btn.innerText = "กำลังส่ง...";
 
       try {
