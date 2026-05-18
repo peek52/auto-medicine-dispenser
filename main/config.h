@@ -109,14 +109,18 @@
 // and exposes the latest values via /vl53 — it does NOT command the C3
 // and does NOT feed values into dispense / IR detection / schedule.
 // Wiring (C3 GPIO 4 = TX, C3 GPIO 5 = RX from c3_vl53_bridge.ino):
-//   C3 TX (GPIO 4) ───► P4 RX (GPIO 53)
-//   C3 RX (GPIO 5) ◄─── P4 TX (GPIO 54)   (reserved; not transmitted)
+//   C3 TX (GPIO 4) ───► P4 RX (GPIO 1)
+//   C3 RX (GPIO 5) ◄─── P4 TX (GPIO 3)   (reserved; not transmitted)
 //   GND ↔ GND
-// GPIO 53/54 chosen this time after the GPIO 32/36 attempt boot-hung
-// — those pins are TFT_MOSI / TFT_SCK above. 53/54 are ADC2_CHANNEL
-// 6/7 on the Waveshare P4-Nano right-side header with no other claim.
-#define BRIDGE_RX_PIN         53
-#define BRIDGE_TX_PIN         54
+// Pin pick history:
+//   - GPIO 14/15: NOT exposed on the Waveshare P4-Nano header
+//   - GPIO 32/36: TFT_MOSI / TFT_SCK (display SPI) → boot hang
+//   - GPIO 53/54: reserved by user for IR
+//   - GPIO 1/3 (this build): GPIO 1 = XTAL_32K_P, free when no 32K
+//     crystal is soldered (Waveshare P4-Nano uses internal RTC); GPIO
+//     3 = TOUCH_CHANNEL0, free because firmware uses FT6336U over I2C.
+#define BRIDGE_RX_PIN         1
+#define BRIDGE_TX_PIN         3
 #define BRIDGE_UART_NUM       UART_NUM_2
 #define BRIDGE_UART_BAUD      115200
 
