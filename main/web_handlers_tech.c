@@ -4,6 +4,7 @@
 #include "web_handlers_status.h"
 #include "dispenser_scheduler.h"
 #include "netpie_mqtt.h"
+#include "module_map.h"
 #include "config.h"
 
 #include "esp_http_server.h"
@@ -138,6 +139,22 @@ static const char TECH_PAGE[] =
 "<button class='btn ghost sm' id='cam-q-apply'>นำไปใช้</button>"
 "<span class='state-line'>เกิน 50 ลิงก์ Wi-Fi อาจรับไม่ทัน → ภาพเฟรมขาด</span>"
 "</div>"
+
+"<div class='row' style='align-items:center;margin-top:14px;flex-wrap:wrap;gap:16px'>"
+"<label style='display:flex;align-items:center;gap:10px;color:var(--text-dim);font-size:13px'>ความสว่าง"
+"<input id='cam-bri' type='range' min='-3' max='3' step='1' value='0' style='width:160px'>"
+"<span id='cam-bri-val' style='color:var(--accent);font-weight:800;min-width:28px;text-align:right'>0</span>"
+"</label>"
+"<label style='display:flex;align-items:center;gap:10px;color:var(--text-dim);font-size:13px'>ความเปรียบต่าง"
+"<input id='cam-con' type='range' min='-3' max='3' step='1' value='0' style='width:160px'>"
+"<span id='cam-con-val' style='color:var(--accent);font-weight:800;min-width:28px;text-align:right'>0</span>"
+"</label>"
+"<label style='display:flex;align-items:center;gap:10px;color:var(--text-dim);font-size:13px'>อิ่มสี"
+"<input id='cam-sat' type='range' min='-3' max='3' step='1' value='0' style='width:160px'>"
+"<span id='cam-sat-val' style='color:var(--accent);font-weight:800;min-width:28px;text-align:right'>0</span>"
+"</label>"
+"<button class='btn ghost sm' id='cam-img-apply'>ปรับภาพ</button>"
+"</div>"
 "<div class='frame' style='margin-top:14px;display:flex;align-items:center;justify-content:center;min-height:360px'>"
 "<img id='cam-stream' alt='ยังไม่ได้สตรีม' style='max-width:100%;max-height:calc(100vh - 260px);border-radius:12px;background:#03080f' />"
 "</div>"
@@ -255,6 +272,24 @@ static const char TECH_PAGE[] =
 "</div>"
 "<button class='btn primary' id='mp-save'>💾 บันทึก</button>"
 "<span id='mp-state' class='state-line' style='margin-top:0'></span>"
+"</div>"
+"</div>"
+
+"<div class='section'>"
+"<h3>สลับโมดูลจ่ายยา (Servo + IR)</h3>"
+"<p class='sub'>เลือกว่าโมดูลทางตรรกะ (ยา 1–6 ในรายการ) จะใช้ชุดฮาร์ดแวร์ตัวไหนจริง &middot; เซอร์โว + เซ็นเซอร์ IR ของช่องเดียวกันจะถูกสลับไปด้วยกัน &middot; ใช้เมื่อช่องใดช่องหนึ่งเสียและต้องการย้ายไปใช้ฮาร์ดแวร์ของอีกช่องโดยไม่เดินสายใหม่ &middot; เป็นการแมปแบบ permutation — แต่ละช่องฮาร์ดแวร์ต้องถูกใช้ครั้งเดียว</p>"
+"<div class='cards' id='mm-cards' style='grid-template-columns:repeat(auto-fit,minmax(220px,1fr))'>"
+"<div class='card'><div class='k'>โมดูล 1 (ยา 1)</div><select id='mm-0' class='inp'></select></div>"
+"<div class='card'><div class='k'>โมดูล 2 (ยา 2)</div><select id='mm-1' class='inp'></select></div>"
+"<div class='card'><div class='k'>โมดูล 3 (ยา 3)</div><select id='mm-2' class='inp'></select></div>"
+"<div class='card'><div class='k'>โมดูล 4 (ยา 4)</div><select id='mm-3' class='inp'></select></div>"
+"<div class='card'><div class='k'>โมดูล 5 (ยา 5)</div><select id='mm-4' class='inp'></select></div>"
+"<div class='card'><div class='k'>โมดูล 6 (ยา 6)</div><select id='mm-5' class='inp'></select></div>"
+"</div>"
+"<div class='row' style='align-items:flex-end;gap:14px;margin-top:14px'>"
+"<button class='btn primary' id='mm-save'>💾 บันทึกการสลับ</button>"
+"<button class='btn ghost'   id='mm-reset'>↩ รีเซ็ตเป็นค่าเดิม (1→1, 2→2, …)</button>"
+"<span id='mm-state' class='state-line' style='margin-top:0'></span>"
 "</div>"
 "</div>"
 "</div>"
@@ -401,6 +436,50 @@ static const char TECH_PAGE[] =
 "});"
 "loadMaxPills();"
 
+/* Module-map (Servo+IR swap). Each select holds physical-slot options 1..6;
+ * the saved value MUST be a permutation (each phys slot used exactly once)
+ * — server validates again, but check client-side too for a friendly error. */
+"function mmFillSelects(map){"
+"  for(let i=0;i<6;i++){"
+"    const sel=document.getElementById('mm-'+i);if(!sel)continue;"
+"    sel.innerHTML='';"
+"    for(let p=0;p<6;p++){"
+"      const o=document.createElement('option');o.value=p;o.textContent='ช่องฮาร์ดแวร์ '+(p+1);"
+"      if(map[i]===p)o.selected=true;"
+"      sel.appendChild(o);"
+"    }"
+"  }"
+"}"
+"async function mmLoad(){"
+"  try{const r=await fetch('/tech/module_map',{cache:'no-store'});const j=await r.json();"
+"    if(j&&j.ok&&Array.isArray(j.map)&&j.map.length===6){mmFillSelects(j.map.map(Number));"
+"      const st=document.getElementById('mm-state');if(st){st.textContent='ค่าปัจจุบัน: '+j.map.map(v=>parseInt(v,10)+1).join(',');st.style.color='var(--text-dim)';}"
+"    }"
+"  }catch(e){}"
+"}"
+"function mmReadSelects(){const out=[];for(let i=0;i<6;i++){const sel=document.getElementById('mm-'+i);if(!sel)return null;out.push(parseInt(sel.value,10));}return out;}"
+"function mmIsPermutation(a){const s=new Set(a);return s.size===6&&Array.from(s).every(v=>v>=0&&v<=5);}"
+"document.getElementById('mm-save').addEventListener('click',async()=>{"
+"  const m=mmReadSelects();const st=document.getElementById('mm-state');"
+"  if(!m||!mmIsPermutation(m)){st.textContent='ผิดพลาด: ต้องเลือกฮาร์ดแวร์ทุกช่องเป็นค่าไม่ซ้ำกัน';st.style.color='#ff8a80';return;}"
+"  st.textContent='กำลังบันทึก…';st.style.color='var(--accent)';"
+"  try{const r=await fetch('/tech/module_map',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'map='+m.join(',')});"
+"    const j=await r.json();"
+"    if(j&&j.ok){st.textContent='บันทึกแล้ว: '+m.map(v=>v+1).join(',');st.style.color='var(--ok)';}"
+"    else{st.textContent='ผิดพลาด: '+(j&&j.error||'unknown');st.style.color='#ff8a80';}"
+"  }catch(e){st.textContent='ขัดข้อง — ลองใหม่';st.style.color='#ff8a80';}"
+"});"
+"document.getElementById('mm-reset').addEventListener('click',async()=>{"
+"  if(!confirm('รีเซ็ตการสลับโมดูลเป็นค่าเดิม (1→1, 2→2, … , 6→6)?'))return;"
+"  const st=document.getElementById('mm-state');st.textContent='กำลังรีเซ็ต…';st.style.color='var(--accent)';"
+"  try{const r=await fetch('/tech/module_map',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'map=0,1,2,3,4,5'});"
+"    const j=await r.json();"
+"    if(j&&j.ok){st.textContent='รีเซ็ตเป็นค่าเดิมแล้ว';st.style.color='var(--ok)';mmLoad();}"
+"    else{st.textContent='ผิดพลาด: '+(j&&j.error||'unknown');st.style.color='#ff8a80';}"
+"  }catch(e){st.textContent='ขัดข้อง — ลองใหม่';st.style.color='#ff8a80';}"
+"});"
+"mmLoad();"
+
 
 /* Audit history panel */
 "function fmtTs(ts){if(!ts)return '—';const d=new Date(ts*1000);"
@@ -433,9 +512,17 @@ static const char TECH_PAGE[] =
 "document.getElementById('cam-start').addEventListener('click',camStart);"
 "document.getElementById('cam-stop').addEventListener('click',camStop);"
 "const camQ=document.getElementById('cam-q');const camQV=document.getElementById('cam-q-val');"
+"const camBri=document.getElementById('cam-bri');const camBriV=document.getElementById('cam-bri-val');"
+"const camCon=document.getElementById('cam-con');const camConV=document.getElementById('cam-con-val');"
+"const camSat=document.getElementById('cam-sat');const camSatV=document.getElementById('cam-sat-val');"
 "if(camQ){camQ.addEventListener('input',()=>camQV.textContent=camQ.value);"
-"  fetch('/camera/state').then(r=>r.json()).then(j=>{if(j&&j.jpeg_quality){camQ.value=j.jpeg_quality;camQV.textContent=j.jpeg_quality;}}).catch(()=>{});}"
+"  if(camBri)camBri.addEventListener('input',()=>camBriV.textContent=camBri.value);"
+"  if(camCon)camCon.addEventListener('input',()=>camConV.textContent=camCon.value);"
+"  if(camSat)camSat.addEventListener('input',()=>camSatV.textContent=camSat.value);"
+"  fetch('/camera/state').then(r=>r.json()).then(j=>{if(j){if(j.jpeg_quality){camQ.value=j.jpeg_quality;camQV.textContent=j.jpeg_quality;}if(typeof j.brightness==='number'){camBri.value=j.brightness;camBriV.textContent=j.brightness;}if(typeof j.contrast==='number'){camCon.value=j.contrast;camConV.textContent=j.contrast;}if(typeof j.saturation==='number'){camSat.value=j.saturation;camSatV.textContent=j.saturation;}}}).catch(()=>{});}"
 "document.getElementById('cam-q-apply').addEventListener('click',async()=>{const v=camQ.value;try{await fetch('/camera/set?quality='+v);camStart();}catch(e){}});"
+"const camImgApply=document.getElementById('cam-img-apply');"
+"if(camImgApply)camImgApply.addEventListener('click',async()=>{try{await fetch('/camera/set?brightness='+camBri.value+'&contrast='+camCon.value+'&saturation='+camSat.value);camStart();}catch(e){}});"
 "(new MutationObserver(()=>{const p=document.querySelector('[data-panel=camera]');if(p&&!p.classList.contains('active'))camStop();})).observe(document.querySelector('[data-panel=camera]'),{attributes:true,attributeFilter:['class']});"
 "document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')camStop();});"
 "window.addEventListener('pagehide',camStop);"
@@ -721,6 +808,75 @@ esp_err_t tech_maxpills_handler(httpd_req_t *req)
     snprintf(out, sizeof(out), "{\"ok\":true,\"max_pills\":%d}", v);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+}
+
+/* GET  /tech/module_map → {"ok":true,"map":[p0,p1,p2,p3,p4,p5]}
+ * POST /tech/module_map  body "map=p0,p1,p2,p3,p4,p5"
+ *
+ * Each pX is the physical slot (0..5) for logical med X. The full set
+ * must be a permutation — duplicates rejected with 400. Persisted to
+ * NVS by module_map_set_all so it survives reboot. */
+esp_err_t tech_module_map_handler(httpd_req_t *req)
+{
+    esp_err_t auth = web_require_tech_api_auth(req);
+    if (auth != ESP_OK) return auth;
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+
+    if (req->method == HTTP_GET) {
+        int cur[DISPENSER_MED_COUNT];
+        module_map_copy(cur);
+        char out[96];
+        snprintf(out, sizeof(out),
+                 "{\"ok\":true,\"map\":[%d,%d,%d,%d,%d,%d]}",
+                 cur[0], cur[1], cur[2], cur[3], cur[4], cur[5]);
+        return httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+    }
+
+    /* POST */
+    char body[80] = {0};
+    int len = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (len < 0) return ESP_FAIL;
+    body[len] = '\0';
+
+    const char *p = strstr(body, "map=");
+    if (!p) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        return httpd_resp_send(req,
+            "{\"ok\":false,\"error\":\"missing map=\"}", HTTPD_RESP_USE_STRLEN);
+    }
+    p += 4;
+
+    int parsed[DISPENSER_MED_COUNT];
+    int n = 0;
+    while (*p && n < DISPENSER_MED_COUNT) {
+        char *end;
+        long v = strtol(p, &end, 10);
+        if (end == p) break;
+        parsed[n++] = (int)v;
+        p = end;
+        if (*p == ',') p++;
+    }
+    if (n != DISPENSER_MED_COUNT) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        return httpd_resp_send(req,
+            "{\"ok\":false,\"error\":\"need 6 comma-separated values\"}",
+            HTTPD_RESP_USE_STRLEN);
+    }
+
+    if (!module_map_set_all(parsed)) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        return httpd_resp_send(req,
+            "{\"ok\":false,\"error\":\"map must be a permutation of 0..5\"}",
+            HTTPD_RESP_USE_STRLEN);
+    }
+
+    char out[96];
+    snprintf(out, sizeof(out),
+             "{\"ok\":true,\"map\":[%d,%d,%d,%d,%d,%d]}",
+             parsed[0], parsed[1], parsed[2], parsed[3], parsed[4], parsed[5]);
     return httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
 }
 
