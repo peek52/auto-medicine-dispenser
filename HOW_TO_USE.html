@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คู่มือการใช้งาน — Automatic Pill Dispenser</title>
+<style>
+  :root{
+    --bg:#f7f9fc; --bg-soft:#eef2f8;
+    --card:#ffffff; --card-border:rgba(15,23,42,.08);
+    --text:#0b1220; --muted:#5b6b82;
+    --pri:#1d4ed8; --pri-soft:#dbeafe; --pri2:#38bdf8;
+    --ok:#10b981; --ok-soft:#d1fae5;
+    --warn:#f59e0b; --warn-soft:#fef3c7;
+    --bad:#ef4444; --bad-soft:#fee2e2;
+    --shadow:0 12px 32px rgba(15,23,42,.08);
+    --shadow-sm:0 4px 12px rgba(15,23,42,.06);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:"Sukhumvit Set","Prompt","Segoe UI",Tahoma,sans-serif;
+    line-height:1.7;
+    -webkit-text-size-adjust:100%;
+  }
+  body{padding:2rem 1.25rem;max-width:1000px;margin:0 auto}
+
+  /* ── Header ── */
+  header{
+    text-align:center;
+    padding:3rem 1rem 2.5rem;
+    margin-bottom:2rem;
+    background:linear-gradient(135deg,#1d4ed8 0%,#38bdf8 100%);
+    color:#fff;
+    border-radius:24px;
+    box-shadow:var(--shadow);
+  }
+  header .badge{
+    display:inline-block;
+    padding:.4rem 1rem;
+    background:rgba(255,255,255,.18);
+    border:1px solid rgba(255,255,255,.32);
+    border-radius:999px;
+    font-size:.85rem;
+    font-weight:700;
+    margin-bottom:1rem;
+    backdrop-filter:blur(8px);
+  }
+  header h1{
+    font-size:2.2rem;
+    font-weight:900;
+    line-height:1.2;
+    margin-bottom:.6rem;
+  }
+  header .subtitle{
+    font-size:1.05rem;
+    opacity:.9;
+    font-weight:500;
+  }
+  header .icon-big{font-size:3.5rem;margin-bottom:.5rem}
+
+  /* ── TOC ── */
+  .toc{
+    background:var(--card);
+    border:1px solid var(--card-border);
+    border-radius:18px;
+    padding:1.5rem;
+    margin-bottom:2rem;
+    box-shadow:var(--shadow-sm);
+  }
+  .toc h3{
+    color:var(--pri);
+    margin-bottom:1rem;
+    font-size:1.1rem;
+    display:flex;
+    align-items:center;
+    gap:.5rem;
+  }
+  .toc ol{
+    list-style:none;
+    counter-reset:toc;
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+    gap:.5rem;
+  }
+  .toc li{
+    counter-increment:toc;
+    padding:.5rem .75rem;
+    border-radius:10px;
+    transition:.15s;
+  }
+  .toc li:hover{background:var(--bg-soft)}
+  .toc li::before{
+    content:counter(toc) ".";
+    color:var(--pri);
+    font-weight:900;
+    margin-right:.5rem;
+  }
+  .toc a{color:var(--text);text-decoration:none;font-weight:600}
+
+  /* ── Section ── */
+  section{
+    background:var(--card);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:1.75rem 1.5rem;
+    margin-bottom:1.5rem;
+    box-shadow:var(--shadow-sm);
+  }
+  h2{
+    font-size:1.6rem;
+    font-weight:900;
+    color:var(--pri);
+    margin-bottom:1.2rem;
+    padding-bottom:.6rem;
+    border-bottom:2px solid var(--pri-soft);
+    display:flex;
+    align-items:center;
+    gap:.6rem;
+  }
+  h2 .step-num{
+    background:var(--pri);
+    color:#fff;
+    width:36px;
+    height:36px;
+    border-radius:50%;
+    display:grid;
+    place-items:center;
+    font-size:1rem;
+    flex-shrink:0;
+  }
+  h3{
+    font-size:1.2rem;
+    margin:1.5rem 0 .75rem;
+    color:var(--text);
+    font-weight:800;
+  }
+  h3:first-of-type{margin-top:0}
+  p,li{font-size:1rem;color:var(--text)}
+  ul,ol{padding-left:1.4rem}
+  li{margin-bottom:.4rem}
+  strong{color:var(--pri);font-weight:800}
+
+  /* ── Callout boxes ── */
+  .callout{
+    padding:1rem 1.2rem;
+    border-radius:14px;
+    margin:1rem 0;
+    border-left:4px solid;
+    font-size:.97rem;
+  }
+  .callout-info{background:var(--pri-soft);border-color:var(--pri);color:#0a2766}
+  .callout-ok{background:var(--ok-soft);border-color:var(--ok);color:#064e3b}
+  .callout-warn{background:var(--warn-soft);border-color:var(--warn);color:#78350f}
+  .callout-bad{background:var(--bad-soft);border-color:var(--bad);color:#7f1d1d}
+  .callout strong{color:inherit}
+  .callout .title{
+    font-weight:900;
+    margin-bottom:.3rem;
+    display:flex;
+    align-items:center;
+    gap:.4rem;
+  }
+
+  /* ── Step rows ── */
+  .step-row{
+    display:flex;
+    gap:1rem;
+    margin-bottom:1rem;
+    padding:1rem;
+    background:var(--bg-soft);
+    border-radius:14px;
+    align-items:flex-start;
+  }
+  .step-row .num{
+    background:var(--pri);
+    color:#fff;
+    width:32px;
+    height:32px;
+    border-radius:50%;
+    display:grid;
+    place-items:center;
+    font-weight:900;
+    font-size:.95rem;
+    flex-shrink:0;
+  }
+  .step-row .text{flex:1;font-size:.97rem}
+  .step-row .text b{color:var(--pri)}
+
+  /* ── Table ── */
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin:1rem 0;
+    border-radius:12px;
+    overflow:hidden;
+    box-shadow:var(--shadow-sm);
+  }
+  th,td{
+    padding:.7rem 1rem;
+    text-align:left;
+    border-bottom:1px solid var(--card-border);
+    font-size:.95rem;
+  }
+  th{
+    background:var(--pri);
+    color:#fff;
+    font-weight:800;
+  }
+  td:first-child{font-weight:700;color:var(--pri)}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:nth-child(even){background:var(--bg-soft)}
+
+  /* ── Key combo / button hint ── */
+  .key{
+    display:inline-block;
+    padding:.15rem .5rem;
+    background:var(--bg-soft);
+    border:1px solid var(--card-border);
+    border-radius:6px;
+    font-family:Consolas,Monaco,monospace;
+    font-size:.92rem;
+    color:var(--pri);
+    font-weight:700;
+  }
+
+  /* ── Footer ── */
+  footer{
+    text-align:center;
+    padding:2rem 1rem;
+    margin-top:2rem;
+    color:var(--muted);
+    font-size:.9rem;
+    border-top:1px solid var(--card-border);
+  }
+  footer .heart{color:#ef4444}
+
+  /* ── Mobile ── */
+  @media (max-width:640px){
+    body{padding:1rem .75rem}
+    header{padding:2rem 1rem 1.75rem;border-radius:18px}
+    header h1{font-size:1.6rem}
+    header .subtitle{font-size:.95rem}
+    section{padding:1.25rem 1rem;border-radius:16px}
+    h2{font-size:1.3rem}
+    h3{font-size:1.05rem}
+    .toc ol{grid-template-columns:1fr}
+    table{font-size:.85rem}
+    th,td{padding:.55rem .6rem}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="icon-big">💊</div>
+  <div class="badge">คู่มือผู้ใช้งาน · User Guide</div>
+  <h1>Automatic Pill Dispenser</h1>
+  <div class="subtitle">เครื่องจ่ายยาอัตโนมัติ — ทำงานออฟไลน์ได้ ควบคุมผ่านคลาวด์ NETPIE</div>
+</header>
+
+<div class="toc">
+  <h3>📑 สารบัญ</h3>
+  <ol>
+    <li><a href="#intro">แนะนำเครื่อง</a></li>
+    <li><a href="#first-boot">เปิดเครื่องครั้งแรก</a></li>
+    <li><a href="#wifi">ตั้งค่า WiFi</a></li>
+    <li><a href="#schedule">ตั้งตารางเวลายา</a></li>
+    <li><a href="#modules">ตั้งค่าตลับยา</a></li>
+    <li><a href="#daily">การใช้งานประจำวัน</a></li>
+    <li><a href="#netpie">ควบคุมผ่านคลาวด์ NETPIE</a></li>
+    <li><a href="#telegram">การแจ้งเตือนผ่าน Telegram</a></li>
+    <li><a href="#tech">หน้าผู้ดูแล (/tech)</a></li>
+    <li><a href="#faq">การแก้ปัญหาเบื้องต้น</a></li>
+  </ol>
+</div>
+
+<!-- 1. INTRO -->
+<section id="intro">
+  <h2><span class="step-num">1</span>แนะนำเครื่อง</h2>
+  <p>เครื่องจ่ายยาอัตโนมัติออกแบบมาเพื่อช่วยผู้ป่วยและผู้สูงอายุที่ต้องทานยาตามมื้อ เพื่อความปลอดภัยและความสะดวกในการรับยาในแต่ละมื้อ</p>
+
+  <h3>คุณสมบัติเด่น</h3>
+  <ul>
+    <li>🕐 ตั้งเวลาแยกได้ <strong>7 มื้อ/วัน</strong>: เช้า (ก่อน/หลัง), กลางวัน (ก่อน/หลัง), เย็น (ก่อน/หลัง), ก่อนนอน</li>
+    <li>💊 รองรับยาได้สูงสุด <strong>6 ตลับ</strong> ต่อโมดูล</li>
+    <li>📱 ใช้งานทั้งผ่าน <strong>หน้าจอสัมผัส</strong> บนเครื่อง และ <strong>คลาวด์ NETPIE</strong></li>
+    <li>📷 มี <strong>กล้อง</strong> ถ่ายรูปยืนยันการรับยา ส่งเข้าแอป Telegram</li>
+    <li>🔔 แจ้งเตือนเสียงล่วงหน้า <strong>30/15/5 นาที</strong> + เสียงปลุกเมื่อถึงเวลา</li>
+    <li>⚡ ทำงาน <strong>ออฟไลน์ได้เต็มรูปแบบ</strong> — ไม่ต้องอยู่ติดอินเตอร์เน็ตตลอดเวลา</li>
+  </ul>
+
+  <h3>ส่วนประกอบหลัก</h3>
+  <table>
+    <thead><tr><th>ส่วน</th><th>หน้าที่</th></tr></thead>
+    <tbody>
+      <tr><td>หน้าจอสัมผัส 4.3"</td><td>ตั้งค่า, ดูเวลา, รับยาด้วยการกดยืนยัน</td></tr>
+      <tr><td>ตลับยา 6 ช่อง</td><td>เก็บเม็ดยาแยกประเภท สูงสุด 16 เม็ด/ตลับ</td></tr>
+      <tr><td>เซ็นเซอร์ IR</td><td>ตรวจจับเม็ดยาที่จ่ายออก</td></tr>
+      <tr><td>กล้อง MIPI-CSI</td><td>ถ่ายรูปยายืนยันก่อนส่งเข้า Telegram</td></tr>
+      <tr><td>ลำโพง (DFPlayer)</td><td>เสียงแจ้งเตือนภาษาไทย/อังกฤษ</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 2. FIRST BOOT -->
+<section id="first-boot">
+  <h2><span class="step-num">2</span>เปิดเครื่องครั้งแรก</h2>
+
+  <div class="step-row">
+    <div class="num">1</div>
+    <div class="text">เสียบสาย <b>USB Type-C 5V/3A</b> เข้าด้านหลังเครื่อง — รอประมาณ <b>7-10 วินาที</b> หน้าจอเปิด</div>
+  </div>
+  <div class="step-row">
+    <div class="num">2</div>
+    <div class="text">เครื่องเล่นเสียงทักทาย + แสดงหน้า <b>Standby</b> (โมดูล 1-6 พร้อมเวลามื้อ)</div>
+  </div>
+  <div class="step-row">
+    <div class="num">3</div>
+    <div class="text">แตะหน้าจอเพื่อเข้าสู่ <b>เมนูหลัก</b> (4 ปุ่ม: ตารางยา, จัดการตลับ, ตั้งค่าระบบ, WiFi)</div>
+  </div>
+
+  <div class="callout callout-info">
+    <div class="title">💡 ข้อมูลแรกที่ต้องตั้ง</div>
+    หากเปิดครั้งแรก เครื่องจะใช้ค่าเริ่มต้น (08:00, 08:30, 12:00, 12:30, 17:00, 17:30, 21:00) และทุกตลับยังว่าง — ควรตั้ง WiFi และตารางยาของผู้ป่วยก่อนใช้งานจริง
+  </div>
+</section>
+
+<!-- 3. WIFI -->
+<section id="wifi">
+  <h2><span class="step-num">3</span>ตั้งค่า WiFi</h2>
+  <p>การเชื่อม WiFi จำเป็นถ้าต้องการใช้งานผ่านคลาวด์ NETPIE และการแจ้งเตือน Telegram ถ้าใช้แค่ออฟไลน์ข้ามขั้นตอนนี้ได้</p>
+
+  <h3>วิธีตั้งผ่านหน้าจอเครื่อง</h3>
+  <div class="step-row">
+    <div class="num">1</div>
+    <div class="text">แตะ <span class="key">🛜 WiFi</span> ในเมนูหลัก</div>
+  </div>
+  <div class="step-row">
+    <div class="num">2</div>
+    <div class="text">รอเครื่อง <b>สแกน WiFi รอบ ๆ</b> (~3 วินาที) แล้วเลือก SSID ที่ต้องการ</div>
+  </div>
+  <div class="step-row">
+    <div class="num">3</div>
+    <div class="text">พิมพ์รหัสผ่านผ่านคีย์บอร์ดบนจอ แล้วกด <b>เชื่อมต่อ</b></div>
+  </div>
+  <div class="step-row">
+    <div class="num">4</div>
+    <div class="text">ถ้าสำเร็จ เครื่องจะแสดง <b>IP Address</b> และจดจำไว้ (ไม่ต้องตั้งใหม่ทุกครั้งที่เปิด)</div>
+  </div>
+
+  <h3>วิธีตั้งผ่านเว็บ (Setup AP)</h3>
+  <p>ถ้าหน้าจอตั้งไม่ได้ หรือยังไม่เคยตั้ง WiFi:</p>
+  <div class="step-row">
+    <div class="num">1</div>
+    <div class="text">เปิดมือถือ → เชื่อม WiFi ชื่อ <span class="key">Automatic Pill Dispenser</span> (ไม่มีรหัส)</div>
+  </div>
+  <div class="step-row">
+    <div class="num">2</div>
+    <div class="text">เปิดเบราเซอร์ ไป <span class="key">http://192.168.4.1/wifi</span></div>
+  </div>
+  <div class="step-row">
+    <div class="num">3</div>
+    <div class="text">เลือก WiFi + พิมพ์รหัสผ่าน → บันทึก เครื่องจะรีบูตและเชื่อม WiFi ใหม่</div>
+  </div>
+</section>
+
+<!-- 4. SCHEDULE -->
+<section id="schedule">
+  <h2><span class="step-num">4</span>ตั้งตารางเวลายา</h2>
+  <p>เครื่องรองรับ 7 มื้อ แต่ละมื้อตั้งเวลาแยกอิสระ (มื้อไหนไม่ใช้ ปล่อยว่างได้)</p>
+
+  <h3>วิธีตั้ง</h3>
+  <div class="step-row">
+    <div class="num">1</div>
+    <div class="text">เมนูหลัก → <span class="key">📅 ตารางยา</span></div>
+  </div>
+  <div class="step-row">
+    <div class="num">2</div>
+    <div class="text">แตะ <b>การ์ดมื้อใด ๆ</b> (เช่น "ก่อนอาหารเช้า") → เปิดตัวเลือกเวลา</div>
+  </div>
+  <div class="step-row">
+    <div class="num">3</div>
+    <div class="text">ใช้ปุ่ม <span class="key">▲ ▼</span> ปรับ ชม. และ นาที กดค้างปุ่มเพื่อ <b>ปรับเร็ว</b></div>
+  </div>
+  <div class="step-row">
+    <div class="num">4</div>
+    <div class="text">กด <b>บันทึก</b> เครื่องจะพูด "บันทึก" และกลับมาหน้าตาราง</div>
+  </div>
+
+  <div class="callout callout-ok">
+    <div class="title">✨ Auto-คำนวณคู่มื้อ</div>
+    ตั้ง <b>ก่อนอาหาร 07:00</b> → เครื่องจะคำนวณ <b>หลังอาหาร = 07:45</b> ให้อัตโนมัติ (เว้น 45 นาทีเพื่อความปลอดภัยทางยา) ถ้าจะปรับเปลี่ยน กดเข้าไปที่ slot คู่นั้นและแก้ได้ แต่ <b>ห่างกันไม่เกิน 1 ชม.</b>
+  </div>
+
+  <div class="callout callout-warn">
+    <div class="title">⚠️ กฎที่ระบบจะ Reject</div>
+    <ul style="margin-top:.4rem">
+      <li>เวลาก่อน ≥ เวลาหลัง (เช่น ก่อน 08:00, หลัง 07:30)</li>
+      <li>ห่างก่อน/หลัง เกิน 1 ชม. (เช่น ก่อน 07:00, หลัง 09:00)</li>
+      <li>มีเวลาเดียวกันใน 2 มื้อ</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 5. MODULES -->
+<section id="modules">
+  <h2><span class="step-num">5</span>ตั้งค่าตลับยา (โมดูล 1-6)</h2>
+  <p>แต่ละตลับยาตั้งได้ 3 ค่า: <strong>ชื่อยา</strong>, <strong>มื้อที่ใช้</strong>, <strong>จำนวนยาในตลับ</strong></p>
+
+  <div class="step-row">
+    <div class="num">1</div>
+    <div class="text">เมนูหลัก → <span class="key">💊 จัดการตลับ</span></div>
+  </div>
+  <div class="step-row">
+    <div class="num">2</div>
+    <div class="text">แตะการ์ดโมดูล 1-6 ที่ต้องการ → หน้าตั้งค่าตลับ</div>
+  </div>
+  <div class="step-row">
+    <div class="num">3</div>
+    <div class="text">กด <b>ชื่อยา</b> → พิมพ์ผ่านคีย์บอร์ดไทย/อังกฤษ</div>
+  </div>
+  <div class="step-row">
+    <div class="num">4</div>
+    <div class="text">เลือก <b>มื้อที่ใช้</b> (ติ๊กได้หลายมื้อ) — เช่นยาแก้แพ้ใช้ทั้งเช้าและเย็น</div>
+  </div>
+  <div class="step-row">
+    <div class="num">5</div>
+    <div class="text">ปรับ <b>จำนวนยาในตลับ</b> (กด +/- หรือกดค้างเพื่อเพิ่มเร็ว)</div>
+  </div>
+  <div class="step-row">
+    <div class="num">6</div>
+    <div class="text">กด <b>บันทึก</b> ที่มุมล่าง</div>
+  </div>
+
+  <div class="callout callout-info">
+    <div class="title">🔄 ป๊อปอัพ "เติมยา/ล้างข้อมูล"</div>
+    ถ้าเปิดตลับที่จำนวนยา = 0 (และเคยตั้งชื่อ/มื้อไว้แล้ว) เครื่องจะถามทันที:
+    <ul style="margin-top:.3rem">
+      <li><b>เติมยา</b> → ปิดป๊อปอัพ ให้ user ปรับจำนวนยา +</li>
+      <li><b>ล้างข้อมูล</b> → ลบชื่อ/มื้อ/จำนวนทั้งหมดของตลับนี้</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 6. DAILY USE -->
+<section id="daily">
+  <h2><span class="step-num">6</span>การใช้งานประจำวัน</h2>
+
+  <h3>เมื่อถึงเวลายา</h3>
+  <ol>
+    <li>เครื่องดัง <b>เสียงปลุก</b> + แสดงป๊อปอัพแดง "ถึงเวลาทานยา" + ส่ง Telegram</li>
+    <li>เสียงปลุก <b>ซ้ำทุก 9 วินาที</b> จนกว่าจะกดตอบสนอง</li>
+    <li>ผู้ป่วยมา <b>แตะที่จอ</b> เพื่อยืนยัน → servo หมุนจ่ายยา → กล้องถ่ายรูป → ส่งภาพยาเข้า Telegram</li>
+  </ol>
+
+  <h3>เสียงเตือนล่วงหน้า</h3>
+  <table>
+    <thead><tr><th>เวลา</th><th>มื้อก่อนอาหาร</th><th>มื้อหลังอาหาร</th></tr></thead>
+    <tbody>
+      <tr><td>30 นาที</td><td>✅ มี</td><td>มีเฉพาะถ้าก่อนอาหารคู่นั้นไม่มียา</td></tr>
+      <tr><td>15 นาที</td><td>✅ มี</td><td>✅ มี</td></tr>
+      <tr><td>5 นาที</td><td>✅ มี</td><td>✅ มี</td></tr>
+      <tr><td>ถึงเวลาจ่าย</td><td>เสียงปลุก + Telegram</td><td>เสียงปลุก + Telegram</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:.92rem;color:var(--muted);margin-top:.5rem">เสียงเตือนล่วงหน้าจะตามด้วยชื่อมื้อ เช่น "อีก 15 นาที + ก่อนอาหารกลางวัน"</p>
+
+  <div class="callout callout-warn">
+    <div class="title">⏰ ถ้าไม่กดยืนยันภายใน 15 นาที</div>
+    เครื่องจะข้ามมื้อนั้นโดยอัตโนมัติ — <b>ไม่จ่ายยา</b> และส่ง Telegram แจ้ง "❌ ไม่มีผู้มารับยา" รอแจ้งเตือนมื้อถัดไป
+  </div>
+
+  <h3>กรณียาหมด</h3>
+  <p>ถ้าตอนถึงเวลา แต่บางตลับยาหมด (count = 0):</p>
+  <ul>
+    <li>เครื่องส่ง Telegram แจ้งล่วงหน้า: "⚠️ แจ้งเตือนยาหมด - โมดูลที่ต้องเติม: [ชื่อยา]"</li>
+    <li>ตลับที่มียา ยังจ่ายตามปกติ</li>
+    <li>ตลับที่หมด ขึ้นรายงาน "ไม่พบยา"</li>
+  </ul>
+</section>
+
+<!-- 7. NETPIE -->
+<section id="netpie">
+  <h2><span class="step-num">7</span>ควบคุมผ่านคลาวด์ NETPIE</h2>
+  <p>NETPIE คือคลาวด์ MQTT ที่เครื่องเชื่อมไปอัตโนมัติ ใช้สำหรับดูสถานะและสั่งงานจากระยะไกล</p>
+
+  <h3>Widget ที่ใช้ได้</h3>
+  <table>
+    <thead><tr><th>Widget</th><th>ใช้ทำอะไร</th></tr></thead>
+    <tbody>
+      <tr><td>Dashboard</td><td>ดูสถานะตลับยา + เวลามื้อ + จำนวนยาที่เหลือ</td></tr>
+      <tr><td>Settings</td><td>แก้ไขชื่อยา/มื้อ/จำนวน/ตารางเวลา (รออนุมัติที่จอ)</td></tr>
+      <tr><td>Manual Dispense</td><td>สั่งจ่ายยาด่วน เฉพาะตลับ หรือ ทั้งระบบ</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout callout-info">
+    <div class="title">🔒 ระบบ "รออนุมัติ"</div>
+    การแก้ไขข้อมูลผ่าน NETPIE จะ <b>ไม่ commit ทันที</b> — จะแสดงป๊อปอัพที่หน้าจอเครื่องเพื่อให้ผู้ดูแลเครื่อง <b>กดอนุมัติ</b>ก่อน + ส่ง Telegram ขอยืนยัน เพื่อป้องกันการแก้ไขโดยไม่ตั้งใจจากระยะไกล (หน้าจอเครื่อง = source of truth)
+  </div>
+</section>
+
+<!-- 8. TELEGRAM -->
+<section id="telegram">
+  <h2><span class="step-num">8</span>การแจ้งเตือนผ่าน Telegram</h2>
+  <p>Telegram Bot ส่งข้อความและรูปภาพให้ผู้ดูแลทราบเหตุการณ์ทั้งหมด</p>
+
+  <h3>ประเภทข้อความที่ส่ง</h3>
+  <ul>
+    <li>🔔 <b>เตือนล่วงหน้า</b>: "อีก 30/15/5 นาทีถึงเวลายา..."</li>
+    <li>⏰ <b>ถึงเวลาแล้ว</b>: "ถึงเวลาทานยา มื้อ: ก่อนอาหารเช้า กรุณามารับยาที่เครื่อง"</li>
+    <li>✅ <b>จ่ายสำเร็จ</b>: "จ่ายยาสำเร็จ" + รูปภาพยาในถาด</li>
+    <li>❌ <b>ไม่มีผู้รับยา</b>: "ไม่มีผู้มารับยาภายใน 15 นาที ระบบจึงไม่จ่ายยาออกมา"</li>
+    <li>⚠️ <b>ยาหมด</b>: ระบุชื่อตลับที่ต้องเติม</li>
+    <li>📷 <b>รูปยืนยันการรับยา</b>: ส่งเข้า chat ทุกครั้งที่จ่ายสำเร็จ</li>
+  </ul>
+
+  <h3>การตั้งค่า</h3>
+  <p>ตั้งใน <span class="key">/tech</span> → <span class="key">Telegram</span> โดยใส่ Bot Token + Chat ID ที่ได้จาก BotFather</p>
+</section>
+
+<!-- 9. TECH PAGE -->
+<section id="tech">
+  <h2><span class="step-num">9</span>หน้าผู้ดูแล (/tech)</h2>
+  <p>หน้าเว็บสำหรับช่าง/ผู้ดูแล ใช้ตรวจสอบและปรับแต่งระบบเชิงลึก</p>
+
+  <h3>วิธีเข้า</h3>
+  <ol>
+    <li>เครื่องและมือถือต้องอยู่ใน <b>WiFi เดียวกัน</b></li>
+    <li>เปิดเบราเซอร์ → <span class="key">http://[IP-ของเครื่อง]/</span> หรือ <span class="key">/tech</span></li>
+    <li>ใส่รหัสช่าง (กำหนดจาก <span class="key">/access</span>)</li>
+  </ol>
+
+  <h3>ฟังก์ชันในหน้า /tech</h3>
+  <ul>
+    <li>📷 <b>กล้อง</b>: ดูสตรีมสด + ปรับ <b>ความสว่าง/ความชัด/ความอิ่มสี</b> (-3 ถึง +3)</li>
+    <li>⚙️ <b>Servo Test</b>: ทดสอบหมุน servo แต่ละโมดูล</li>
+    <li>🔊 <b>เสียง</b>: ปรับเสียงเตือน, เสียงปุ่ม, ช่วงเสียงปลุก (วินาที)</li>
+    <li>🛑 <b>Emergency Stop</b>: หยุด servo ทันที (กรณีฉุกเฉิน)</li>
+    <li>🔄 <b>Reboot</b>: รีบูตเครื่องผ่านเว็บ</li>
+    <li>📊 <b>Audit Log</b>: ประวัติการจ่ายยาทุกครั้ง (เก็บใน NVS)</li>
+    <li>🗑️ <b>Factory Reset</b>: ล้างค่าทั้งหมดกลับเป็น default</li>
+  </ul>
+</section>
+
+<!-- 10. FAQ -->
+<section id="faq">
+  <h2><span class="step-num">10</span>การแก้ปัญหาเบื้องต้น</h2>
+
+  <h3>เครื่องไม่เปิด / หน้าจอดับ</h3>
+  <ul>
+    <li>ตรวจสาย USB-C ต้อง <b>5V/3A</b> (อะแดปเตอร์ Type-C ปกติทั่วไปใช้ได้)</li>
+    <li>ลองสายอื่น (สายอ่อนอาจไม่ส่งกระแสพอ)</li>
+    <li>กดปุ่ม <b>Reset</b> ด้านหลังเครื่องค้าง 3 วินาที</li>
+  </ul>
+
+  <h3>servo ไม่หมุนเมื่อถึงเวลายา</h3>
+  <ul>
+    <li>เช็คว่า <b>Emergency Stop</b> ใน /tech ไม่ได้เปิดอยู่</li>
+    <li>เช็คตลับยานั้นมียา (count > 0)</li>
+    <li>เช็คว่ามื้อนั้นได้ติ๊กเลือกตลับนี้ไว้</li>
+    <li>ถ้า servo ค้าง ลองกด <b>Servo Home</b> ใน /tech</li>
+  </ul>
+
+  <h3>WiFi เชื่อมไม่ติด</h3>
+  <ul>
+    <li>เครื่องรองรับเฉพาะ <b>WiFi 2.4GHz</b> เท่านั้น ไม่รองรับ 5GHz</li>
+    <li>เช็ครหัสผ่านพิมพ์ถูกต้อง</li>
+    <li>ถ้ายังไม่ติด ลองพิมพ์ <span class="key">wifi clear</span> ใน console (USB serial)</li>
+    <li>หรือ Factory Reset ผ่าน /tech</li>
+  </ul>
+
+  <h3>Telegram ไม่ส่ง</h3>
+  <ul>
+    <li>เช็ค WiFi ติดอยู่จริง (IP แสดงในหน้าจอ)</li>
+    <li>เช็ค Bot Token + Chat ID ใน /tech ตั้งถูก</li>
+    <li>ลองกดปุ่ม <b>Test Telegram</b> ใน /tech</li>
+  </ul>
+
+  <h3>กล้องไม่ขึ้นภาพ / มืด</h3>
+  <ul>
+    <li>กล้องอาจต้องการ <b>1-3 รอบ retry</b> ตอน cold boot — รอ ~10 วินาที</li>
+    <li>ปรับความสว่างใน <span class="key">/tech</span> → <b>Camera</b></li>
+    <li>เช็คสายแพ MIPI-CSI หลังเครื่อง ต่อแน่นหรือไม่</li>
+  </ul>
+
+  <h3>มื้อยาตั้งไม่ได้ ขึ้น "เวลาไม่ถูกต้อง"</h3>
+  <ul>
+    <li>เช็คว่าเวลาก่อน < เวลาหลัง</li>
+    <li>เช็คว่าห่างก่อน/หลังไม่เกิน 1 ชม.</li>
+    <li>เช็คว่าไม่มีมื้ออื่นตั้งเวลาเดียวกัน</li>
+  </ul>
+</section>
+
+<footer>
+  <p>คู่มือผู้ใช้งาน <b>Automatic Pill Dispenser</b> — เครื่องจ่ายยาอัตโนมัติ</p>
+  <p style="margin-top:.5rem">ESP32-P4 Nano · ESP-IDF v5.3 · NETPIE 2020 · Project 2026</p>
+</footer>
+
+</body>
+</html>
