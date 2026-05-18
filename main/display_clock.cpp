@@ -713,8 +713,21 @@ static void clock_task(void *)
                      * ต้องมีเสียง". The patient is acknowledging the
                      * device is ready; no click feedback needed. */
                     force_redraw = true;
-                    /* Fall through to the rest of the loop — the next
-                     * iteration paints the real Standby UI. */
+                    /* Mark the outer touch tracker as "already in
+                     * progress + handled" so the rest of this loop
+                     * iteration AND the next one don't treat the
+                     * dismiss tap as a fresh down event against
+                     * PAGE_STANDBY (would otherwise route the tap to
+                     * the standby handler and open the menu / a
+                     * module card depending on where the patient
+                     * pressed). User report 2026-05-18: "แตะแล้ว
+                     * บางครั้งมันไปหน้าตั้งค่า". The flags reset
+                     * naturally once the finger lifts (release path
+                     * sees touch_handled=true → no trigger). */
+                    prev_touch    = true;
+                    touch_handled = true;
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    continue;
                 } else {
                     vTaskDelay(pdMS_TO_TICKS(50));
                     continue;
