@@ -35,6 +35,17 @@ static bool     s_refill_or_clear_drawn = false;
  * user can't sneak out leaving an "I said I would refill" promise
  * unfulfilled — the popup re-fires forcing a deliberate choice. */
 static bool     s_refill_pending        = false;
+/* Clean-before-setup popup — fires when the user taps an UNCONFIGURED
+ * slot (no name + no meal slots) on the grid. Forces a safety
+ * acknowledgement that the cartridge and pill tube have been cleaned
+ * before the operator starts entering a new medicine (user spec
+ * 2026-05-18: "บังคับเด้งให้ล้างยาก่อนทุกครั้ง เพื่อความปลอดภัย").
+ * Distinct from the refill-or-clear popup above: that one is for
+ * configured slots that ran empty; this one is for slots that have
+ * never been used. Two buttons: ยกเลิก → bounce back to the grid;
+ * ล้างเสร็จแล้ว → close popup and let the user edit the detail page. */
+static bool     s_clean_before_setup_popup = false;
+static bool     s_clean_before_setup_drawn = false;
 static netpie_med_t s_med_backup = {0};
 static bool     s_med_snapshot_saved = false;
 
@@ -460,19 +471,28 @@ void ui_setup_meds_handle_touch(uint16_t tx_n, uint16_t ty_n)
                 selected_med_idx = i;
                 pending_page = PAGE_SETUP_MEDS_DETAIL;
                 force_redraw = true;
-                /* If the user tapped into an already-configured slot
-                 * whose count has dropped to 0 (e.g. last dose dispensed,
-                 * or IR confirmed empty), arm the refill-or-clear popup
-                 * so they get an immediate prompt to either refill the
-                 * cartridge or wipe the slot — keeps tubes from being
-                 * "forgotten" half-empty between schedules. Skips brand-
-                 * new empty slots (no name, no slots) so initial setup
-                 * isn't interrupted. */
+                /* Decide which (if any) popup to arm before the detail
+                 * page paints. Three buckets:
+                 *   1. Unconfigured slot (no name AND no slots)
+                 *        → clean-before-setup safety popup. Forces the
+                 *          operator to acknowledge the tube was cleaned
+                 *          before they start punching in a new medicine.
+                 *   2. Configured slot whose count has run to 0
+                 *        → refill-or-clear popup (existing behaviour).
+                 *   3. Configured slot with stock
+                 *        → no popup, normal detail flow.
+                 * The user explicitly asked (2026-05-18) for the safety
+                 * popup on EVERY entry into an unconfigured slot, so it
+                 * latches every time — there's no "skip" arm flag for
+                 * unconfigured slots. */
                 {
                     const netpie_shadow_t *sh_tap = netpie_get_shadow();
                     bool configured = (strlen(sh_tap->med[i].name) > 0) ||
                                       (sh_tap->med[i].slots != 0);
-                    if (sh_tap->med[i].count == 0 && configured) {
+                    if (!configured) {
+                        s_clean_before_setup_popup = true;
+                        s_clean_before_setup_drawn = false;
+                    } else if (sh_tap->med[i].count == 0) {
                         s_refill_or_clear_popup = true;
                         s_refill_or_clear_drawn = false;
                         s_refill_pending        = true;
@@ -803,6 +823,56 @@ void ui_setup_meds_detail_render(void)
      *    Highest priority on the detail page — paints over normal UI.
      *    Bounds (40,50,400,220) match validation/save-confirm so
      *    transitions don't leave leftover edges. */
+
+    /* ── Clean-before-setup popup. Fires when the operator taps an
+     *    unconfigured module on the grid. Forces a tube-cleaning
+     *    acknowledgement before the detail editor accepts input.
+     *    Same bounds as the popups below so transitions are clean. */
+    if (s_clean_before_setup_popup) {
+        if (!s_clean_before_setup_drawn || force_redraw) {
+            fill_round_rect_frame(40, 50, 400, 220, 14, THEME_BAD, 0xFFFF);
+            bool th = (g_ui_language == UI_LANG_TH);
+            char head[64];
+            if (th) {
+                snprintf(head, sizeof(head), "โมดูลที่ %d", selected_med_idx + 1);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 78, head,
+                                               0xFFFF, THEME_BAD, 24);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 120,
+                    "ล้างยาก่อนตั้งค่า", 0xFFFF, THEME_BAD, 30);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 160,
+                    "เพื่อความปลอดภัย", 0xFFFF, THEME_BAD, 20);
+                draw_utf8_centered_line_scaled(LCD_W / 2, 184,
+                    "ล้างตลับและท่อยาให้สะอาดก่อน", 0xFFFF, THEME_BAD, 18);
+            } else {
+                snprintf(head, sizeof(head), "Module %d", selected_med_idx + 1);
+                draw_string_centered(LCD_W / 2, 90, head,
+                                     0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                draw_string_centered(LCD_W / 2, 125, "Clean before setup",
+                                     0xFFFF, THEME_BAD, &FreeSansBold18pt7b);
+                draw_string_centered(LCD_W / 2, 160, "For safety, please",
+                                     0xFFFF, THEME_BAD, &FreeSans12pt7b);
+                draw_string_centered(LCD_W / 2, 185, "clean the cartridge first",
+                                     0xFFFF, THEME_BAD, &FreeSans12pt7b);
+            }
+            /* Two buttons: CANCEL (left, gray) + CLEANED (right, green) */
+            fill_round_rect( 60, 220, 160, 44, 10, THEME_INACTIVE);
+            fill_round_rect(260, 220, 160, 44, 10, THEME_OK);
+            if (th) {
+                draw_utf8_centered_line_scaled(140, 230, "ยกเลิก",
+                                               0xFFFF, THEME_INACTIVE, 24);
+                draw_utf8_centered_line_scaled(340, 230, "ล้างเสร็จแล้ว",
+                                               0xFFFF, THEME_OK, 22);
+            } else {
+                draw_string_centered(140, 248, "Cancel", 0xFFFF,
+                                     THEME_INACTIVE, &FreeSans12pt7b);
+                draw_string_centered(340, 248, "Cleaned", 0xFFFF,
+                                     THEME_OK, &FreeSans12pt7b);
+            }
+            s_clean_before_setup_drawn = true;
+        }
+        return;
+    }
+
     if (s_refill_or_clear_popup) {
         if (!s_refill_or_clear_drawn || force_redraw) {
             fill_round_rect_frame(40, 50, 400, 220, 14, THEME_BAD, 0xFFFF);
@@ -1010,6 +1080,34 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
         return;
     } else if (ui_manual_disp_status == 1) {
         return; // Ignore touches while dispensing
+    }
+
+    /* Clean-before-setup popup: armed when an unconfigured slot
+     * was tapped on the grid. Two buttons, no other escape:
+     *   left (Cancel)        → bounce straight back to the grid so
+     *                          the operator can pick a different
+     *                          slot. Detail editor never opens.
+     *   right (ล้างเสร็จแล้ว) → close popup, let the operator edit
+     *                          the detail page normally. */
+    if (s_clean_before_setup_popup) {
+        bool in_left  = (tx_n >= 60  && tx_n <= 220 && ty_n >= 220 && ty_n <= 264);
+        bool in_right = (tx_n >= 260 && tx_n <= 420 && ty_n >= 220 && ty_n <= 264);
+        if (in_left) {
+            s_clean_before_setup_popup = false;
+            s_clean_before_setup_drawn = false;
+            dfplayer_play_track(12);   /* cancel sound */
+            pending_page = PAGE_SETUP_MEDS;
+            force_redraw = true;
+            return;
+        }
+        if (in_right) {
+            s_clean_before_setup_popup = false;
+            s_clean_before_setup_drawn = false;
+            dfplayer_play_track(28);   /* confirm sound */
+            force_redraw = true;
+            return;
+        }
+        return;   /* tap outside buttons — force a deliberate choice */
     }
 
     /* Refill-or-clear popup: armed via auto-nav after a failed
