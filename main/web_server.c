@@ -17,6 +17,7 @@
 #include "web_handlers_stream.h"
 #include "web_handlers_tech.h"
 #include "web_log.h"
+#include "bridge_vl53.h"
 
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -97,6 +98,9 @@ httpd_handle_t start_webserver(void) {
         { "/tech/quiet",      HTTP_POST, tech_quiet_handler,     NULL },
         { "/tech/maxpills",   HTTP_POST, tech_maxpills_handler,  NULL },
         { "/api/factory-reset", HTTP_POST, factory_reset_handler,  NULL },
+        /* Passive C3 VL53 bridge dashboard — read-only, isolated. */
+        { "/vl53",              HTTP_GET,  bridge_vl53_html_handler, NULL },
+        { "/vl53.json",         HTTP_GET,  bridge_vl53_json_handler, NULL },
     };
 
     for (int i = 0; i < sizeof(routes)/sizeof(routes[0]); i++) {

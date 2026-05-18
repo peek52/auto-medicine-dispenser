@@ -391,6 +391,14 @@ static void deferred_init_task(void *arg)
     ESP_LOGI(TAG, "deferred_init: usb_mouse_start");
     usb_mouse_start();
 
+    /* Passive ESP32-C3 distance-sensor bridge. Read-only UART2 listener
+     * with its own dedicated pins (GPIO 53/54) and mutex — does not
+     * share state or locks with the dispense path. If the C3 board is
+     * absent the task just idles waiting for bytes that never arrive. */
+    extern bool bridge_vl53_start(void);
+    ESP_LOGI(TAG, "deferred_init: bridge_vl53_start");
+    bridge_vl53_start();
+
     // 4) Now bring up WiFi. May block ~15 s.
     ESP_LOGI(TAG, "deferred_init: wifi_sta_init (may block up to 15s)");
     wifi_sta_init();
