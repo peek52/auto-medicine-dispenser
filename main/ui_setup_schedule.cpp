@@ -419,8 +419,13 @@ void ui_time_picker_handle_touch(uint16_t tx_n, uint16_t ty_n, bool long_press)
         snprintf(buf, sizeof(buf), "%02d:%02d", edit_hh, edit_mm);
 
         /* Cascade the paired slot in the same meal (before↔after) to
-         * the fixed safety offset of 30 min — "ต้องกินยาก่อนอาหารครึ่ง
-         * ชั่วโมง" (user spec 2026-05-18). Pair index map:
+         * the fixed safety offset of 45 min (user spec 2026-05-18).
+         * Sits in the medical range of 30-60 min for most "before meal"
+         * drugs and leaves a 30 min buffer past the 15-min confirm
+         * timeout so a missed before-meal dose has fully resolved
+         * (skip + Telegram + refire guard stamped) before the
+         * after-meal slot fires — no audio overlap, no race on
+         * s_waiting_confirm. Pair index map:
          *   slot 0 ↔ 1 (morning), 2 ↔ 3 (lunch), 4 ↔ 5 (evening).
          * Slot 6 (bedtime) is standalone — no cascade.
          * The pair update is attempted FIRST so the subsequent self
@@ -442,7 +447,7 @@ void ui_time_picker_handle_touch(uint16_t tx_n, uint16_t ty_n, bool long_press)
             strlcpy(pair_snapshot, sh->slot_time[pair_idx], sizeof(pair_snapshot));
 
             int self_new_mins = edit_hh * 60 + edit_mm;
-            int new_pair_mins = self_new_mins + 30 * sign;
+            int new_pair_mins = self_new_mins + 45 * sign;
             if (new_pair_mins < 0) new_pair_mins = 0;
             if (new_pair_mins > 23*60 + 59) new_pair_mins = 23*60 + 59;
             char pair_buf[8];
