@@ -108,13 +108,10 @@
 // six distance readings out its UART. The P4 listens passively on UART2
 // and exposes the latest values via /vl53 — it does NOT command the C3
 // and does NOT feed the values into the dispense or IR-detection paths.
-// Wiring: C3 TX → P4 RX(32), C3 RX → P4 TX(36) (TX wire is reserved for
+// Wiring: C3 TX → P4 RX(14), C3 RX → P4 TX(15) (TX wire is reserved for
 // a future command channel — currently nothing is transmitted).
-// Pins 32/36 are the only general-purpose GPIOs that are (a) exposed
-// on the P4-Nano breakout header AND (b) not already claimed by the
-// camera / SD / DFPlayer / IR / I²C peripherals.
-#define BRIDGE_RX_PIN         32
-#define BRIDGE_TX_PIN         36
+#define BRIDGE_RX_PIN         14
+#define BRIDGE_TX_PIN         15
 #define BRIDGE_UART_NUM       UART_NUM_2
 #define BRIDGE_UART_BAUD      115200
 
