@@ -421,32 +421,26 @@ static void parse_shadow(const char *json, bool is_initial_response)
         }
     }
 
-    /* Enforce monotonic slot ordering on the candidate set. If a NETPIE
-     * client tries to set, e.g., morn_post < morn_pre or noon_pre <
-     * morn_post, revert the slot_time portion of the diff (keep med
-     * and enable diffs). Logged so the operator can see the rejection
-     * in the serial monitor. */
+    /* Validate the monotonic / 60-min-cap rules on the candidate set
+     * but DO NOT silently revert any more (user spec 2026-05-18:
+     * "ตอนตั้งเวลาบนnetpie มันไม่ขึ้นอัพเดท … ต้องให้ใส่มื้อยาด้วยถึง
+     * จะมีเด้งมาบนจอ"). Silently dropping the slot_time portion of
+     * the diff meant that when the merged state would violate
+     * pre<post / gap-cap / dup rules, the pending-approval popup
+     * never fired for a slot_time-only NETPIE save — the operator
+     * had no way to see what the cloud client sent. Log loudly so
+     * the rejection still surfaces in the serial monitor, but let
+     * the pending flow continue with the cloud's proposed values
+     * so the operator gets the popup and can approve or reject
+     * deliberately. The freeboard widget's client-side validator
+     * (netpie_settings_widget.html) is now the first line of
+     * defence; this device-side check is just a safety log. */
     {
         const char *cand[7];
         for (int i = 0; i < 7; i++) cand[i] = incoming.slot_time[i];
         if (!slot_times_monotonic(cand, -1, NULL)) {
-            ESP_LOGW(TAG, "Rejected NETPIE slot_time set — non-monotonic order");
-            for (int i = 0; i < 7; i++) {
-                if (slot_time_diff[i]) {
-                    strlcpy(incoming.slot_time[i], s_shadow.slot_time[i],
-                            sizeof(incoming.slot_time[i]));
-                    slot_time_diff[i] = false;
-                }
-            }
-            /* Re-compute any_diff: keep true only if at least one non-
-             * slot_time field still differs. Simplest: walk the other
-             * diff flags. */
-            any_diff = enabled_diff || max_pills_diff;
-            for (int i = 0; i < DISPENSER_MED_COUNT && !any_diff; i++) {
-                if (med_name_diff[i] || med_count_diff[i] || med_slots_diff[i]) {
-                    any_diff = true;
-                }
-            }
+            ESP_LOGW(TAG, "NETPIE slot_time set violates monotonic / 60-min rules — "
+                          "forwarding to operator anyway");
         }
     }
 
