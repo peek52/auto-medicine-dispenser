@@ -118,23 +118,44 @@ static void draw_icon_capsule(int cx, int cy, uint16_t color, uint16_t bg_color)
 
 static void draw_icon_gear(int cx, int cy, uint16_t color, uint16_t bg_color)
 {
-    // 8 teeth
-    fill_round_rect(cx - 4,  cy - 28, 8, 10, 2, color); // top
-    fill_round_rect(cx - 4,  cy + 18, 8, 10, 2, color); // bottom
-    fill_round_rect(cx - 28, cy - 4, 10, 8, 2, color); // left
-    fill_round_rect(cx + 18, cy - 4, 10, 8, 2, color); // right
-    fill_round_rect(cx - 22, cy - 22, 8, 8, 2, color); // top-left
-    fill_round_rect(cx + 14, cy - 22, 8, 8, 2, color); // top-right
-    fill_round_rect(cx - 22, cy + 14, 8, 8, 2, color); // bottom-left
-    fill_round_rect(cx + 14, cy + 14, 8, 8, 2, color); // bottom-right
-
-    // outer gear body
+    // Solid round body first — teeth attach onto it as sharp rectangles
     fill_round_rect(cx - 18, cy - 18, 36, 36, 18, color);
-    // inner ring cutout
-    fill_round_rect(cx - 11, cy - 11, 22, 22, 11, bg_color);
-    // center hub
-    fill_round_rect(cx - 5, cy - 5, 10, 10, 5, color);
-    fill_round_rect(cx - 2, cy - 2, 4, 4, 2, bg_color);
+
+    // 4 cardinal teeth — trapezoidal (wider base, narrower tip) using two stacked rects
+    // Top
+    fill_rect(cx - 7, cy - 24, 14, 8, color);
+    fill_rect(cx - 5, cy - 28, 10, 5, color);
+    // Bottom
+    fill_rect(cx - 7, cy + 16, 14, 8, color);
+    fill_rect(cx - 5, cy + 23, 10, 5, color);
+    // Left
+    fill_rect(cx - 24, cy - 7, 8, 14, color);
+    fill_rect(cx - 28, cy - 5, 5, 10, color);
+    // Right
+    fill_rect(cx + 16, cy - 7, 8, 14, color);
+    fill_rect(cx + 23, cy - 5, 5, 10, color);
+
+    // 4 diagonal teeth — stepped rectangles to approximate 45° tips
+    // Top-right
+    fill_rect(cx + 11, cy - 19, 7, 7, color);
+    fill_rect(cx + 15, cy - 22, 5, 5, color);
+    // Top-left
+    fill_rect(cx - 18, cy - 19, 7, 7, color);
+    fill_rect(cx - 20, cy - 22, 5, 5, color);
+    // Bottom-right
+    fill_rect(cx + 11, cy + 12, 7, 7, color);
+    fill_rect(cx + 15, cy + 17, 5, 5, color);
+    // Bottom-left
+    fill_rect(cx - 18, cy + 12, 7, 7, color);
+    fill_rect(cx - 20, cy + 17, 5, 5, color);
+
+    // Hollow ring cutout — thick rim makes it read as a mechanical cog
+    fill_round_rect(cx - 10, cy - 10, 20, 20, 10, bg_color);
+
+    // Central spindle hub
+    fill_round_rect(cx - 6, cy - 6, 12, 12, 6, color);
+    // Axle hole
+    fill_round_rect(cx - 3, cy - 3, 6, 6, 3, bg_color);
 }
 
 static bool menu_back_hit(uint16_t x, uint16_t y)
