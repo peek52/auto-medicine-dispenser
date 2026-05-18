@@ -418,18 +418,15 @@ void ui_time_picker_handle_touch(uint16_t tx_n, uint16_t ty_n, bool long_press)
         char buf[8];
         snprintf(buf, sizeof(buf), "%02d:%02d", edit_hh, edit_mm);
 
-        /* Cascade the paired slot in the same meal (before↔after). When
-         * the user edits one half of a pair we auto-shift the other half
-         * by the SAME offset they had before, so the relationship is
-         * preserved ("คำนวนเวลาให้สัมพันกัน"). Falls back to ±30 min if
-         * the prior offset is missing or out of a sensible 5-240 min
-         * range. Pair index map:
+        /* Cascade the paired slot in the same meal (before↔after) to
+         * the fixed safety offset of 30 min — "ต้องกินยาก่อนอาหารครึ่ง
+         * ชั่วโมง" (user spec 2026-05-18). Pair index map:
          *   slot 0 ↔ 1 (morning), 2 ↔ 3 (lunch), 4 ↔ 5 (evening).
          * Slot 6 (bedtime) is standalone — no cascade.
          * The pair update is attempted FIRST so the subsequent self
-         * update doesn't trip the pre<post validation; if the pair
-         * write is rejected (duplicate HH:MM with another slot, etc.)
-         * we silently fall through and the user keeps full manual
+         * update doesn't trip pre<post validation; if the pair write
+         * is rejected (duplicate HH:MM with another slot, etc.) we
+         * silently fall through and the user keeps full manual
          * control via the picker. */
         int sign     = 0;
         int pair_idx = -1;
@@ -444,27 +441,8 @@ void ui_time_picker_handle_touch(uint16_t tx_n, uint16_t ty_n, bool long_press)
             const netpie_shadow_t *sh = netpie_get_shadow();
             strlcpy(pair_snapshot, sh->slot_time[pair_idx], sizeof(pair_snapshot));
 
-            auto parse_mins = [](const char *s) -> int {
-                if (!s || s[0] == '\0' || strcmp(s, "--:--") == 0) return -1;
-                if (strlen(s) != 5 || s[2] != ':') return -1;
-                int h = (s[0]-'0')*10 + (s[1]-'0');
-                int m = (s[3]-'0')*10 + (s[4]-'0');
-                if (h < 0 || h > 23 || m < 0 || m > 59) return -1;
-                return h*60 + m;
-            };
-            int self_old_mins = parse_mins(sh->slot_time[edit_slot]);
-            int pair_old_mins = parse_mins(sh->slot_time[pair_idx]);
             int self_new_mins = edit_hh * 60 + edit_mm;
-
-            int offset = 30 * sign;   /* default ±30 min */
-            if (self_old_mins >= 0 && pair_old_mins >= 0) {
-                int curr_offset = pair_old_mins - self_old_mins;
-                int abs_off = curr_offset < 0 ? -curr_offset : curr_offset;
-                if ((curr_offset * sign) > 0 && abs_off >= 5 && abs_off <= 240) {
-                    offset = curr_offset;
-                }
-            }
-            int new_pair_mins = self_new_mins + offset;
+            int new_pair_mins = self_new_mins + 30 * sign;
             if (new_pair_mins < 0) new_pair_mins = 0;
             if (new_pair_mins > 23*60 + 59) new_pair_mins = 23*60 + 59;
             char pair_buf[8];

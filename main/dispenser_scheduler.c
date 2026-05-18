@@ -1484,6 +1484,28 @@ static void dispenser_task(void *arg)
                      s_empty_stock_warning = false;
                 }
 
+                /* "Time to take medication" Telegram. Sent at the exact
+                 * slot fire (not 30/15/5 min before) so absent users
+                 * get the on-time cue to come collect their dose (user
+                 * spec 2026-05-18: "เมื่อถึงเวลาให้มีข้อความส่ง telegram
+                 * เพื่อรับยา"). Skipped when the cartridge is fully
+                 * empty — the out-of-stock alert above already covers
+                 * that case and a second "come take it" message would
+                 * be misleading (there's nothing to take). */
+                if (has_stock) {
+                    char on_time_msg[256];
+                    if (telegram_lang_is_th()) {
+                        snprintf(on_time_msg, sizeof(on_time_msg),
+                                 "⏰ ถึงเวลาทานยา\nมื้อ: %s (%s)\nกรุณามารับยาที่เครื่อง",
+                                 telegram_slot_label(s), sh->slot_time[s]);
+                    } else {
+                        snprintf(on_time_msg, sizeof(on_time_msg),
+                                 "⏰ Time to take medication\nDose: %s (%s)\nPlease come to the device",
+                                 telegram_slot_label(s), sh->slot_time[s]);
+                    }
+                    telegram_send_text(on_time_msg);
+                }
+
                 ESP_LOGI(TAG, "⏰ Slot %d (%s) triggered at %s. Waiting for User Confirmation...", s, SLOT_LABELS[s], cur_hhmm);
 
                 s_waiting_confirm = true;
@@ -1528,6 +1550,16 @@ static void dispenser_task(void *arg)
                 int diff = slot_total - cur_total;
                 
                 if (diff == 30 || diff == 15 || diff == 5) {
+                    /* Drop the 30-min head-up for AFTER-meal slots
+                     * (indices 1, 3, 5). With the fixed +30 min
+                     * cascade, the after-meal slot fires exactly 30
+                     * min after the before-meal one, so a 30-min
+                     * head-up for it would land on the before-meal
+                     * alarm and stack two voices on top of each
+                     * other. 15 + 5 min cues stay so the user still
+                     * gets warnings (user spec 2026-05-18:
+                     * "เวลาเตือนหลังอาหารน่าจะมีแค่ 15 กับ 5 นาที"). */
+                    if (diff == 30 && (s == 1 || s == 3 || s == 5)) continue;
                     // De-duplicate using a separate last_prealert key
                     static char s_last_prealert[16] = "";
                     char prealert_key[12];
