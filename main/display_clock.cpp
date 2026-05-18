@@ -920,6 +920,26 @@ static void clock_task(void *)
             }
         }
 
+        /* Same hold-to-accelerate cadence for the medicine detail page,
+         * so the operator can hold +/- on the pill count instead of
+         * tapping 16 times (user spec 2026-05-18: "กดค้างแล้วเลข
+         * ไม่ยอมเปลี่ยนไวเหมือนตอนตั้งเวลา"). The hold handler itself
+         * filters to just the +/- hit zones and bails out if any modal
+         * popup is up. */
+        if (current_page == PAGE_SETUP_MEDS_DETAIL && touched) {
+            uint16_t atx = last_tx, aty = last_ty;
+            uint16_t tx_n, ty_n;
+            ui_map_touch(atx, aty, &tx_n, &ty_n);
+
+            uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            if (now_ms - touch_start_ms > 320) {
+                if (now_ms - last_repeat_ms > 70) {
+                    ui_setup_meds_detail_handle_hold(tx_n, ty_n);
+                    last_repeat_ms = now_ms;
+                }
+            }
+        }
+
         // Auto-return to standby after 5 min idle on any non-standby page.
         // Skips the med-alarm confirm popup (it owns its own dismiss flow)
         // and the boot intro. Touch activity resets the timer below.

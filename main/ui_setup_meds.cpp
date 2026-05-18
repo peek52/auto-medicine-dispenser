@@ -1072,6 +1072,45 @@ extern "C" void ui_setup_meds_end_edit_session_if_any(void)
     s_med_snapshot_saved = false;
 }
 
+/* Hold-to-accelerate handler for the pill-count [+]/[-] buttons on
+ * the detail page. display_clock.cpp's hold dispatch calls this every
+ * 70 ms after a 320 ms initial-hold delay (same cadence the time
+ * picker uses for hour/minute scroll). User spec 2026-05-18: "เพิ่ม
+ * กดค้างตอน+- จำนวนยา … กดค้างแล้วเลขไม่ยอมเปลี่ยนไวเหมือนตอนตั้งเวลา".
+ * Bounds match the tap handler's stock-row buttons below; everything
+ * else (name field, slot grid, save) is ignored so the operator
+ * can't accidentally re-trigger destructive actions just by holding
+ * their finger somewhere. */
+void ui_setup_meds_detail_handle_hold(uint16_t tx_n, uint16_t ty_n)
+{
+    int med_idx = selected_med_idx;
+    if (med_idx < 0 || med_idx >= DISPENSER_MED_COUNT) return;
+
+    /* Don't run while any modal popup is up — the popup buttons are
+     * single-shot taps; auto-firing them on hold would, for example,
+     * keep dismissing the save-confirm dialog endlessly. */
+    if (s_clean_before_setup_popup ||
+        s_refill_or_clear_popup ||
+        s_validation_popup ||
+        s_save_confirm_popup) return;
+
+    int current_stock = netpie_get_shadow()->med[med_idx].count;
+
+    if (ty_n >= 60 && ty_n <= 108) {
+        if (tx_n >= 252 && tx_n <= 302) {           /* [-] stock */
+            if (current_stock > 0) {
+                netpie_shadow_update_count(med_idx + 1, current_stock - 1);
+            }
+        } else if (tx_n >= 382 && tx_n <= 432) {    /* [+] stock */
+            int max_pills = dispenser_max_pills();
+            if (current_stock < max_pills) {
+                netpie_shadow_update_count(med_idx + 1, current_stock + 1);
+                if (current_stock + 1 > 0) s_refill_pending = false;
+            }
+        }
+    }
+}
+
 void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
 {
     int med_idx = selected_med_idx;
@@ -1109,11 +1148,22 @@ void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n)
         if (in_right) {
             s_clean_before_setup_popup = false;
             s_clean_before_setup_drawn = false;
+            /* Wipe the clean popup region BEFORE arming the manual
+             * dispense. The "กำลังจ่ายยา" fast-path (line ~524) only
+             * paints to (40,60,400,200) — 10 px narrower than our
+             * clean popup at (40,50,400,220) — so without this erase
+             * the operator sees the clean popup's outer red ring +
+             * bottom-button row poking out around the dispense popup
+             * for the rest of the cycle. fill_round_rect with
+             * THEME_BG matches the page background that the rest of
+             * the detail render would paint behind the dispense
+             * popup, so there's no flash either. */
+            fill_round_rect(40, 50, 400, 220, 14, THEME_BG);
             /* Run the actual flush. qty=100 = "all" — servo cycles
              * until IR sees no more pills (or until the no-stock
              * timeout fires for an empty cartridge). Operator stays
-             * on the detail page; the existing fast-path dispensing
-             * popup will paint over the next frame. */
+             * on the detail page; the fast-path dispensing popup
+             * takes over via ui_manual_disp_status flipping to 1. */
             dispenser_manual_dispense(selected_med_idx, 100);
             force_redraw = true;
             return;

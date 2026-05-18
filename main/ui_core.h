@@ -167,6 +167,9 @@ void ui_setup_meds_handle_touch(uint16_t tx_n, uint16_t ty_n);
 
 void ui_setup_meds_detail_render(void);
 void ui_setup_meds_detail_handle_touch(uint16_t tx_n, uint16_t ty_n);
+/* Repeated every 70 ms while the user keeps holding +/- on the
+ * pill-count buttons (initial 320 ms delay matches the time picker). */
+void ui_setup_meds_detail_handle_hold(uint16_t tx_n, uint16_t ty_n);
 
 #ifdef __cplusplus
 extern "C" {
