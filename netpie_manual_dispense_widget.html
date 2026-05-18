@@ -198,6 +198,12 @@
       color:var(--bad);
     }
 
+    .btn-clear-all{
+      background:linear-gradient(135deg,#dc2626 0%,#f97316 100%);
+      color:#fff;
+      box-shadow:0 12px 24px rgba(220,38,38,.30);
+    }
+
     #stat_msg{
       margin-top:12px;
       min-height:18px;
@@ -234,6 +240,91 @@
       .btn-all{
         width:100%;
       }
+    }
+
+    /* Custom in-iframe confirm modal — native window.confirm() is
+       blocked on the NETPIE freeboard mobile webview so the
+       clear-all flow silently no-ops on phones. */
+    .modal-overlay{
+      position:fixed;
+      inset:0;
+      background:rgba(11,18,32,.45);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:9999;
+      padding:16px;
+      backdrop-filter:blur(4px);
+    }
+
+    .modal-overlay.show{
+      display:flex;
+    }
+
+    .modal-box{
+      width:100%;
+      max-width:380px;
+      background:#fff;
+      border-radius:20px;
+      box-shadow:0 24px 48px rgba(15,23,42,.30);
+      overflow:hidden;
+    }
+
+    .modal-body{
+      padding:22px 20px 18px;
+      text-align:center;
+    }
+
+    .modal-icon{
+      font-size:36px;
+      margin-bottom:10px;
+    }
+
+    .modal-title{
+      font-size:16px;
+      font-weight:1000;
+      color:#0b1220;
+      margin-bottom:8px;
+      line-height:1.35;
+    }
+
+    .modal-msg{
+      font-size:13px;
+      font-weight:700;
+      color:var(--muted);
+      line-height:1.55;
+    }
+
+    .modal-actions{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:0;
+      border-top:1px solid var(--line);
+    }
+
+    .modal-btn{
+      height:50px;
+      border:none;
+      background:transparent;
+      font-family:inherit;
+      font-size:15px;
+      font-weight:1000;
+      cursor:pointer;
+      touch-action:manipulation;
+      -webkit-tap-highlight-color:transparent;
+    }
+
+    .modal-btn-cancel{
+      color:var(--muted);
+      border-right:1px solid var(--line);
+    }
+
+    .modal-btn-ok{
+      color:var(--bad);
+    }
+
+    .modal-btn:active{
+      background:rgba(11,18,32,.04);
     }
   </style>
 </head>
@@ -272,7 +363,27 @@
         <button id="btn_all" type="button" class="btn-all" onclick="sendDispense(true)">🛑 คืนยาทั้งหมด</button>
       </div>
 
+      <div class="btn-row" style="margin-top:10px;grid-template-columns:1fr">
+        <button id="btn_clear_all" type="button" class="btn-clear-all" onclick="sendClearAll()">🧹 ล้างยาทุกตลับ (ทั้งระบบ)</button>
+      </div>
+
       <div id="stat_msg"></div>
+    </div>
+  </div>
+
+  <!-- Custom in-iframe confirm (replaces window.confirm which is
+       suppressed by the NETPIE freeboard mobile webview). -->
+  <div class="modal-overlay" id="clear_confirm_modal">
+    <div class="modal-box">
+      <div class="modal-body">
+        <div class="modal-icon">🧹</div>
+        <div class="modal-title">ยืนยันล้างยาทุกตลับทั้งระบบ?</div>
+        <div class="modal-msg">เครื่องจะหมุน servo จ่ายยาออกทั้ง 6 ตลับเรียงตามลำดับ</div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-cancel" type="button" id="clear_confirm_cancel">ยกเลิก</button>
+        <button class="modal-btn modal-btn-ok"     type="button" id="clear_confirm_ok">ยืนยันล้าง</button>
+      </div>
     </div>
   </div>
 
@@ -286,6 +397,7 @@
     function setBusyState(disabled) {
       document.getElementById("btn_dispense").disabled = disabled;
       document.getElementById("btn_all").disabled = disabled;
+      document.getElementById("btn_clear_all").disabled = disabled;
       document.getElementById("man_module").disabled = disabled;
       document.getElementById("man_qty").disabled = disabled;
     }
@@ -350,6 +462,77 @@
         }, DISPENSE_SEND_DELAY_MS);
       } catch (e) {
         console.error("Manual dispense widget error:", e);
+        setStatusMessage(
+          "var(--bad)",
+          "❌ ส่งคำสั่งล้มเหลว" + (e && e.message ? ": " + e.message : ""),
+          5000
+        );
+        isSending = false;
+        setBusyState(false);
+      }
+    }
+
+    // Show the custom confirm modal. Returns a Promise<boolean>. Used
+    // instead of window.confirm() because NETPIE's freeboard mobile
+    // webview blocks native dialogs, which made the clear-all button
+    // silently no-op on phones.
+    function showClearConfirm() {
+      return new Promise(function (resolve) {
+        var overlay = document.getElementById("clear_confirm_modal");
+        var okBtn   = document.getElementById("clear_confirm_ok");
+        var cnBtn   = document.getElementById("clear_confirm_cancel");
+        overlay.classList.add("show");
+
+        function close(result) {
+          overlay.classList.remove("show");
+          okBtn.removeEventListener("click", onOk);
+          cnBtn.removeEventListener("click", onCancel);
+          overlay.removeEventListener("click", onBackdrop);
+          resolve(result);
+        }
+        function onOk()     { close(true); }
+        function onCancel() { close(false); }
+        function onBackdrop(e) { if (e.target === overlay) close(false); }
+
+        okBtn.addEventListener("click", onOk);
+        cnBtn.addEventListener("click", onCancel);
+        overlay.addEventListener("click", onBackdrop);
+      });
+    }
+
+    async function sendClearAll() {
+      if (isSending) return;
+      var confirmed = await showClearConfirm();
+      if (!confirmed) return;
+
+      isSending = true;
+      setBusyState(true);
+      setStatusMessage("var(--muted)", "กำลังส่งคำสั่งล้างยาทุกตลับ...", 0);
+
+      try {
+        // Same pre-clear pattern as sendDispense — guarantees NETPIE emits
+        // a fresh "updated" event even when the previous press was also
+        // a clear-all.
+        #["esp32cam_dispenser"].writeShadow({ "disp_req": DISPENSE_CLEAR_PAYLOAD });
+
+        setTimeout(function () {
+          try {
+            #["esp32cam_dispenser"].writeShadow({ "disp_req": "all" });
+            setStatusMessage("var(--ok)", "✅ ส่งคำสั่งล้างยาทุกตลับขึ้นคลาวด์แล้ว รอหน้าตู้ทำงาน...", 4000);
+          } catch (innerError) {
+            console.error("Clear-all widget send error:", innerError);
+            setStatusMessage(
+              "var(--bad)",
+              "❌ ส่งคำสั่งล้มเหลว" + (innerError && innerError.message ? ": " + innerError.message : ""),
+              5000
+            );
+          } finally {
+            isSending = false;
+            setBusyState(false);
+          }
+        }, DISPENSE_SEND_DELAY_MS);
+      } catch (e) {
+        console.error("Clear-all widget error:", e);
         setStatusMessage(
           "var(--bad)",
           "❌ ส่งคำสั่งล้มเหลว" + (e && e.message ? ": " + e.message : ""),
