@@ -460,6 +460,24 @@ void ui_setup_meds_handle_touch(uint16_t tx_n, uint16_t ty_n)
                 selected_med_idx = i;
                 pending_page = PAGE_SETUP_MEDS_DETAIL;
                 force_redraw = true;
+                /* If the user tapped into an already-configured slot
+                 * whose count has dropped to 0 (e.g. last dose dispensed,
+                 * or IR confirmed empty), arm the refill-or-clear popup
+                 * so they get an immediate prompt to either refill the
+                 * cartridge or wipe the slot — keeps tubes from being
+                 * "forgotten" half-empty between schedules. Skips brand-
+                 * new empty slots (no name, no slots) so initial setup
+                 * isn't interrupted. */
+                {
+                    const netpie_shadow_t *sh_tap = netpie_get_shadow();
+                    bool configured = (strlen(sh_tap->med[i].name) > 0) ||
+                                      (sh_tap->med[i].slots != 0);
+                    if (sh_tap->med[i].count == 0 && configured) {
+                        s_refill_or_clear_popup = true;
+                        s_refill_or_clear_drawn = false;
+                        s_refill_pending        = true;
+                    }
+                }
                 break;
             }
         }
@@ -791,7 +809,7 @@ void ui_setup_meds_detail_render(void)
             bool th = (g_ui_language == UI_LANG_TH);
             char head[64];
             if (th) {
-                snprintf(head, sizeof(head), "ตลับที่ %d ไม่มียาออก", selected_med_idx + 1);
+                snprintf(head, sizeof(head), "โมดูลที่ %d ไม่มียาออก", selected_med_idx + 1);
                 draw_utf8_centered_line_scaled(LCD_W / 2, 80, head,
                                                0xFFFF, THEME_BAD, 28);
                 draw_utf8_centered_line_scaled(LCD_W / 2, 125,
@@ -922,7 +940,7 @@ void ui_setup_meds_detail_render(void)
             if (s_validation_missing_count) {
                 if (th) {
                     draw_utf8_centered_line_scaled(LCD_W / 2, y,
-                        "• กรุณาใส่จำนวนยาในตลับ", 0xFFFF, THEME_WARN, 24);
+                        "• กรุณาใส่จำนวนยาในโมดูล", 0xFFFF, THEME_WARN, 24);
                 } else {
                     draw_string_centered(LCD_W / 2, y, "- Please enter pill count",
                                          0xFFFF, THEME_WARN, &FreeSans12pt7b);
